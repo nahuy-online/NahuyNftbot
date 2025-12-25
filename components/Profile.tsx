@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserProfile, Currency } from '../types';
-import { connectWallet, withdrawNFT } from '../services/mockApi';
+import { withdrawNFT } from '../services/mockApi';
+import { TonConnectButton, useTonAddress } from '@tonconnect/ui-react';
 
 interface ProfileProps {
   user: UserProfile;
@@ -8,18 +9,20 @@ interface ProfileProps {
 }
 
 export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
-  const [connecting, setConnecting] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
+  const userFriendlyAddress = useTonAddress();
+  const [now, setNow] = useState(Date.now());
 
-  const handleConnect = async () => {
-    setConnecting(true);
-    await connectWallet();
-    onUpdate();
-    setConnecting(false);
-  };
+  // Update timer every minute to refresh countdowns
+  useEffect(() => {
+      const interval = setInterval(() => setNow(Date.now()), 60000);
+      return () => clearInterval(interval);
+  }, []);
 
   const handleWithdraw = async () => {
-      if (!user.walletAddress) {
+      const targetAddress = userFriendlyAddress || user.walletAddress;
+
+      if (!targetAddress) {
           alert("Connect wallet first!");
           return;
       }
@@ -28,7 +31,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           return;
       }
       
-      const confirm = window.confirm(`Withdraw ${user.nftBalance.available} NFTs to ${user.walletAddress.slice(0,6)}...?`);
+      const confirm = window.confirm(`Withdraw ${user.nftBalance.available} NFTs to ${targetAddress.slice(0,6)}...?`);
       if(confirm) {
           setWithdrawing(true);
           await withdrawNFT();
@@ -36,6 +39,14 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           setWithdrawing(false);
           alert("Withdrawal request sent to blockchain!");
       }
+  };
+
+  const formatTimeLeft = (target: number) => {
+      const diff = target - now;
+      if (diff <= 0) return "Unlocking...";
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      return `${days}d ${hours}h`;
   };
 
   return (
@@ -53,22 +64,22 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
 
       {/* Wallet Status */}
       <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-          <div className="flex justify-between items-center mb-2">
+          <div className="flex justify-between items-center mb-4">
               <span className="text-gray-400 text-sm">Wallet (TonConnect)</span>
-              <span className={`text-xs px-2 py-1 rounded ${user.walletAddress ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}`}>
-                  {user.walletAddress ? 'Connected' : 'Disconnected'}
+              <span className={`text-xs px-2 py-1 rounded ${userFriendlyAddress ? 'bg-green-900 text-green-300' : 'bg-gray-700 text-gray-400'}`}>
+                  {userFriendlyAddress ? 'Active' : 'Not Connected'}
               </span>
           </div>
-          {user.walletAddress ? (
-              <div className="font-mono text-sm break-all text-gray-300">{user.walletAddress}</div>
-          ) : (
-              <button 
-                onClick={handleConnect}
-                disabled={connecting}
-                className="w-full mt-2 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg text-sm font-medium transition-colors"
-              >
-                  {connecting ? 'Connecting...' : 'Connect Wallet'}
-              </button>
+          
+          <div className="flex justify-center w-full">
+            <TonConnectButton />
+          </div>
+
+          {userFriendlyAddress && (
+              <div className="mt-4 p-2 bg-gray-900 rounded border border-gray-800">
+                  <div className="text-xs text-gray-500 mb-1">Connected Address</div>
+                  <div className="font-mono text-xs break-all text-gray-300">{userFriendlyAddress}</div>
+              </div>
           )}
       </div>
 
@@ -78,11 +89,31 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
               <div className="text-gray-400 text-xs uppercase tracking-wider mb-1">Total NFT</div>
               <div className="text-2xl font-bold text-white">{user.nftBalance.total}</div>
           </div>
-          <div className="bg-gray-800 p-4 rounded-xl border border-gray-700">
+          <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 relative overflow-hidden">
               <div className="text-gray-400 text-xs uppercase tracking-wider mb-1">Locked (Stars)</div>
               <div className="text-2xl font-bold text-yellow-500">{user.nftBalance.locked}</div>
+              <div className="absolute top-0 right-0 p-1">
+                  <span className="text-[10px] text-gray-500">21 days</span>
+              </div>
           </div>
       </div>
+
+      {/* Locked Details List */}
+      {user.nftBalance.lockedDetails && user.nftBalance.lockedDetails.length > 0 && (
+          <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-700/50">
+              <h4 className="text-xs font-bold text-gray-400 uppercase mb-3">Unlocking Schedule</h4>
+              <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                  {user.nftBalance.lockedDetails.sort((a,b) => a.unlockDate - b.unlockDate).map((item, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-sm bg-gray-900 p-2 rounded border border-gray-800">
+                          <span className="font-bold text-white">{item.amount} NFT</span>
+                          <span className="text-yellow-500 font-mono text-xs">
+                              Opens in {formatTimeLeft(item.unlockDate)}
+                          </span>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      )}
 
       {/* Withdraw Section */}
       <div className="bg-gray-800 p-4 rounded-xl border border-gray-700">

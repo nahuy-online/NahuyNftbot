@@ -10,16 +10,23 @@ export interface PriceConfig {
   [Currency.USDT]: number;
 }
 
+export interface LockedNftItem {
+  amount: number;
+  unlockDate: number; // Timestamp
+}
+
 export interface UserProfile {
   id: number;
   username: string;
   nftBalance: {
     total: number;
     available: number;
-    locked: number; // For Stars hold 21 days
+    locked: number; // Summary count
+    lockedDetails: LockedNftItem[]; // Specific items with dates
   };
   diceBalance: {
-    available: number;
+    available: number; // Total available
+    starsAttempts: number; // Subset of available that was bought with Stars
     used: number;
   };
   referralStats: {
