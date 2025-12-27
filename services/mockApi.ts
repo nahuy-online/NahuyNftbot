@@ -1,8 +1,11 @@
-import { UserProfile, Currency } from '../types';
+import { UserProfile, Currency } from './types';
 
 // In production (Docker), Nginx proxies /api to the backend.
 // We use a relative path so it works regardless of the domain.
 const API_URL = '/api'; 
+
+// Utility for delay to simulate network
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // --- MOCK STATE FOR OFFLINE/DEMO MODE ---
 let mockUser: UserProfile = {
@@ -74,6 +77,7 @@ export const fetchUserProfile = async (): Promise<UserProfile> => {
     return await apiRequest('/user');
   } catch (error) {
     console.warn("Backend unreachable (Failed to fetch). Switching to Mock Mode.", error);
+    await delay(500); // Simulate network
     return JSON.parse(JSON.stringify(mockUser));
   }
 };
@@ -88,6 +92,7 @@ export const purchaseItem = async (type: 'nft' | 'dice', amount: number, currenc
     return true;
   } catch (error) {
     console.warn("Backend unreachable. Simulating Purchase.", error);
+    await delay(1000); // Simulate processing
     
     // Update Mock State
     if (type === 'dice') {
@@ -117,6 +122,7 @@ export const rollDice = async (): Promise<number> => {
     return data.roll;
   } catch (error) {
     console.warn("Backend unreachable. Simulating Dice Roll.", error);
+    await delay(600); 
     
     if (mockUser.diceBalance.available <= 0) {
         throw new Error("No attempts left");
@@ -143,6 +149,7 @@ export const withdrawNFTWithAddress = async (address: string): Promise<void> => 
       await apiRequest('/withdraw', 'POST', { address });
     } catch (error) {
       console.warn("Backend unreachable. Simulating Withdrawal.", error);
+      await delay(1500);
       mockUser.walletAddress = address;
       mockUser.nftBalance.total -= mockUser.nftBalance.available;
       mockUser.nftBalance.available = 0;
