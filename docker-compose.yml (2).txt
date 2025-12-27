@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # FRONTEND: Nginx serving React
+  frontend:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: nft_frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+  # BACKEND: Node.js API
+  backend:
+    build: ./backend
+    container_name: nft_backend
+    restart: always
+    expose:
+      - "8080"
+    environment:
+      - DB_USER=user
+      - DB_HOST=db
+      - DB_NAME=nft_db
+      - DB_PASSWORD=pass
+      - DB_PORT=5432
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # DATABASE: Postgres
+  db:
+    image: postgres:15-alpine
+    container_name: nft_db
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: nft_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d nft_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
