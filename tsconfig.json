@@ -14,7 +14,8 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": "."
   },
   "include": ["**/*.ts", "**/*.tsx"],
   "exclude": ["node_modules", "backend", "vite.config.ts"]
