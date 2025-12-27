@@ -1,7 +1,8 @@
 import { UserProfile, Currency } from '../types';
 
-// Use local backend for dev, production URL for live
-const API_URL = 'http://localhost:8080/api'; 
+// In production (Docker), Nginx proxies /api to the backend.
+// We use a relative path so it works regardless of the domain.
+const API_URL = '/api'; 
 
 // --- MOCK STATE FOR OFFLINE/DEMO MODE ---
 let mockUser: UserProfile = {
@@ -73,7 +74,6 @@ export const fetchUserProfile = async (): Promise<UserProfile> => {
     return await apiRequest('/user');
   } catch (error) {
     console.warn("Backend unreachable (Failed to fetch). Switching to Mock Mode.", error);
-    // Return a copy of the mock state
     return JSON.parse(JSON.stringify(mockUser));
   }
 };
