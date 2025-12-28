@@ -1,0 +1,14 @@
+version: 1
+
+network:
+  domains:
+    app-domain: ~ 
+
+  routes:
+    web-route:
+      domain: app-domain
+      path: /
+      # Имя сервиса должно совпадать с именем в секции containers вашей конфигурации
+      service: nft-bot
+      port: 80
+      type: http
