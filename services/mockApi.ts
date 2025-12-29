@@ -1,14 +1,19 @@
 import { UserProfile, Currency, NftTransaction, PaymentInitResponse } from '../types';
 
 const API_BASE = '/api'; 
-const STORAGE_KEY = 'nft_app_local_db_v2';
+const BASE_STORAGE_KEY = 'nft_app_db_v3';
 
-// --- HELPER: LOCAL STORAGE DB ---
-// This simulates a database inside the user's browser so the app works without a real backend.
+// --- HELPER: LOCAL STORAGE DB (Now User Specific) ---
+
+const getUserId = (): number => {
+    return window.Telegram?.WebApp?.initDataUnsafe?.user?.id || 12345;
+};
+
+const getStorageKey = (userId: number) => `${BASE_STORAGE_KEY}_${userId}`;
 
 const getInitialData = (userId: number): UserProfile => ({
     id: userId,
-    username: window.Telegram?.WebApp?.initDataUnsafe?.user?.username || "DemoUser",
+    username: window.Telegram?.WebApp?.initDataUnsafe?.user?.username || `User_${userId}`,
     nftBalance: { 
         total: 0, 
         available: 0, 
@@ -27,23 +32,24 @@ const getInitialData = (userId: number): UserProfile => ({
     walletAddress: undefined
 });
 
-const getLocalDb = (): UserProfile => {
-    const userId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id || 12345;
-    const stored = localStorage.getItem(STORAGE_KEY);
+const getLocalDb = (userId: number): UserProfile => {
+    const key = getStorageKey(userId);
+    const stored = localStorage.getItem(key);
     if (stored) {
         return JSON.parse(stored);
     }
     const newData = getInitialData(userId);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
+    localStorage.setItem(key, JSON.stringify(newData));
     return newData;
 };
 
-const saveLocalDb = (data: UserProfile) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+const saveLocalDb = (userId: number, data: UserProfile) => {
+    localStorage.setItem(getStorageKey(userId), JSON.stringify(data));
 };
 
-const addTransaction = (tx: Partial<NftTransaction>) => {
-    const txsStr = localStorage.getItem(STORAGE_KEY + '_txs');
+const addTransaction = (userId: number, tx: Partial<NftTransaction>) => {
+    const key = getStorageKey(userId) + '_txs';
+    const txsStr = localStorage.getItem(key);
     const txs: NftTransaction[] = txsStr ? JSON.parse(txsStr) : [];
     
     const newTx: NftTransaction = {
@@ -57,7 +63,7 @@ const addTransaction = (tx: Partial<NftTransaction>) => {
     };
     
     txs.unshift(newTx);
-    localStorage.setItem(STORAGE_KEY + '_txs', JSON.stringify(txs.slice(0, 50))); // Keep last 50
+    localStorage.setItem(key, JSON.stringify(txs.slice(0, 50))); // Keep last 50
 };
 
 // --- MOCK LOGIC HANDLERS ---
@@ -66,7 +72,9 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
     // Simulate network delay
     await new Promise(r => setTimeout(r, 600));
 
-    const db = getLocalDb();
+    // CRITICAL: Always use the ID from the request or current context to separate users
+    const userId = body?.id || getUserId();
+    const db = getLocalDb(userId);
 
     // 1. GET USER
     if (endpoint.includes('/user')) {
@@ -75,20 +83,33 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
 
     // 2. GET HISTORY
     if (endpoint.includes('/history')) {
-        const txsStr = localStorage.getItem(STORAGE_KEY + '_txs');
+        const key = getStorageKey(userId) + '_txs';
+        const txsStr = localStorage.getItem(key);
         return txsStr ? JSON.parse(txsStr) : [];
     }
 
     // 3. CREATE PAYMENT
     if (endpoint.includes('/payment/create')) {
+        const isStars = body.currency === 'STARS';
+        
+        // Fix for TON Error: providing a valid dummy transaction structure
+        // This simulates a transfer of 0.05 TON to a burn address
+        const tonTransaction = {
+            validUntil: Math.floor(Date.now() / 1000) + 600, // 10 min
+            messages: [
+                {
+                    address: "0QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC", // Null/Burn address for test
+                    amount: "50000000", // 0.05 TON in nanotons
+                    payload: "" // Optional comment
+                }
+            ]
+        };
+
         return { 
             ok: true, 
             currency: body.currency, 
-            invoiceLink: body.currency === 'STARS' ? 'https://t.me/$' : undefined,
-            transaction: body.currency !== 'STARS' ? { 
-                validUntil: Date.now() + 600000, 
-                messages: [] 
-            } : undefined
+            invoiceLink: isStars ? 'https://t.me/$' : undefined,
+            transaction: !isStars ? tonTransaction : undefined
         };
     }
 
@@ -108,17 +129,17 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
             } else {
                 db.nftBalance.available += amount;
             }
-            addTransaction({ type: 'purchase', assetType: 'nft', amount, currency, description: `Bought ${amount} NFT`, isLocked: isStars });
+            addTransaction(userId, { type: 'purchase', assetType: 'nft', amount, currency, description: `Bought ${amount} NFT`, isLocked: isStars });
         } 
         else if (type === 'dice') {
             db.diceBalance.available += amount;
             if (currency === 'STARS') {
                 db.diceBalance.starsAttempts += amount;
             }
-            addTransaction({ type: 'purchase', assetType: 'dice', amount, currency, description: `Bought ${amount} Attempts` });
+            addTransaction(userId, { type: 'purchase', assetType: 'dice', amount, currency, description: `Bought ${amount} Attempts` });
         }
         
-        saveLocalDb(db);
+        saveLocalDb(userId, db);
         return true;
     }
 
@@ -133,7 +154,7 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
         db.diceBalance.available -= 1;
         db.diceBalance.used += 1;
 
-        // Check if this was a "Stars Attempt" (logic: use stars attempts first or last? lets say simple FIFO)
+        // Check if this was a "Stars Attempt"
         let isStarsAttempt = false;
         if (db.diceBalance.starsAttempts > 0) {
             db.diceBalance.starsAttempts -= 1;
@@ -157,10 +178,10 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
             } else {
                 db.nftBalance.available += winAmount;
             }
-            addTransaction({ type: 'win', assetType: 'nft', amount: winAmount, description: `Won on Roll ${roll}`, isLocked: isStarsAttempt });
+            addTransaction(userId, { type: 'win', assetType: 'nft', amount: winAmount, description: `Won on Roll ${roll}`, isLocked: isStarsAttempt });
         }
 
-        saveLocalDb(db);
+        saveLocalDb(userId, db);
         return { roll };
     }
 
@@ -172,10 +193,10 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
         if (amount <= 0) throw new Error("Nothing to withdraw");
 
         db.nftBalance.available = 0;
-        db.nftBalance.total -= amount; // Assuming withdrawal removes them from internal balance
+        db.nftBalance.total -= amount; 
         
-        addTransaction({ type: 'withdraw', assetType: 'nft', amount: amount, description: 'Withdrawal to wallet' });
-        saveLocalDb(db);
+        addTransaction(userId, { type: 'withdraw', assetType: 'nft', amount: amount, description: 'Withdrawal to wallet' });
+        saveLocalDb(userId, db);
         return { ok: true };
     }
 
@@ -184,9 +205,8 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
 
 
 // --- API REQUEST WRAPPER ---
-// Tries to connect to real backend, but aggressively falls back to local DB logic
 const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) => {
-  const userId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id || 12345;
+  const userId = getUserId();
   
   const headers: HeadersInit = { 
       'Content-Type': 'application/json', 
@@ -205,14 +225,14 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
   }
 
   try {
-    // Attempt real fetch
+    // Attempt real fetch first
     const response = await fetch(url, config);
     if (!response.ok) throw new Error("Backend error");
     return await response.json();
   } catch (error: any) {
-    // If real backend fails (which it is right now), use the smart local DB logic
-    console.log(`📡 Backend unreachable, executing local logic for ${endpoint}`);
-    return handleMockFallback(endpoint, method, body);
+    console.log(`📡 Using local logic for ${endpoint} (User: ${userId})`);
+    // Explicitly pass userId logic inside fallback
+    return handleMockFallback(endpoint, method, { id: userId, ...body });
   }
 };
 
