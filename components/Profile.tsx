@@ -295,11 +295,12 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           </div>
           
           <div className="grid grid-cols-3 gap-2 mb-4">
-               {['Level 1', 'Level 2', 'Level 3'].map((_, i) => (
-                   <div key={i} className="bg-gray-800 p-2 rounded-lg text-center border border-white/5">
-                       <div className="text-[10px] text-gray-500 uppercase">{t('level')} {i+1}</div>
+               {/* Using integer array to use the variable and avoid TS6133 */}
+               {[1, 2, 3].map((level) => (
+                   <div key={level} className="bg-gray-800 p-2 rounded-lg text-center border border-white/5">
+                       <div className="text-[10px] text-gray-500 uppercase">{t('level')} {level}</div>
                        <div className="font-bold text-lg">
-                           {(user.referralStats as any)[`level${i+1}`]}
+                           {(user.referralStats as any)[`level${level}`]}
                        </div>
                    </div>
                ))}
