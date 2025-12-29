@@ -21,12 +21,14 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
-    proxy: proxyConfig
+    proxy: proxyConfig,
+    allowedHosts: true
   },
   // Production preview settings (Important for Docker)
   preview: {
     port: 80, // We serve on port 80 in the container
     host: true,
+    allowedHosts: true, // Allow dynamic Dockhost domains
     proxy: proxyConfig // Use the same proxy logic
   }
 });
