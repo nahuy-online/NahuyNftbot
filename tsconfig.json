@@ -18,5 +18,5 @@
     "baseUrl": "."
   },
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules", "backend", "vite.config.ts"]
+  "exclude": ["node_modules", "backend", "vite.config.ts", "0", "dist"]
 }
