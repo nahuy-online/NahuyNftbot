@@ -1,4 +1,4 @@
-import { UserProfile, Currency } from '../types';
+import { UserProfile, Currency, NftTransaction } from '../types';
 
 // In production (Docker), Nginx proxies /api to the backend.
 // We use a relative path so it works regardless of the domain.
@@ -33,6 +33,17 @@ let mockUser: UserProfile = {
   walletAddress: ""
 };
 
+// Mock History Data
+const mockHistory: NftTransaction[] = [
+    { id: '1', type: 'win', assetType: 'nft', amount: 6, timestamp: Date.now() - 1000 * 60 * 5, description: 'Dice Roll: Jackpot', isLocked: false },
+    { id: '2', type: 'purchase', assetType: 'nft', amount: 5, timestamp: Date.now() - 1000 * 60 * 60 * 2, description: 'Genesis Pack (x5)', currency: Currency.TON, isLocked: false },
+    { id: '3', type: 'purchase', assetType: 'dice', amount: 10, timestamp: Date.now() - 1000 * 60 * 60 * 5, description: 'Dice Attempts (x10)', currency: Currency.STARS },
+    { id: '4', type: 'win', assetType: 'nft', amount: 4, timestamp: Date.now() - 1000 * 60 * 60 * 24, description: 'Dice Roll: Rare', isLocked: true }, // Simulating a locked win
+    { id: '5', type: 'referral', assetType: 'currency', amount: 2, timestamp: Date.now() - 1000 * 60 * 60 * 48, description: 'Referral Bonus (Lvl 1)' },
+    { id: '6', type: 'purchase', assetType: 'nft', amount: 10, timestamp: Date.now() - 1000 * 60 * 60 * 24 * 3, description: 'Starter Pack', currency: Currency.STARS, isLocked: true },
+    { id: '7', type: 'win', assetType: 'nft', amount: 1, timestamp: Date.now() - 1000 * 60 * 60 * 24 * 5, description: 'Dice Roll: Basic', isLocked: false },
+];
+
 // Helper to get the Telegram User ID securely
 const getTelegramUserId = (): number => {
   // Fallback for local browser testing without Telegram context
@@ -42,7 +53,7 @@ const getTelegramUserId = (): number => {
   return window.Telegram.WebApp.initDataUnsafe.user.id;
 };
 
-// Helper for authorized fetch requests
+// Helper for authorized fetch requests with HARD Timeout
 const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) => {
   const userId = getTelegramUserId();
   
@@ -62,24 +73,56 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
     url += `?id=${userId}`;
   }
 
-  const response = await fetch(url, config);
-  
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `API Error: ${response.status}`);
-  }
+  try {
+    // RACE CONDITION: Force a timeout even if fetch hangs (e.g. pending DNS or Proxy)
+    const timeoutPromise = new Promise<Response>((_, reject) => 
+        setTimeout(() => reject(new Error("Network timeout")), 1500)
+    );
 
-  return response.json();
+    const fetchPromise = fetch(url, config);
+
+    const response = await Promise.race([fetchPromise, timeoutPromise]);
+
+    if (!response.ok) {
+        throw new Error(`API Error: ${response.status}`);
+    }
+
+    // CRITICAL: Check if response is actually JSON. 
+    // Vite preview often returns index.html (text/html) for unknown routes (404s handled by SPA).
+    const contentType = response.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+        throw new Error("Invalid response format (received HTML instead of JSON)");
+    }
+
+    return await response.json();
+  } catch (error) {
+    // This catch block ensures we propagate the error so the caller (rollDice) 
+    // can switch to the Mock Fallback immediately.
+    throw error;
+  }
 };
 
 export const fetchUserProfile = async (): Promise<UserProfile> => {
   try {
     return await apiRequest('/user');
   } catch (error) {
-    console.warn("Backend unreachable (Failed to fetch). Switching to Mock Mode.", error);
-    await delay(500); // Simulate network
+    console.warn("Backend unavailable. Switching to Mock Mode.");
+    // Simulate a short delay so it doesn't feel instant/broken
+    await delay(300); 
     return JSON.parse(JSON.stringify(mockUser));
   }
+};
+
+export const fetchNftHistory = async (): Promise<NftTransaction[]> => {
+    try {
+        // Implement backend endpoint /api/history later
+        // return await apiRequest('/history');
+        throw new Error("Not implemented");
+    } catch (error) {
+        await delay(400);
+        // Return sorted mock history
+        return [...mockHistory].sort((a,b) => b.timestamp - a.timestamp);
+    }
 };
 
 export const connectWallet = async (): Promise<string> => {
@@ -91,8 +134,8 @@ export const purchaseItem = async (type: 'nft' | 'dice', amount: number, currenc
     await apiRequest('/buy', 'POST', { type, amount, currency });
     return true;
   } catch (error) {
-    console.warn("Backend unreachable. Simulating Purchase.", error);
-    await delay(1000); // Simulate processing
+    console.warn("Backend unavailable. Simulating Purchase.");
+    await delay(500); 
     
     // Update Mock State
     if (type === 'dice') {
@@ -100,9 +143,23 @@ export const purchaseItem = async (type: 'nft' | 'dice', amount: number, currenc
         if (currency === Currency.STARS) {
             mockUser.diceBalance.starsAttempts += amount;
         }
+        
+        // Add Dice purchase to history
+        mockHistory.push({
+            id: Date.now().toString(),
+            type: 'purchase',
+            assetType: 'dice',
+            amount,
+            timestamp: Date.now(),
+            description: `Dice Attempts (x${amount})`,
+            currency: currency
+        });
+
     } else if (type === 'nft') {
         mockUser.nftBalance.total += amount;
-        if (currency === Currency.STARS) {
+        const isStars = currency === Currency.STARS;
+
+        if (isStars) {
              mockUser.nftBalance.locked += amount;
              mockUser.nftBalance.lockedDetails.push({ 
                  amount, 
@@ -111,6 +168,18 @@ export const purchaseItem = async (type: 'nft' | 'dice', amount: number, currenc
         } else {
              mockUser.nftBalance.available += amount;
         }
+        
+        // Add NFT purchase to history
+        mockHistory.push({
+            id: Date.now().toString(),
+            type: 'purchase',
+            assetType: 'nft',
+            amount,
+            timestamp: Date.now(),
+            description: `Pack Purchase`,
+            currency: currency,
+            isLocked: isStars
+        });
     }
     return true;
   }
@@ -121,20 +190,46 @@ export const rollDice = async (): Promise<number> => {
     const data = await apiRequest('/roll', 'POST');
     return data.roll;
   } catch (error) {
-    console.warn("Backend unreachable. Simulating Dice Roll.", error);
-    await delay(600); 
+    console.warn("Backend unavailable. Simulating Dice Roll.");
     
+    // Check local mock balance immediately
     if (mockUser.diceBalance.available <= 0) {
         throw new Error("No attempts left");
     }
 
+    // Return mock roll
     const roll = Math.floor(Math.random() * 6) + 1;
     
+    // Logic: If user has 'Stars Attempts', use them first and LOCK the reward.
+    const isStarAttempt = mockUser.diceBalance.starsAttempts > 0;
+
     // Update Mock State
     mockUser.diceBalance.available -= 1;
     mockUser.diceBalance.used += 1;
+    
+    if (isStarAttempt) {
+        mockUser.diceBalance.starsAttempts -= 1;
+        mockUser.nftBalance.locked += roll;
+        mockUser.nftBalance.lockedDetails.push({
+            amount: roll,
+            unlockDate: Date.now() + (21 * 86400000)
+        });
+    } else {
+        mockUser.nftBalance.available += roll;
+    }
+    
     mockUser.nftBalance.total += roll;
-    mockUser.nftBalance.available += roll;
+    
+    // Add to history
+    mockHistory.push({
+        id: Date.now().toString(),
+        type: 'win',
+        assetType: 'nft',
+        amount: roll,
+        timestamp: Date.now(),
+        description: roll >= 4 ? `Dice Win: Big Roll` : `Dice Win`,
+        isLocked: isStarAttempt
+    });
     
     return roll;
   }
@@ -148,8 +243,19 @@ export const withdrawNFTWithAddress = async (address: string): Promise<void> => 
     try {
       await apiRequest('/withdraw', 'POST', { address });
     } catch (error) {
-      console.warn("Backend unreachable. Simulating Withdrawal.", error);
-      await delay(1500);
+      console.warn("Backend unavailable. Simulating Withdrawal.");
+      await delay(800);
+      
+      // History
+      mockHistory.push({
+          id: Date.now().toString(),
+          type: 'withdraw',
+          assetType: 'nft',
+          amount: mockUser.nftBalance.available,
+          timestamp: Date.now(),
+          description: `Withdraw to ${address.slice(0,4)}...`
+      });
+
       mockUser.walletAddress = address;
       mockUser.nftBalance.total -= mockUser.nftBalance.available;
       mockUser.nftBalance.available = 0;

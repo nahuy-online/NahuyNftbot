@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 interface Window {
   Telegram?: {
     WebApp: {
@@ -7,6 +5,7 @@ interface Window {
       expand: () => void;
       enableClosingConfirmation: () => void;
       showAlert: (message: string) => void;
+      openTelegramLink: (url: string) => void;
       HapticFeedback: {
         impactOccurred: (style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft') => void;
         notificationOccurred: (type: 'error' | 'success' | 'warning') => void;

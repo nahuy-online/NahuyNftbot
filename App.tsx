@@ -4,6 +4,7 @@ import { DiceGame } from './components/DiceGame';
 import { Profile } from './components/Profile';
 import { UserProfile, Tab } from './types';
 import { fetchUserProfile } from './services/mockApi';
+import { useTranslation } from './i18n/LanguageContext';
 
 // Simple SVG Icons for Navigation
 const Icons = {
@@ -21,6 +22,7 @@ const Icons = {
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('shop');
   const [user, setUser] = useState<UserProfile | null>(null);
+  const { t } = useTranslation();
 
   const loadData = async () => {
     try {
@@ -46,7 +48,7 @@ const App: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
         <div className="animate-pulse flex flex-col items-center">
             <div className="h-12 w-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-            Loading WebApp...
+            {t('loading')}
         </div>
       </div>
     );
@@ -72,7 +74,7 @@ const App: React.FC = () => {
             }`}
           >
             <Icons.Shop />
-            <span className="text-[10px] font-medium uppercase">Buy NFT</span>
+            <span className="text-[10px] font-medium uppercase">{t('nav_shop')}</span>
           </button>
           
           <button
@@ -82,7 +84,7 @@ const App: React.FC = () => {
             }`}
           >
             <Icons.Dice />
-            <span className="text-[10px] font-medium uppercase">Lottery</span>
+            <span className="text-[10px] font-medium uppercase">{t('nav_dice')}</span>
           </button>
           
           <button
@@ -92,7 +94,7 @@ const App: React.FC = () => {
             }`}
           >
             <Icons.Profile />
-            <span className="text-[10px] font-medium uppercase">Profile</span>
+            <span className="text-[10px] font-medium uppercase">{t('nav_profile')}</span>
           </button>
         </div>
       </nav>

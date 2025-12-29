@@ -2,7 +2,6 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { TonConnectUIProvider } from '@tonconnect/ui-react';
-import { LanguageProvider } from './i18n/LanguageContext';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -16,9 +15,7 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <TonConnectUIProvider manifestUrl={manifestUrl}>
-      <LanguageProvider>
-        <App />
-      </LanguageProvider>
+      <App />
     </TonConnectUIProvider>
   </React.StrictMode>
 );

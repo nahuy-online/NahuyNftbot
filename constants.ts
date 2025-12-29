@@ -1,5 +1,8 @@
 import { PriceConfig } from './types';
 
+// Replace with your actual bot username without @
+export const BOT_USERNAME = 'nahuy_NFT_bot'; 
+
 // Prices per 1 Item (NFT or Attempt)
 export const NFT_PRICES: PriceConfig = {
   STARS: 2000,

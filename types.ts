@@ -1,7 +1,7 @@
 export enum Currency {
-  STARS = 'STARS',
   TON = 'TON',
-  USDT = 'USDT'
+  USDT = 'USDT',
+  STARS = 'STARS'
 }
 
 export interface PriceConfig {
@@ -13,6 +13,19 @@ export interface PriceConfig {
 export interface LockedNftItem {
   amount: number;
   unlockDate: number; // Timestamp
+}
+
+export type TransactionType = 'purchase' | 'win' | 'referral' | 'withdraw';
+
+export interface NftTransaction {
+  id: string;
+  type: TransactionType;
+  assetType: 'nft' | 'dice' | 'currency'; // What kind of asset changed
+  amount: number;
+  timestamp: number;
+  description: string;
+  currency?: Currency; // Currency used for payment (if purchase)
+  isLocked?: boolean; // If the resulting NFT is locked (requires *)
 }
 
 export interface UserProfile {

@@ -2,15 +2,17 @@ import React, { useState } from 'react';
 import { Currency } from '../types';
 import { NFT_PRICES, PACK_SIZES } from '../constants';
 import { purchaseItem } from '../services/mockApi';
+import { useTranslation } from '../i18n/LanguageContext';
 
 interface ShopProps {
   onPurchaseComplete: () => void;
 }
 
 export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
-  const [selectedCurrency, setSelectedCurrency] = useState<Currency>(Currency.STARS);
+  const [selectedCurrency, setSelectedCurrency] = useState<Currency>(Currency.TON);
   const [selectedPack, setSelectedPack] = useState<number>(1);
   const [loading, setLoading] = useState(false);
+  const { t } = useTranslation();
 
   const handleBuy = async () => {
     setLoading(true);
@@ -23,13 +25,13 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
         window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
       }
       
-      alert(`Successfully purchased ${selectedPack} NFT(s)!`);
+      alert(t('success_purchase', { count: selectedPack }));
       onPurchaseComplete();
     } catch (e) {
       if (window.Telegram?.WebApp?.HapticFeedback) {
         window.Telegram.WebApp.HapticFeedback.notificationOccurred('error');
       }
-      alert("Purchase failed");
+      alert(t('fail_purchase'));
     } finally {
       setLoading(false);
     }
@@ -39,12 +41,12 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
   const totalPrice = (pricePerUnit * selectedPack).toFixed(selectedCurrency === Currency.STARS ? 0 : 2);
 
   return (
-    <div className="p-5 space-y-8 pb-28 animate-fade-in">
+    <div className="p-5 space-y-8 pb-44 animate-fade-in">
       <div className="text-center space-y-2">
         <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-500">
-          Genesis Drop
+          {t('shop_title')}
         </h2>
-        <p className="text-gray-400 text-sm">Secure your spot in the ecosystem.</p>
+        <p className="text-gray-400 text-sm">{t('shop_subtitle')}</p>
       </div>
 
       {/* Image Showcase */}
@@ -58,14 +60,14 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
             <div className="absolute bottom-3 right-3 bg-white/10 backdrop-blur-md px-3 py-1 rounded-full text-xs font-medium border border-white/20">
-            Lazy Mint
+            {t('lazy_mint')}
             </div>
         </div>
       </div>
 
       {/* Currency Selector */}
       <div className="space-y-3">
-        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Select Currency</label>
+        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">{t('select_currency')}</label>
         <div className="grid grid-cols-3 gap-3">
           {(Object.values(Currency) as Currency[]).map((curr) => (
             <button
@@ -77,7 +79,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
                   : 'bg-gray-800/50 border-gray-700 text-gray-400 hover:bg-gray-700 hover:border-gray-600'
               }`}
             >
-              {curr}
+              {curr === Currency.STARS ? 'STARS*' : curr}
               {selectedCurrency === curr && (
                 <div className="absolute -top-2 -right-2 w-4 h-4 bg-green-500 rounded-full border-2 border-gray-900"></div>
               )}
@@ -88,7 +90,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
             <div className="flex items-start gap-2 bg-yellow-500/10 border border-yellow-500/20 p-3 rounded-lg">
                 <span className="text-yellow-500 text-lg">⚠️</span>
                 <p className="text-xs text-yellow-200/80 leading-tight pt-1">
-                    NFTs bought with Stars are locked for 21 days due to store policies.
+                    {t('locked_warning')}
                 </p>
             </div>
         )}
@@ -96,13 +98,13 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
 
       {/* Pack Selector */}
       <div className="space-y-3">
-        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Quantity</label>
-        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">{t('quantity')}</label>
+        <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide snap-x">
           {PACK_SIZES.map((size) => (
             <button
               key={size}
               onClick={() => setSelectedPack(size)}
-              className={`flex-1 min-w-[60px] py-4 rounded-xl text-sm font-bold border transition-all duration-200 ${
+              className={`flex-1 min-w-[70px] py-4 rounded-xl text-sm font-bold border transition-all duration-200 snap-center ${
                 selectedPack === size
                   ? 'bg-purple-600 border-purple-400 text-white shadow-lg transform -translate-y-1'
                   : 'bg-gray-800/50 border-gray-700 text-gray-400 hover:bg-gray-700'
@@ -115,10 +117,10 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
       </div>
 
       {/* Summary & Action */}
-      <div className="fixed bottom-[80px] left-0 right-0 p-4 bg-gray-900/90 backdrop-blur-lg border-t border-white/10">
+      <div className="fixed bottom-[65px] left-0 right-0 p-4 bg-gray-900/95 backdrop-blur-lg border-t border-white/10 z-40 pb-safe">
         <div className="max-w-md mx-auto flex gap-4 items-center">
             <div className="flex-1">
-                <div className="text-xs text-gray-400 uppercase">Total</div>
+                <div className="text-xs text-gray-400 uppercase">{t('total')}</div>
                 <div className="text-xl font-bold text-white leading-none">
                     {totalPrice} <span className="text-sm font-medium text-gray-400">{selectedCurrency}</span>
                 </div>
@@ -138,7 +140,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
             ) : (
-                `Purchase`
+                t('purchase_btn')
             )}
             </button>
         </div>
