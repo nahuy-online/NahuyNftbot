@@ -42,26 +42,12 @@ const App: React.FC = () => {
         window.Telegram.WebApp.expand();
         window.Telegram.WebApp.enableClosingConfirmation();
     }
-
-    // --- FIX: SHARED WALLET ISSUE ---
-    // If the Telegram User ID has changed since the last session, disconnect the wallet.
-    const currentUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
-    const storedUserId = localStorage.getItem('nft_app_last_user_id');
-
-    if (currentUserId && storedUserId && String(currentUserId) !== String(storedUserId)) {
-        console.log("User changed, disconnecting wallet...");
-        if (tonConnectUI.connected) {
-            tonConnectUI.disconnect();
-        }
-    }
     
-    if (currentUserId) {
-        localStorage.setItem('nft_app_last_user_id', String(currentUserId));
-    }
-    // --------------------------------
+    // Note: We no longer need manual disconnect logic here.
+    // The UserScopedStorage in index.tsx handles separating wallet sessions per Telegram User ID.
 
     loadData();
-  }, []);
+  }, [tonConnectUI]);
 
   if (!user) {
     return (
