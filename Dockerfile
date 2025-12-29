@@ -1,21 +1,23 @@
-# Этап 1: Сборка React приложения
-FROM node:18-alpine as build
+# Используем легкий образ Node.js
+FROM node:20-alpine
+
+# Устанавливаем рабочую директорию
 WORKDIR /app
-COPY package.json package-lock.json* ./
+
+# Копируем файлы зависимостей
+COPY package*.json ./
+
+# Устанавливаем зависимости
 RUN npm install
+
+# Копируем исходный код
 COPY . .
+
+# Собираем проект (создает папку dist)
 RUN npm run build
 
-# Этап 2: Запуск Nginx
-FROM nginx:alpine
-# Удаляем дефолтный конфиг, чтобы не мешал
-RUN rm -rf /etc/nginx/conf.d/default.conf
-
-# Копируем статику
-COPY --from=build /app/dist /usr/share/nginx/html
-
-# ВАЖНО: Копируем наш конфиг в основной файл конфигурации Nginx
-COPY nginx.conf /etc/nginx/nginx.conf
-
+# Открываем 80 порт
 EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+
+# Запускаем предпросмотр Vite на 80 порту (он поддерживает проксирование API)
+CMD ["npm", "run", "preview"]
