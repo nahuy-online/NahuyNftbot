@@ -5,6 +5,7 @@ import { Profile } from './components/Profile';
 import { UserProfile, Tab } from './types';
 import { fetchUserProfile } from './services/mockApi';
 import { useTranslation } from './i18n/LanguageContext';
+import { useTonConnectUI } from '@tonconnect/ui-react';
 
 // Simple SVG Icons for Navigation
 const Icons = {
@@ -23,6 +24,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('shop');
   const [user, setUser] = useState<UserProfile | null>(null);
   const { t } = useTranslation();
+  const [tonConnectUI] = useTonConnectUI();
 
   const loadData = async () => {
     try {
@@ -40,6 +42,24 @@ const App: React.FC = () => {
         window.Telegram.WebApp.expand();
         window.Telegram.WebApp.enableClosingConfirmation();
     }
+
+    // --- FIX: SHARED WALLET ISSUE ---
+    // If the Telegram User ID has changed since the last session, disconnect the wallet.
+    const currentUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+    const storedUserId = localStorage.getItem('nft_app_last_user_id');
+
+    if (currentUserId && storedUserId && String(currentUserId) !== String(storedUserId)) {
+        console.log("User changed, disconnecting wallet...");
+        if (tonConnectUI.connected) {
+            tonConnectUI.disconnect();
+        }
+    }
+    
+    if (currentUserId) {
+        localStorage.setItem('nft_app_last_user_id', String(currentUserId));
+    }
+    // --------------------------------
+
     loadData();
   }, []);
 

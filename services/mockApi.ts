@@ -1,12 +1,17 @@
 import { UserProfile, Currency, NftTransaction, PaymentInitResponse } from '../types';
 
 const API_BASE = '/api'; 
-const BASE_STORAGE_KEY = 'nft_app_db_v3';
+const BASE_STORAGE_KEY = 'nft_app_db_v5'; // Bump version
 
-// --- HELPER: LOCAL STORAGE DB (Now User Specific) ---
+// --- HELPER: LOCAL STORAGE DB ---
 
 const getUserId = (): number => {
-    return window.Telegram?.WebApp?.initDataUnsafe?.user?.id || 12345;
+    // Force fresh read of initData
+    if (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) {
+        return window.Telegram.WebApp.initDataUnsafe.user.id;
+    }
+    // Fallback for browser testing
+    return 12345;
 };
 
 const getStorageKey = (userId: number) => `${BASE_STORAGE_KEY}_${userId}`;
@@ -21,7 +26,7 @@ const getInitialData = (userId: number): UserProfile => ({
         lockedDetails: [] 
     },
     diceBalance: { 
-        available: 5, // Give 5 free attempts at start
+        available: 5, 
         starsAttempts: 0, 
         used: 0 
     },
@@ -63,16 +68,14 @@ const addTransaction = (userId: number, tx: Partial<NftTransaction>) => {
     };
     
     txs.unshift(newTx);
-    localStorage.setItem(key, JSON.stringify(txs.slice(0, 50))); // Keep last 50
+    localStorage.setItem(key, JSON.stringify(txs.slice(0, 50))); 
 };
 
 // --- MOCK LOGIC HANDLERS ---
 
 const handleMockFallback = async (endpoint: string, method: string, body?: any) => {
-    // Simulate network delay
     await new Promise(r => setTimeout(r, 600));
 
-    // CRITICAL: Always use the ID from the request or current context to separate users
     const userId = body?.id || getUserId();
     const db = getLocalDb(userId);
 
@@ -92,15 +95,14 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
     if (endpoint.includes('/payment/create')) {
         const isStars = body.currency === 'STARS';
         
-        // Fix for TON Error: providing a valid dummy transaction structure
-        // This simulates a transfer of 0.05 TON to a burn address
+        // Use a generic valid address for Mock.
+        // In real backend it uses process.env.RECEIVER_TON_ADDRESS_TESTNET
         const tonTransaction = {
             validUntil: Math.floor(Date.now() / 1000) + 600, // 10 min
             messages: [
                 {
-                    address: "0QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC", // Null/Burn address for test
-                    amount: "50000000", // 0.05 TON in nanotons
-                    payload: "" // Optional comment
+                    address: "0QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC", // Null address for mock safety or replace with a valid testnet format if wallet requires
+                    amount: "10000000" // 0.01 TON
                 }
             ]
         };
@@ -113,7 +115,7 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
         };
     }
 
-    // 4. VERIFY PAYMENT (Purchase Logic)
+    // 4. VERIFY PAYMENT
     if (endpoint.includes('/payment/verify')) {
         const { type, amount, currency } = body;
         
@@ -143,7 +145,7 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
         return true;
     }
 
-    // 5. ROLL DICE (Game Logic)
+    // 5. ROLL DICE
     if (endpoint.includes('/roll')) {
         if (db.diceBalance.available <= 0) {
             throw new Error("No attempts left");
@@ -154,18 +156,14 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
         db.diceBalance.available -= 1;
         db.diceBalance.used += 1;
 
-        // Check if this was a "Stars Attempt"
         let isStarsAttempt = false;
         if (db.diceBalance.starsAttempts > 0) {
             db.diceBalance.starsAttempts -= 1;
             isStarsAttempt = true;
         }
 
-        // Winning Logic
-        let winAmount = 0;
-        if (roll === 6) winAmount = 5; // Jackpot
-        else if (roll === 5) winAmount = 3;
-        else if (roll === 4) winAmount = 1;
+        // EXACT LOGIC: 6=6, 5=5, ... 1=1
+        const winAmount = roll;
 
         if (winAmount > 0) {
             db.nftBalance.total += winAmount;
@@ -225,18 +223,14 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
   }
 
   try {
-    // Attempt real fetch first
     const response = await fetch(url, config);
     if (!response.ok) throw new Error("Backend error");
     return await response.json();
   } catch (error: any) {
-    console.log(`📡 Using local logic for ${endpoint} (User: ${userId})`);
-    // Explicitly pass userId logic inside fallback
+    // Fallback to local
     return handleMockFallback(endpoint, method, { id: userId, ...body });
   }
 };
-
-// --- EXPORTS ---
 
 export const fetchUserProfile = async (): Promise<UserProfile> => {
     return await apiRequest('/user');

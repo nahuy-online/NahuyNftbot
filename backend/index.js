@@ -133,7 +133,7 @@ if (BOT_TOKEN) {
     console.warn("⚠️ BOT_TOKEN not set.");
 }
 
-// --- CORE LOGIC (Simplified) ---
+// --- CORE LOGIC ---
 
 async function getUser(id, username) {
     try {
@@ -170,7 +170,6 @@ async function getUser(id, username) {
 }
 
 async function processPurchase(userId, type, packSize, currency, txId) {
-    // ... same logic as before ...
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -225,7 +224,6 @@ app.get('/api/user', async (req, res) => {
 });
 
 app.post('/api/payment/create', async (req, res) => {
-    // ... kept simple, same as before ...
     const { id, type, amount, currency } = req.body;
     if (currency === 'STARS') {
         try {
@@ -236,22 +234,87 @@ app.post('/api/payment/create', async (req, res) => {
              res.json({ ok: true, currency: 'STARS', invoiceLink: link });
         } catch(e) { res.status(500).json({ok: false}); }
     } else {
-        res.json({ ok: true, currency: 'TON', transaction: { validUntil: 0, messages: [] } }); // Simplified for brevity
+        // Use environment variable for address
+        const tonTransaction = {
+            validUntil: Math.floor(Date.now() / 1000) + 600, // 10 min
+            messages: [
+                {
+                    address: TON_WALLET, // Using ENV Variable
+                    amount: "10000000" // 0.01 TON
+                }
+            ]
+        };
+        res.json({ ok: true, currency: 'TON', transaction: tonTransaction });
     }
 });
 
-// Mock other routes for stability if needed, but the main ones are above
+// REAL DICE LOGIC
 app.post('/api/roll', async (req, res) => {
     const { id } = req.body;
-    // ... DB logic ...
-    // Fallback simple roll if DB fails
-    res.json({ roll: Math.floor(Math.random() * 6) + 1 });
+    
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        
+        // 1. Check Balance
+        const userRes = await client.query('SELECT dice_available, dice_stars_attempts FROM users WHERE id = $1 FOR UPDATE', [id]);
+        if (userRes.rows.length === 0) throw new Error("User not found");
+        
+        const user = userRes.rows[0];
+        if (user.dice_available <= 0) {
+             throw new Error("No attempts");
+        }
+
+        // 2. Logic: Deduct Attempt
+        let isStarsAttempt = false;
+        let newDiceCount = user.dice_available - 1;
+        let newStarsCount = user.dice_stars_attempts;
+        
+        // Consume stars attempts first or if they exist
+        if (newStarsCount > 0) {
+            newStarsCount--;
+            isStarsAttempt = true;
+        }
+
+        await client.query('UPDATE users SET dice_available = $1, dice_stars_attempts = $2, dice_used = dice_used + 1 WHERE id = $3', [newDiceCount, newStarsCount, id]);
+
+        // 3. Roll Logic (1-6)
+        const roll = Math.floor(Math.random() * 6) + 1;
+        const winAmount = roll; // EXACT 1:1 MAPPING
+
+        // 4. Award NFT
+        if (winAmount > 0) {
+            if (isStarsAttempt) {
+                 const unlockDate = Date.now() + (21 * 24 * 60 * 60 * 1000);
+                 await client.query('UPDATE users SET nft_total = nft_total + $1, nft_locked = nft_locked + $1 WHERE id = $2', [winAmount, id]);
+                 await client.query('INSERT INTO locked_nfts (user_id, amount, unlock_date) VALUES ($1, $2, $3)', [id, winAmount, unlockDate]);
+            } else {
+                 await client.query('UPDATE users SET nft_total = nft_total + $1, nft_available = nft_available + $1 WHERE id = $2', [winAmount, id]);
+            }
+            
+            // Record Transaction
+            await client.query(`
+                INSERT INTO transactions (user_id, type, asset_type, amount, currency, description, is_locked)
+                VALUES ($1, 'win', 'nft', $2, NULL, $3, $4)
+            `, [id, winAmount, `Won on Roll ${roll}`, isStarsAttempt]);
+        }
+
+        await client.query('COMMIT');
+        res.json({ roll });
+        
+    } catch (e) {
+        await client.query('ROLLBACK');
+        console.error("Roll error", e);
+        res.status(500).json({ error: e.message });
+    } finally {
+        client.release();
+    }
 });
 
 app.get('/api/history', async (req, res) => {
     try {
         const { id } = req.query;
-        const result = await pool.query('SELECT * FROM transactions WHERE user_id = $1 LIMIT 10', [id]);
+        const result = await pool.query('SELECT * FROM transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 10', [id]);
         res.json(result.rows.map(r => ({
              id: r.id.toString(), type: r.type, assetType: r.asset_type, amount: r.amount, 
              timestamp: new Date(r.created_at).getTime(), description: r.description, currency: r.currency, isLocked: r.is_locked

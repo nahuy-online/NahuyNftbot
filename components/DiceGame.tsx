@@ -10,7 +10,7 @@ interface DiceGameProps {
   onUpdate: () => void;
 }
 
-// Visual Effects Components (Unchanged)
+// Visual Effects Components
 const FireworksEffect = () => {
     const particles = Array.from({ length: 50 }).map((_, i) => {
         let angle;
@@ -110,7 +110,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
         const rollPromise = rollDice();
         const [, result] = await Promise.all([delayPromise, rollPromise]);
         
-        // 3D Rotation Logic (unchanged)
+        // 3D Rotation Logic
         const faceRotations: Record<number, {x: number, y: number}> = {
             1: { x: 0, y: 0 }, 2: { x: 0, y: 90 }, 3: { x: -90, y: 0 },
             4: { x: 90, y: 0 }, 5: { x: 0, y: -90 }, 6: { x: 180, y: 0 }
@@ -157,7 +157,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
         // 2. Execute Payment
         if (selectedCurrency === Currency.STARS && paymentData.invoiceLink) {
              await new Promise<void>((resolve, reject) => {
-                 // Detect Mock Link to avoid "Invoice url is invalid" error in WebApp
+                 // Detect Mock Link
                  const isMock = paymentData.invoiceLink === "https://t.me/$";
                  
                  if (isMock) {
@@ -285,15 +285,22 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
     );
   }
 
-  // Result config logic (unchanged)
+  // --- LOGIC: Calculate actual win amount based on roll ---
+  // EXACT LOGIC: Roll value = Amount
+  const getWinAmount = (roll: number) => {
+      return roll; // 1->1, 2->2, ..., 6->6
+  };
+
+  // Result config logic
   const getResultConfig = (roll: number) => {
       if (roll === 6) return { bg: 'bg-gradient-to-r from-yellow-600 to-amber-500', border: 'border-yellow-300', shadow: 'shadow-[0_0_30px_rgba(250,204,21,0.5)]', text: t('win_jackpot'), subtext: t('win_legendary'), Effect: FireworksEffect, icon: '👑', iconAnim: 'animate-bounce' };
-      if (roll === 5) return { bg: 'bg-gradient-to-r from-purple-600 to-pink-500', border: 'border-pink-300', shadow: 'shadow-[0_0_25px_rgba(236,72,153,0.5)]', text: t('win_amazing'), subtext: t('win_epic'), Effect: ConfettiEffect, icon: '🎉', iconAnim: 'animate-spin-slow' };
-      if (roll === 4) return { bg: 'bg-gradient-to-r from-blue-600 to-cyan-500', border: 'border-cyan-300', shadow: 'shadow-[0_0_20px_rgba(34,211,238,0.5)]', text: t('win_great'), subtext: t('win_rare'), Effect: null, icon: '👍🏽', iconAnim: 'animate-bounce' };
-      return { bg: 'bg-gradient-to-r from-green-600 to-emerald-600', border: 'border-green-400', shadow: 'shadow-[0_0_15px_rgba(74,222,128,0.3)]', text: t('win_basic'), subtext: t('win_nice'), Effect: null, icon: '🤷🏽‍♂️', iconAnim: 'animate-pulse' };
+      if (roll >= 4) return { bg: 'bg-gradient-to-r from-purple-600 to-pink-500', border: 'border-pink-300', shadow: 'shadow-[0_0_25px_rgba(236,72,153,0.5)]', text: t('win_amazing'), subtext: t('win_epic'), Effect: ConfettiEffect, icon: '🎉', iconAnim: 'animate-spin-slow' };
+      // For 1, 2, 3
+      return { bg: 'bg-gradient-to-r from-green-600 to-emerald-600', border: 'border-green-400', shadow: 'shadow-[0_0_15px_rgba(74,222,128,0.3)]', text: t('win_basic'), subtext: t('win_nice'), Effect: null, icon: '🎲', iconAnim: 'animate-pulse' };
   };
 
   const resultConfig = lastRoll ? getResultConfig(lastRoll) : null;
+  const winAmount = lastRoll ? getWinAmount(lastRoll) : 0;
 
   return (
     <div className="p-4 flex flex-col items-center justify-center min-h-[75vh] pb-24 relative overflow-hidden">
@@ -332,7 +339,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
                             <span className="text-[10px] uppercase font-bold tracking-widest opacity-90">{resultConfig.subtext}</span>
                             <div className="flex items-baseline gap-1.5">
                                 <span className="text-2xl font-black italic tracking-wide whitespace-nowrap">{resultConfig.text}</span>
-                                {lastRoll > 0 && <span className="text-sm font-bold bg-white/20 px-1.5 rounded">+{lastRoll}</span>}
+                                {winAmount > 0 && <span className="text-sm font-bold bg-white/20 px-1.5 rounded">+{winAmount} NFT</span>}
                             </div>
                         </div>
                         <div className="shimmer opacity-30 rounded-2xl overflow-hidden pointer-events-none"></div>
