@@ -6,6 +6,7 @@ interface Window {
       enableClosingConfirmation: () => void;
       showAlert: (message: string) => void;
       openTelegramLink: (url: string) => void;
+      openInvoice: (url: string, callback?: (status: 'paid' | 'cancelled' | 'failed' | 'pending') => void) => void;
       HapticFeedback: {
         impactOccurred: (style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft') => void;
         notificationOccurred: (type: 'error' | 'success' | 'warning') => void;

@@ -54,3 +54,21 @@ export interface UserProfile {
 }
 
 export type Tab = 'shop' | 'dice' | 'profile';
+
+// --- PAYMENT TYPES ---
+
+export interface PaymentInitResponse {
+  ok: boolean;
+  currency: Currency;
+  // For Stars
+  invoiceLink?: string; 
+  // For TON/TonConnect
+  transaction?: {
+    validUntil: number;
+    messages: {
+      address: string;
+      amount: string; // nanotons
+      payload?: string; // base64 boc for comments/jettons
+    }[];
+  };
+}

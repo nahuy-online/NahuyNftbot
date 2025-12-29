@@ -1,61 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import { Currency, UserProfile } from '../types';
 import { DICE_ATTEMPT_PRICES, PACK_SIZES } from '../constants';
-import { purchaseItem, rollDice } from '../services/mockApi';
+import { createPayment, verifyPayment, rollDice } from '../services/mockApi';
 import { useTranslation } from '../i18n/LanguageContext';
+import { useTonConnectUI } from '@tonconnect/ui-react';
 
 interface DiceGameProps {
   user: UserProfile;
   onUpdate: () => void;
 }
 
-// Visual Effects Components
+// Visual Effects Components (Unchanged)
 const FireworksEffect = () => {
-    // Generate 50 particles
     const particles = Array.from({ length: 50 }).map((_, i) => {
-        // Safe Zone Logic: Avoid the top 60 degrees (-60 to -120) to not hit the cube
-        // Angles: 0 is Right, -90 is Up, 180/-180 is Left.
-        
         let angle;
-        // 50% go left-ish, 50% go right-ish
         if (Math.random() > 0.5) {
-            // Right Side: -60 to 10 degrees (Up-Right to slightly Down-Right)
             angle = (-60 + Math.random() * 70) * (Math.PI / 180);
         } else {
-            // Left Side: -120 to -190 degrees (Up-Left to slightly Down-Left)
             angle = (-120 - Math.random() * 70) * (Math.PI / 180);
         }
-
-        const distance = 120 + Math.random() * 180; // Large radius
+        const distance = 120 + Math.random() * 180; 
         const tx = Math.cos(angle) * distance;
         const ty = Math.sin(angle) * distance;
-        
         return { 
-            id: i, 
-            tx: `${tx}px`, 
-            ty: `${ty}px`, 
+            id: i, tx: `${tx}px`, ty: `${ty}px`, 
             color: ['#FFD700', '#FFA500', '#FFFFFF', '#FF4500', '#00FFFF'][Math.floor(Math.random() * 5)],
             delay: Math.random() * 0.5
         };
     });
-
     return (
-        // z-0 to place BEHIND the z-10 card
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
             {particles.map(p => (
-                <div 
-                    key={p.id} 
-                    className="firework-particle shadow-[0_0_10px_currentColor]"
-                    style={{ 
-                        '--tx': p.tx, 
-                        '--ty': p.ty,
-                        backgroundColor: p.color,
-                        color: p.color,
-                        animationDelay: `${p.delay}s`,
-                        width: Math.random() > 0.7 ? '4px' : '6px',
-                        height: Math.random() > 0.7 ? '4px' : '6px',
-                    } as React.CSSProperties} 
-                />
+                <div key={p.id} className="firework-particle shadow-[0_0_10px_currentColor]"
+                    style={{ '--tx': p.tx, '--ty': p.ty, backgroundColor: p.color, color: p.color, animationDelay: `${p.delay}s`, width: Math.random() > 0.7 ? '4px' : '6px', height: Math.random() > 0.7 ? '4px' : '6px' } as React.CSSProperties} />
             ))}
             <div className="absolute w-40 h-40 bg-yellow-400/10 blur-[60px] rounded-full animate-pulse z-0"></div>
         </div>
@@ -63,52 +40,28 @@ const FireworksEffect = () => {
 };
 
 const ConfettiEffect = () => {
-    // Generate 40 confetti pieces shooting in a V shape
     const pieces = Array.from({ length: 40 }).map((_, i) => {
         let angle;
-        // V-Shape Logic:
-        // Right Arm: -20 to -70 degrees
-        // Left Arm: -110 to -160 degrees
         if (Math.random() > 0.5) {
              angle = (-20 - Math.random() * 50) * (Math.PI / 180);
         } else {
              angle = (-160 + Math.random() * 50) * (Math.PI / 180);
         }
-
         const distance = 150 + Math.random() * 100;
         const tx = Math.cos(angle) * distance;
         const ty = Math.sin(angle) * distance;
         const rot = Math.random() * 720 - 360;
-
         return {
-            id: i,
-            tx: `${tx}px`,
-            ty: `${ty}px`,
-            rot: `${rot}deg`,
+            id: i, tx: `${tx}px`, ty: `${ty}px`, rot: `${rot}deg`,
             color: ['#F472B6', '#34D399', '#60A5FA', '#FBBF24', '#A78BFA'][i % 5],
-            delay: Math.random() * 0.3,
-            // Increase duration to 3.5s approx
-            duration: 3.5 + Math.random() 
+            delay: Math.random() * 0.3, duration: 3.5 + Math.random() 
         };
     });
-
     return (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
             {pieces.map(p => (
-                <div
-                    key={p.id}
-                    className="confetti-piece"
-                    style={{
-                        '--ctx': p.tx,
-                        '--cty': p.ty,
-                        '--crot': p.rot,
-                        backgroundColor: p.color,
-                        width: Math.random() > 0.5 ? '6px' : '4px',
-                        height: Math.random() > 0.5 ? '6px' : '10px',
-                        animationDelay: `${p.delay}s`,
-                        animationDuration: `${p.duration}s`
-                    } as React.CSSProperties}
-                />
+                <div key={p.id} className="confetti-piece"
+                    style={{ '--ctx': p.tx, '--cty': p.ty, '--crot': p.rot, backgroundColor: p.color, width: Math.random() > 0.5 ? '6px' : '4px', height: Math.random() > 0.5 ? '6px' : '10px', animationDelay: `${p.delay}s`, animationDuration: `${p.duration}s` } as React.CSSProperties} />
             ))}
         </div>
     );
@@ -120,13 +73,16 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
   const [lastRoll, setLastRoll] = useState<number | null>(null);
   const { t } = useTranslation();
   
-  // 3D Rotation State
+  // 3D Rotation
   const [rotation, setRotation] = useState<{x: number, y: number}>({ x: 0, y: 0 });
   
   // Buy State
   const [selectedCurrency, setSelectedCurrency] = useState<Currency>(Currency.TON);
   const [selectedPack, setSelectedPack] = useState<number>(1);
   const [buyLoading, setBuyLoading] = useState(false);
+  
+  // Wallet
+  const [tonConnectUI] = useTonConnectUI();
 
   useEffect(() => {
     if (!lastRoll) {
@@ -145,7 +101,6 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
 
     setRolling(true);
     setLastRoll(null);
-    
     if (window.Telegram?.WebApp?.HapticFeedback) {
         window.Telegram.WebApp.HapticFeedback.impactOccurred('medium');
     }
@@ -155,39 +110,23 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
         const rollPromise = rollDice();
         const [, result] = await Promise.all([delayPromise, rollPromise]);
         
+        // 3D Rotation Logic (unchanged)
         const faceRotations: Record<number, {x: number, y: number}> = {
-            1: { x: 0, y: 0 },
-            2: { x: 0, y: 90 },
-            3: { x: -90, y: 0 },
-            4: { x: 90, y: 0 },
-            5: { x: 0, y: -90 },
-            6: { x: 180, y: 0 }
+            1: { x: 0, y: 0 }, 2: { x: 0, y: 90 }, 3: { x: -90, y: 0 },
+            4: { x: 90, y: 0 }, 5: { x: 0, y: -90 }, 6: { x: 180, y: 0 }
         };
-
         const targetFace = faceRotations[result];
         const minSpins = 4;
-        const degPerSpin = 360;
-        const addDeg = minSpins * degPerSpin;
-
-        const currentX = rotation.x;
-        const currentY = rotation.y;
-
+        const addDeg = minSpins * 360;
         let nextX = targetFace.x;
-        while (nextX < currentX + addDeg) {
-            nextX += 360;
-        }
-
+        while (nextX < rotation.x + addDeg) nextX += 360;
         let nextY = targetFace.y;
-        while (nextY < currentY + addDeg) {
-            nextY += 360;
-        }
-
+        while (nextY < rotation.y + addDeg) nextY += 360;
         if (Math.random() > 0.5) nextX += 360;
         if (Math.random() > 0.5) nextY += 360;
 
         setRotation({ x: nextX, y: nextY });
 
-        // WAIT for CSS animation to finish (1.5s + small buffer)
         await new Promise(resolve => setTimeout(resolve, 1600));
 
         setLastRoll(result);
@@ -211,14 +150,60 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
   const handleBuyAttempts = async () => {
     setBuyLoading(true);
     try {
-        await purchaseItem('dice', selectedPack, selectedCurrency);
+        // 1. Create Payment
+        const paymentData = await createPayment('dice', selectedPack, selectedCurrency);
+        if (!paymentData.ok) throw new Error("Payment init failed");
+
+        // 2. Execute Payment
+        if (selectedCurrency === Currency.STARS && paymentData.invoiceLink) {
+             await new Promise<void>((resolve, reject) => {
+                 // Detect Mock Link to avoid "Invoice url is invalid" error in WebApp
+                 const isMock = paymentData.invoiceLink === "https://t.me/$";
+                 
+                 if (isMock) {
+                     console.log("Mock Payment Initiated");
+                     setTimeout(() => {
+                         const confirmed = window.confirm("Mock Payment (Stars): Confirm transaction?");
+                         if (confirmed) resolve(); 
+                         else reject(new Error("Cancelled"));
+                     }, 300);
+                     return;
+                 }
+
+                 if (window.Telegram?.WebApp) {
+                     window.Telegram.WebApp.openInvoice(paymentData.invoiceLink!, (status) => {
+                         if (status === 'paid') resolve();
+                         else reject(new Error("Invoice cancelled"));
+                     });
+                 } else {
+                     if(confirm("[MOCK] Pay with Stars?")) resolve(); else reject(new Error("Cancelled"));
+                 }
+             });
+        } else if (selectedCurrency !== Currency.STARS && paymentData.transaction) {
+             if (!tonConnectUI.connected) {
+                 alert(t('connect_first'));
+                 await tonConnectUI.openModal();
+                 setBuyLoading(false);
+                 return;
+             }
+             await tonConnectUI.sendTransaction(paymentData.transaction);
+        }
+
+        // 3. Verify
+        await verifyPayment('dice', selectedPack, selectedCurrency);
+
         if (window.Telegram?.WebApp?.HapticFeedback) {
             window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
         }
         alert(t('success_buy_attempts', { count: selectedPack }));
         onUpdate();
         setView('play');
-    } catch (e) {
+    } catch (e: any) {
+        if (e.message === 'Cancelled' || e.message === 'Invoice cancelled') {
+            console.log("Purchase cancelled by user");
+            return;
+        }
+        console.error(e);
         alert(t('fail_purchase'));
     } finally {
         setBuyLoading(false);
@@ -300,55 +285,12 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
     );
   }
 
-  // Determine styles based on roll result
+  // Result config logic (unchanged)
   const getResultConfig = (roll: number) => {
-      if (roll === 6) {
-          return {
-              bg: 'bg-gradient-to-r from-yellow-600 to-amber-500',
-              border: 'border-yellow-300',
-              shadow: 'shadow-[0_0_30px_rgba(250,204,21,0.5)]',
-              text: t('win_jackpot'),
-              subtext: t('win_legendary'),
-              Effect: FireworksEffect,
-              icon: '👑',
-              iconAnim: 'animate-bounce'
-          };
-      }
-      if (roll === 5) {
-          return {
-              bg: 'bg-gradient-to-r from-purple-600 to-pink-500',
-              border: 'border-pink-300',
-              shadow: 'shadow-[0_0_25px_rgba(236,72,153,0.5)]',
-              text: t('win_amazing'),
-              subtext: t('win_epic'),
-              Effect: ConfettiEffect,
-              icon: '🎉',
-              iconAnim: 'animate-spin-slow' 
-          };
-      }
-      if (roll === 4) {
-          return {
-              bg: 'bg-gradient-to-r from-blue-600 to-cyan-500',
-              border: 'border-cyan-300',
-              shadow: 'shadow-[0_0_20px_rgba(34,211,238,0.5)]', 
-              text: t('win_great'),
-              subtext: t('win_rare'),
-              Effect: null,
-              icon: '👍🏽',
-              iconAnim: 'animate-bounce' 
-          };
-      }
-      // 1-3
-      return {
-          bg: 'bg-gradient-to-r from-green-600 to-emerald-600',
-          border: 'border-green-400',
-          shadow: 'shadow-[0_0_15px_rgba(74,222,128,0.3)]',
-          text: t('win_basic'),
-          subtext: t('win_nice'),
-          Effect: null,
-          icon: '🤷🏽‍♂️',
-          iconAnim: 'animate-pulse'
-      };
+      if (roll === 6) return { bg: 'bg-gradient-to-r from-yellow-600 to-amber-500', border: 'border-yellow-300', shadow: 'shadow-[0_0_30px_rgba(250,204,21,0.5)]', text: t('win_jackpot'), subtext: t('win_legendary'), Effect: FireworksEffect, icon: '👑', iconAnim: 'animate-bounce' };
+      if (roll === 5) return { bg: 'bg-gradient-to-r from-purple-600 to-pink-500', border: 'border-pink-300', shadow: 'shadow-[0_0_25px_rgba(236,72,153,0.5)]', text: t('win_amazing'), subtext: t('win_epic'), Effect: ConfettiEffect, icon: '🎉', iconAnim: 'animate-spin-slow' };
+      if (roll === 4) return { bg: 'bg-gradient-to-r from-blue-600 to-cyan-500', border: 'border-cyan-300', shadow: 'shadow-[0_0_20px_rgba(34,211,238,0.5)]', text: t('win_great'), subtext: t('win_rare'), Effect: null, icon: '👍🏽', iconAnim: 'animate-bounce' };
+      return { bg: 'bg-gradient-to-r from-green-600 to-emerald-600', border: 'border-green-400', shadow: 'shadow-[0_0_15px_rgba(74,222,128,0.3)]', text: t('win_basic'), subtext: t('win_nice'), Effect: null, icon: '🤷🏽‍♂️', iconAnim: 'animate-pulse' };
   };
 
   const resultConfig = lastRoll ? getResultConfig(lastRoll) : null;
@@ -369,10 +311,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
           
           {/* 3D Dice Scene */}
           <div className="scene mb-8">
-            <div 
-                className="cube" 
-                style={{ transform: `translateZ(-50px) rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)` }}
-            >
+            <div className="cube" style={{ transform: `translateZ(-50px) rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)` }}>
                 <div className="cube-face face-1"><div className="dot-container">{renderDots(1)}</div></div>
                 <div className="cube-face face-2"><div className="dot-container">{renderDots(2)}</div></div>
                 <div className="cube-face face-3"><div className="dot-container">{renderDots(3)}</div></div>
@@ -386,35 +325,16 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
           <div className="h-24 mb-10 w-full flex items-center justify-center relative">
              {lastRoll && !rolling && resultConfig ? (
                 <div className="relative w-full flex justify-center items-center animate-pop-in">
-                    {/* Render specific background effect if present */}
                     {resultConfig.Effect && <resultConfig.Effect />}
-
-                    {/* Main Card */}
-                    <div className={`
-                        relative z-10 flex items-center gap-4 px-6 py-4 rounded-2xl border 
-                        ${resultConfig.bg} ${resultConfig.border} ${resultConfig.shadow}
-                        text-white transition-all duration-300 w-[90%] justify-center
-                        min-h-[86px]
-                    `}>
-                        <span className={`text-4xl filter drop-shadow-md ${resultConfig.iconAnim} leading-none flex items-center`}>
-                            {resultConfig.icon}
-                        </span>
+                    <div className={`relative z-10 flex items-center gap-4 px-6 py-4 rounded-2xl border ${resultConfig.bg} ${resultConfig.border} ${resultConfig.shadow} text-white transition-all duration-300 w-[90%] justify-center min-h-[86px]`}>
+                        <span className={`text-4xl filter drop-shadow-md ${resultConfig.iconAnim} leading-none flex items-center`}>{resultConfig.icon}</span>
                         <div className="flex flex-col items-start">
-                            <span className="text-[10px] uppercase font-bold tracking-widest opacity-90">
-                                {resultConfig.subtext}
-                            </span>
+                            <span className="text-[10px] uppercase font-bold tracking-widest opacity-90">{resultConfig.subtext}</span>
                             <div className="flex items-baseline gap-1.5">
-                                <span className="text-2xl font-black italic tracking-wide whitespace-nowrap">
-                                    {resultConfig.text}
-                                </span>
-                                {lastRoll > 0 && (
-                                    <span className="text-sm font-bold bg-white/20 px-1.5 rounded">
-                                        +{lastRoll}
-                                    </span>
-                                )}
+                                <span className="text-2xl font-black italic tracking-wide whitespace-nowrap">{resultConfig.text}</span>
+                                {lastRoll > 0 && <span className="text-sm font-bold bg-white/20 px-1.5 rounded">+{lastRoll}</span>}
                             </div>
                         </div>
-                        {/* Shimmer overlay for all wins */}
                         <div className="shimmer opacity-30 rounded-2xl overflow-hidden pointer-events-none"></div>
                     </div>
                 </div>

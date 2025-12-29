@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Currency } from '../types';
 import { NFT_PRICES, PACK_SIZES } from '../constants';
-import { purchaseItem } from '../services/mockApi';
+import { createPayment, verifyPayment } from '../services/mockApi';
 import { useTranslation } from '../i18n/LanguageContext';
+import { useTonConnectUI } from '@tonconnect/ui-react';
 
 interface ShopProps {
   onPurchaseComplete: () => void;
@@ -13,25 +14,85 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
   const [selectedPack, setSelectedPack] = useState<number>(1);
   const [loading, setLoading] = useState(false);
   const { t } = useTranslation();
+  const [tonConnectUI] = useTonConnectUI();
 
   const handleBuy = async () => {
     setLoading(true);
     try {
-      // Here we would integrate with Telegram Payments (Stars) or TonConnect (TON/USDT)
-      await purchaseItem('nft', selectedPack, selectedCurrency);
+      // 1. Init Payment (Get Invoice or Transaction Params)
+      const paymentData = await createPayment('nft', selectedPack, selectedCurrency);
+
+      if (!paymentData.ok) throw new Error("Failed to initiate payment");
+
+      // 2. Execute Payment
+      if (selectedCurrency === Currency.STARS && paymentData.invoiceLink) {
+         // --- TELEGRAM STARS ---
+         await new Promise<void>((resolve, reject) => {
+             // Detect Mock Link to avoid "Invoice url is invalid" error in WebApp
+             const isMock = paymentData.invoiceLink === "https://t.me/$";
+
+             if (isMock) {
+                 console.log("Mock Payment Initiated");
+                 // Use a slight delay to simulate network/UI
+                 setTimeout(() => {
+                     const confirmed = window.confirm("Mock Payment (Stars): Confirm transaction?");
+                     if (confirmed) resolve(); 
+                     else reject(new Error("Cancelled"));
+                 }, 300);
+                 return;
+             }
+
+             if (window.Telegram?.WebApp) {
+                 window.Telegram.WebApp.openInvoice(paymentData.invoiceLink!, (status) => {
+                     if (status === 'paid') {
+                         resolve();
+                     } else {
+                         reject(new Error("Invoice cancelled"));
+                     }
+                 });
+             } else {
+                 // Fallback for browser testing
+                 const confirmed = confirm("[MOCK] Pay with Stars?");
+                 if (confirmed) resolve(); else reject(new Error("Cancelled"));
+             }
+         });
+
+      } else if (selectedCurrency !== Currency.STARS && paymentData.transaction) {
+         // --- TON / USDT via TonConnect ---
+         if (!tonConnectUI.connected) {
+             alert(t('connect_first')); // "Please connect wallet"
+             await tonConnectUI.openModal();
+             // Stop here, user needs to connect first
+             setLoading(false); 
+             return;
+         }
+         
+         // Send Transaction to Wallet
+         await tonConnectUI.sendTransaction(paymentData.transaction);
+      }
+
+      // 3. Verify Payment on Backend
+      await verifyPayment('nft', selectedPack, selectedCurrency);
       
-      // Haptic feedback if available
+      // Success Feedback
       if (window.Telegram?.WebApp?.HapticFeedback) {
         window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
       }
       
       alert(t('success_purchase', { count: selectedPack }));
       onPurchaseComplete();
-    } catch (e) {
+
+    } catch (e: any) {
+      if (e.message === 'Cancelled' || e.message === 'Invoice cancelled') {
+          console.log("Payment flow cancelled by user.");
+          return;
+      }
+      
+      console.error(e);
       if (window.Telegram?.WebApp?.HapticFeedback) {
         window.Telegram.WebApp.HapticFeedback.notificationOccurred('error');
       }
-      alert(t('fail_purchase'));
+      alert(t('fail_purchase')); // Or show specific error msg
     } finally {
       setLoading(false);
     }
