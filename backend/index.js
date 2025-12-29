@@ -24,53 +24,65 @@ const PRICES = {
     dice: { STARS: 6666, TON: 0.015 }
 };
 
-// --- DATABASE ---
-// Fallback to localhost if DB_HOST is not set (for local dev)
-const pool = new pg.Pool({
-    user: process.env.DB_USER || 'user',
-    host: process.env.DB_HOST || 'localhost', 
-    database: process.env.DB_NAME || 'nft_db',
-    password: process.env.DB_PASSWORD || 'pass',
-    port: 5432,
-});
+// --- DATABASE CONFIGURATION ---
+// Priority: 1. Explicit DB_ vars -> 2. Dockhost Auto vars (POSTGRES_...) -> 3. Defaults
+const dbConfig = {
+    user: process.env.DB_USER || process.env.POSTGRES_POSTGRES_USER || 'user',
+    password: process.env.DB_PASSWORD || process.env.POSTGRES_POSTGRES_PASSWORD || 'pass',
+    database: process.env.DB_NAME || process.env.POSTGRES_POSTGRES_DB || 'nft_db',
+    host: process.env.DB_HOST || 'postgres', // Default service name in Dockhost
+    port: parseInt(process.env.DB_PORT || '5432'),
+    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+};
+
+console.log(`Attempting DB Connection to: ${dbConfig.host}:${dbConfig.port}, User: ${dbConfig.user}, DB: ${dbConfig.database}`);
+
+const pool = new pg.Pool(dbConfig);
 
 // Init DB
 const initDB = async () => {
-    try {
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS users (
-                id BIGINT PRIMARY KEY,
-                username TEXT,
-                nft_total INT DEFAULT 0,
-                nft_available INT DEFAULT 0,
-                nft_locked INT DEFAULT 0,
-                dice_available INT DEFAULT 5,
-                dice_stars_attempts INT DEFAULT 0,
-                dice_used INT DEFAULT 0,
-                wallet_address TEXT
-            );
-            CREATE TABLE IF NOT EXISTS transactions (
-                id SERIAL PRIMARY KEY,
-                user_id BIGINT,
-                type TEXT, -- 'purchase', 'win', 'withdraw'
-                asset_type TEXT, -- 'nft', 'dice'
-                amount INT,
-                currency TEXT,
-                description TEXT,
-                is_locked BOOLEAN DEFAULT FALSE,
-                tx_hash TEXT UNIQUE, -- For TON tx hash or Stars payment charge id
-                created_at TIMESTAMP DEFAULT NOW()
-            );
-            CREATE TABLE IF NOT EXISTS locked_nfts (
-                id SERIAL PRIMARY KEY,
-                user_id BIGINT,
-                amount INT,
-                unlock_date BIGINT
-            );
-        `);
-        console.log("DB Initialized");
-    } catch (err) {
-        console.error("DB Init Error:", err);
+    let retries = 5;
+    while (retries > 0) {
+        try {
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS users (
+                    id BIGINT PRIMARY KEY,
+                    username TEXT,
+                    nft_total INT DEFAULT 0,
+                    nft_available INT DEFAULT 0,
+                    nft_locked INT DEFAULT 0,
+                    dice_available INT DEFAULT 5,
+                    dice_stars_attempts INT DEFAULT 0,
+                    dice_used INT DEFAULT 0,
+                    wallet_address TEXT
+                );
+                CREATE TABLE IF NOT EXISTS transactions (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT,
+                    type TEXT,
+                    asset_type TEXT,
+                    amount INT,
+                    currency TEXT,
+                    description TEXT,
+                    is_locked BOOLEAN DEFAULT FALSE,
+                    tx_hash TEXT UNIQUE,
+                    created_at TIMESTAMP DEFAULT NOW()
+                );
+                CREATE TABLE IF NOT EXISTS locked_nfts (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT,
+                    amount INT,
+                    unlock_date BIGINT
+                );
+            `);
+            console.log("✅ DB Initialized Successfully");
+            break;
+        } catch (err) {
+            console.error(`❌ DB Init Error (Retries left: ${retries}):`, err.message);
+            retries -= 1;
+            // Wait 5 seconds before retry
+            await new Promise(res => setTimeout(res, 5000));
+        }
     }
 };
 initDB();
@@ -101,7 +113,7 @@ if (BOT_TOKEN) {
     // Add createInvoiceLink to app locals or helper if needed, but we use 'bot' directly in route
     app.locals.bot = bot;
 } else {
-    console.warn("BOT_TOKEN not set. Telegram features disabled.");
+    console.warn("⚠️ BOT_TOKEN not set. Telegram features disabled.");
 }
 
 // --- CORE LOGIC ---
@@ -183,7 +195,7 @@ app.get('/api/user', async (req, res) => {
         const user = await getUser(userId, username);
         res.json(user);
     } catch (e) {
-        console.error(e);
+        console.error("Get User Error:", e);
         res.status(500).json({ error: e.message });
     }
 });
