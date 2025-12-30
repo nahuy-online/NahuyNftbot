@@ -13,15 +13,16 @@ const API_TARGET = process.env.VITE_API_TARGET || 'http://backend:3001';
 console.log(`[Server] Starting on port ${PORT}...`);
 console.log(`[Server] Proxying /api requests to ${API_TARGET}`);
 
-app.use('/api', createProxyMiddleware({
+// Fix: Pass '/api' context directly to middleware to prevent Express from stripping the prefix.
+// Requests to /api/user will now forward as /api/user instead of /user.
+app.use(createProxyMiddleware('/api', {
     target: API_TARGET,
     changeOrigin: true,
     onProxyReq: (proxyReq, req, res) => {
-        // console.log(`[Proxy] ${req.method} ${req.originalUrl}`);
+        // console.log(`[Proxy] ${req.method} ${req.originalUrl} -> ${API_TARGET}${req.url}`);
     },
     onError: (err, req, res) => {
         console.error('[Proxy Error]', err);
-        // Return 502 with details to the client
         res.status(502).json({ 
             error: "Proxy Gateway Error", 
             message: "Cannot connect to Backend API",

@@ -530,5 +530,12 @@ app.get('/api/history', async (req, res) => {
 
 app.post('/api/withdraw', async (req, res) => res.json({ ok: true }));
 
+// --- ERROR HANDLING ---
+
+// 404 Handler for undefined routes
+app.use((req, res) => {
+    res.status(404).json({ error: "Backend 404", message: `Route not found: ${req.method} ${req.url}` });
+});
+
 // Bind to 0.0.0.0 to allow external access (Docker, etc.)
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Backend running on port ${PORT}`));
