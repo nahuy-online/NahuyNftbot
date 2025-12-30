@@ -3,9 +3,8 @@ import path from 'path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// Default to localhost for local dev, or use env var.
-// In Docker, you can set VITE_API_TARGET=http://backend:8080
-const apiUrl = process.env.VITE_API_TARGET || 'http://localhost:8080';
+// Default to localhost:3001 for local dev to avoid 8080 conflicts
+const apiUrl = process.env.VITE_API_TARGET || 'http://localhost:3001';
 
 const proxyConfig = {
   '/api': {
@@ -14,7 +13,7 @@ const proxyConfig = {
     secure: false,
     configure: (proxy, options) => {
         proxy.on('error', (err, req, res) => {
-            console.error("Proxy Connection Error to", apiUrl, ":", err);
+            console.error(`Proxy Connection Error to ${apiUrl} for ${req.url}:`, err);
         });
     }
   }
@@ -31,14 +30,12 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
-    proxy: proxyConfig,
-    allowedHosts: true
+    proxy: proxyConfig
   },
   // Production preview settings (Important for Docker)
   preview: {
     port: 80, // We serve on port 80 in the container
     host: true,
-    allowedHosts: true, // Allow dynamic Dockhost domains
     proxy: proxyConfig // Use the same proxy logic
   }
 });

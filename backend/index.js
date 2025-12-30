@@ -19,7 +19,8 @@ app.use(express.json());
 app.use(cors());
 
 // --- CONFIG ---
-const PORT = process.env.PORT || 8080;
+// Changed default port to 3001 to avoid conflicts with other services (Jenkins, Tomcat, etc.)
+const PORT = process.env.PORT || 3001;
 const BOT_TOKEN = process.env.BOT_TOKEN;
 
 // Default Testnet Wallet
@@ -41,7 +42,7 @@ const dbConfig = {
     user: process.env.DB_USER || process.env.POSTGRES_POSTGRES_USER || 'user',
     password: process.env.DB_PASSWORD || process.env.POSTGRES_POSTGRES_PASSWORD || 'pass',
     database: process.env.DB_NAME || process.env.POSTGRES_POSTGRES_DB || 'nft_db',
-    host: process.env.DB_HOST || 'postgres',
+    host: process.env.DB_HOST || 'localhost', // Default to localhost for local dev
     port: parseInt(process.env.DB_PORT || '5432'),
     ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
 };
@@ -107,7 +108,8 @@ const initDB = async () => {
             }
             break;
         } catch (err) {
-            console.error(`❌ DB Init Error:`, err.message);
+            console.error(`❌ DB Init Error (Host: ${dbConfig.host}):`, err.message);
+            console.log("Retrying DB connection in 5s...");
             retries -= 1;
             await new Promise(res => setTimeout(res, 5000));
         }
@@ -375,6 +377,9 @@ async function distributeReward(client, referrerId, currency, totalAmount, level
 
 // --- ROUTES ---
 
+// Health check route
+app.get('/api', (req, res) => res.send('NFT Backend API Running'));
+
 app.post('/api/debug/reset', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -519,4 +524,4 @@ app.get('/api/history', async (req, res) => {
 
 app.post('/api/withdraw', async (req, res) => res.json({ ok: true }));
 
-app.listen(PORT, () => console.log(`Backend running on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Backend running on port ${PORT}`));
