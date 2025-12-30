@@ -33,7 +33,28 @@ services:
       - PORT=3001
 
       # --- APP SETTINGS ---
-      # Pass these from the Host Environment (do not hardcode here if using secrets)
       - BOT_TOKEN
       - RECEIVER_TON_ADDRESS_TESTNET
       - TONAPI_KEY
+    depends_on:
+      - postgres
+
+  # DATABASE
+  postgres:
+    image: postgres:15-alpine
+    container_name: nft_db
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: nft_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d nft_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
