@@ -28,7 +28,9 @@ const App: React.FC = () => {
 
   const loadData = async () => {
     try {
-      const data = await fetchUserProfile();
+      // Extract Referral Parameter
+      const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+      const data = await fetchUserProfile(startParam);
       setUser(data);
     } catch (e) {
       console.error("Failed to load user", e);

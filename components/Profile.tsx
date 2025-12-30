@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, NftTransaction, Currency } from '../types';
-import { withdrawNFTWithAddress, fetchNftHistory } from '../services/mockApi';
+import { withdrawNFTWithAddress, fetchNftHistory, debugResetDb } from '../services/mockApi';
 import { TonConnectButton, useTonAddress } from '@tonconnect/ui-react';
 import { BOT_USERNAME } from '../constants';
 import { useTranslation } from '../i18n/LanguageContext';
@@ -108,6 +108,14 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
         console.error("Share failed", e);
         alert(t('share_error'));
     }
+  };
+
+  const handleDebugReset = async () => {
+      if(confirm("⚠️ DEBUG: ARE YOU SURE? THIS WILL WIPE ALL DATA.")) {
+          await debugResetDb();
+          alert("Database Cleared. Reloading...");
+          window.location.reload();
+      }
   };
 
   const formatTimeLeft = (target: number) => {
@@ -314,6 +322,16 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                   <span className="text-green-400">{user.referralStats.earnings.USDT} $</span>
              </div>
           </div>
+      </div>
+
+      {/* DEBUG BUTTON */}
+      <div className="pt-8 pb-4 flex justify-center opacity-50 hover:opacity-100 transition-opacity">
+          <button 
+            onClick={handleDebugReset}
+            className="text-[10px] font-mono text-red-500 border border-red-500/30 px-3 py-1 rounded hover:bg-red-500/10"
+          >
+              ⚠️ DEBUG: RESET DB
+          </button>
       </div>
       
       {/* --- HISTORY MODAL --- */}

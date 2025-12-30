@@ -22,6 +22,7 @@ interface Window {
           language_code?: string;
         };
         query_id?: string;
+        start_param?: string;
         auth_date?: number;
         hash?: string;
       };

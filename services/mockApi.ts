@@ -1,4 +1,5 @@
 import { UserProfile, Currency, NftTransaction, PaymentInitResponse } from '../types';
+import { NFT_PRICES, DICE_ATTEMPT_PRICES } from '../constants'; // Import constants for fallback calculation
 
 const API_BASE = '/api'; 
 const BASE_STORAGE_KEY = 'nft_app_db_v5'; // Bump version
@@ -26,7 +27,7 @@ const getInitialData = (userId: number): UserProfile => ({
         lockedDetails: [] 
     },
     diceBalance: { 
-        available: 5, 
+        available: 0, 
         starsAttempts: 0, 
         used: 0 
     },
@@ -79,8 +80,16 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
     const userId = body?.id || getUserId();
     const db = getLocalDb(userId);
 
+    // DEBUG RESET
+    if (endpoint.includes('/debug/reset')) {
+        console.log("MOCK RESET");
+        localStorage.clear();
+        return { ok: true };
+    }
+
     // 1. GET USER
     if (endpoint.includes('/user')) {
+        // In mock mode, we don't process referrals, but we return the user object
         return db;
     }
 
@@ -93,24 +102,33 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
 
     // 3. CREATE PAYMENT
     if (endpoint.includes('/payment/create')) {
-        const isStars = body.currency === 'STARS';
+        const { type, amount, currency } = body;
+        const isStars = currency === 'STARS';
         
         // --- FIX: Use user's specific testnet wallet ---
         const mockAddress = "0QBycgJ7cxTLe4Y84HG6tOGQgf-284Es4zJzVJM8R2h1U_av";
+
+        // --- FIX: Calculate actual amount for Mock Transaction ---
+        let unitPrice = 0;
+        if (type === 'nft') unitPrice = NFT_PRICES[currency as Currency];
+        else unitPrice = DICE_ATTEMPT_PRICES[currency as Currency];
+
+        const totalTon = unitPrice * amount;
+        const nanoTons = Math.round(totalTon * 1000000000).toString();
 
         const tonTransaction = {
             validUntil: Math.floor(Date.now() / 1000) + 3600, // 1 hour validity
             messages: [
                 {
                     address: mockAddress, 
-                    amount: "10000000" // 0.01 TON
+                    amount: nanoTons // Dynamic amount
                 }
             ]
         };
 
         return { 
             ok: true, 
-            currency: body.currency, 
+            currency: currency, 
             invoiceLink: isStars ? 'https://t.me/$' : undefined,
             transaction: !isStars ? tonTransaction : undefined
         };
@@ -233,8 +251,15 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
   }
 };
 
-export const fetchUserProfile = async (): Promise<UserProfile> => {
-    return await apiRequest('/user');
+export const debugResetDb = async (): Promise<void> => {
+    await apiRequest('/debug/reset', 'POST');
+};
+
+export const fetchUserProfile = async (refId?: string): Promise<UserProfile> => {
+    // Append refId if provided
+    let url = '/user';
+    if (refId) url += `?refId=${refId}`;
+    return await apiRequest(url);
 };
 
 export const fetchNftHistory = async (): Promise<NftTransaction[]> => {
