@@ -139,12 +139,22 @@ if (BOT_TOKEN) {
             }
         }
         if (msg.text && msg.text.startsWith('/start')) {
-            // Handle Start Link directly in bot for better UX (optional)
-            bot.sendMessage(msg.chat.id, "Welcome! Open the Mini App to start.", {
+            const chatId = msg.chat.id;
+            const args = msg.text.split(' ');
+            const refParam = args.length > 1 ? args[1] : null;
+            
+            // Construct direct app link to preserve params
+            // Note: In local dev or some clients, startapp params might still be tricky,
+            // but this is the standard way.
+            const opts = {
                 reply_markup: {
-                    inline_keyboard: [[{ text: "Open App", web_app: { url: "https://t.me/nahuy_NFT_bot/app" } }]]
+                    inline_keyboard: [[{ 
+                        text: "🚀 Open NFT App", 
+                        web_app: { url: "https://t.me/nahuy_NFT_bot/app" + (refParam ? `?startapp=${refParam}` : "") } 
+                    }]]
                 }
-            });
+            };
+            bot.sendMessage(chatId, "Welcome! Click below to enter the ecosystem.", opts);
         }
     });
     app.locals.bot = bot;
@@ -159,6 +169,7 @@ function generateReferralCode() {
 async function getUser(id, username, incomingRefCode) {
     const client = await pool.connect();
     let debugLog = [];
+    let isNewUser = false;
     
     try {
         debugLog.push(`Processing User ${id}. Incoming Code: "${incomingRefCode}"`);
@@ -166,7 +177,7 @@ async function getUser(id, username, incomingRefCode) {
         // 1. Check if user exists (Select referrer_id too!)
         const checkRes = await client.query('SELECT id, referral_code, referrer_id FROM users WHERE id = $1', [id]);
         const existingUser = checkRes.rows[0];
-        const isNewUser = !existingUser;
+        isNewUser = !existingUser;
         
         let actualReferrerId = null;
         let myReferralCode = existingUser?.referral_code;
@@ -189,29 +200,20 @@ async function getUser(id, username, incomingRefCode) {
                      debugLog.push(`Found referrer by Code: ${actualReferrerId}`);
                 } else {
                      // B. If not found, try finding by User ID (Legacy)
-                     // STRICT CHECK: Only if string is pure digits
                      if (/^\d+$/.test(codeStr)) {
                          refCheck = await client.query('SELECT id FROM users WHERE id = $1', [codeStr]);
                          if (refCheck.rows.length > 0) {
                              actualReferrerId = refCheck.rows[0].id;
                              debugLog.push(`Found referrer by ID: ${actualReferrerId}`);
-                         } else {
-                             debugLog.push(`Ref ID ${codeStr} not found in DB`);
                          }
-                     } else {
-                         debugLog.push(`Ref Code ${codeStr} not found in DB`);
                      }
                 }
     
                 if (actualReferrerId && String(actualReferrerId) === String(id)) {
                     actualReferrerId = null; 
-                    debugLog.push("Self-referral detected after ID resolution");
+                    debugLog.push("Self-referral detected");
                 }
-            } else {
-                debugLog.push("Self-referral rejected early");
             }
-        } else {
-            debugLog.push("No valid incoming ref code");
         }
 
         // 3. Generate Referral Code for this user if missing
@@ -220,24 +222,25 @@ async function getUser(id, username, incomingRefCode) {
         }
 
         // 4. UPSERT LOGIC
+        // IMPORTANT: We only INSERT if isNewUser. 
+        // We only UPDATE referrer if it was null previously (Late Binding).
+        
         if (isNewUser) {
+            // Check if we are "registering" or just checking.
+            // For now, getUser acts as "Login/Register".
             debugLog.push(`Creating NEW user. RefID: ${actualReferrerId}`);
             await client.query(`
                 INSERT INTO users (id, username, referral_code, referrer_id) VALUES ($1, $2, $3, $4)
             `, [id, username, myReferralCode, actualReferrerId]);
         } else {
-            // User Exists - Check Late Binding
-            // We use loose comparison for null checks to be safe
+            // User Exists
             if (!existingUser.referrer_id && actualReferrerId) {
                 debugLog.push(`LATE BINDING: Linking ${id} to ${actualReferrerId}`);
                 await client.query(`
                     UPDATE users SET username = $1, referral_code = $2, referrer_id = $3 WHERE id = $4
                 `, [username, myReferralCode, actualReferrerId, id]);
             } else {
-                debugLog.push(`User exists. Current Ref: ${existingUser.referrer_id}. New Ref candidate: ${actualReferrerId}`);
-                await client.query(`
-                    UPDATE users SET username = $1, referral_code = $2 WHERE id = $3
-                `, [username, myReferralCode, id]);
+                await client.query(`UPDATE users SET username = $1, referral_code = $2 WHERE id = $3`, [username, myReferralCode, id]);
             }
         }
 
@@ -255,8 +258,9 @@ async function getUser(id, username, incomingRefCode) {
             id: parseInt(u.id),
             username: u.username,
             referralCode: u.referral_code,
+            isNewUser: isNewUser, // RETURN THIS FLAG
             referrerId: u.referrer_id ? parseInt(u.referrer_id) : null,
-            referralDebug: debugLog.join(" | "), // SEND DEBUG LOGS TO FRONTEND
+            referralDebug: debugLog.join(" | "),
             nftBalance: {
                 total: u.nft_total,
                 available: u.nft_available,
@@ -391,8 +395,6 @@ app.post('/api/debug/reset', async (req, res) => {
 app.get('/api/user', async (req, res) => {
     try {
         const userId = req.query.id;
-        // Just take the raw refId parameter (now a string code)
-        // Ensure we strip 'ref_' if frontend sent it, but 'abc' stays 'abc'
         const rawRef = req.query.refId;
         const refCode = rawRef ? rawRef.replace(/^ref_/, '') : null;
         
@@ -445,7 +447,6 @@ app.post('/api/payment/create', async (req, res) => {
     }
 });
 
-// IMPORTANT: This was previously a stub. Now it processes the purchase.
 app.post('/api/payment/verify', async (req, res) => {
     const { id, type, amount, currency } = req.body;
     
@@ -455,14 +456,7 @@ app.post('/api/payment/verify', async (req, res) => {
 
     try {
         console.log(`✅ Verifying TON Payment for User ${id}: ${amount} ${type}`);
-        
-        // In a real production environment, you should verify the transaction on blockchain
-        // using the user's wallet address or a comment/payload attached to the tx.
-        // For this demo, we assume the frontend (TonConnect) was successful.
-        
-        // Generate a pseudo-unique hash for this transaction since we don't have the real hash from frontend here
         const txId = `ton_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
         const success = await processPurchase(id, type, parseInt(amount), currency, txId);
         
         if (success) {

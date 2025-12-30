@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Shop } from './components/Shop';
 import { DiceGame } from './components/DiceGame';
 import { Profile } from './components/Profile';
+import { Welcome } from './components/Welcome';
 import { UserProfile, Tab } from './types';
 import { fetchUserProfile } from './services/mockApi';
 import { useTranslation } from './i18n/LanguageContext';
@@ -23,15 +24,29 @@ const Icons = {
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('shop');
   const [user, setUser] = useState<UserProfile | null>(null);
+  // Separate state to track if we are in the "onboarding" phase
+  const [isOnboarding, setIsOnboarding] = useState(false);
   const { t } = useTranslation();
   const [tonConnectUI] = useTonConnectUI();
 
-  const loadData = async () => {
+  const loadData = async (manualRefCode?: string) => {
     try {
-      // Extract Referral Parameter
-      const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+      // 1. Get Param from Telegram or Manual Override
+      const startParam = manualRefCode || window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+      
+      console.log("Loading data with param:", startParam);
+      
       const data = await fetchUserProfile(startParam);
       setUser(data);
+
+      // 2. Logic: If Backend says "isNewUser", we MUST show Onboarding
+      // UNLESS we just came from Onboarding (which passes manualRefCode).
+      if (data.isNewUser && !manualRefCode) {
+          setIsOnboarding(true);
+      } else {
+          setIsOnboarding(false);
+      }
+
     } catch (e) {
       console.error("Failed to load user", e);
     }
@@ -46,9 +61,10 @@ const App: React.FC = () => {
     }
     
     // Wallet session management is now handled by initSession() in index.tsx
-
     loadData();
   }, [tonConnectUI]);
+
+  // --- RENDERING ---
 
   if (!user) {
     return (
@@ -61,14 +77,28 @@ const App: React.FC = () => {
     );
   }
 
+  // SHOW ONBOARDING IF NEW USER
+  if (isOnboarding) {
+      return (
+          <Welcome 
+            initialRefParam={window.Telegram?.WebApp?.initDataUnsafe?.start_param}
+            onComplete={(code) => {
+                // When they click "Start", we reload data WITH the code they entered (or confirmed)
+                // This will hit backend again, perform Late Binding, and set isNewUser=false (or we just ignore it in UI)
+                loadData(code || "none"); // Send "none" string if empty to force backend update if needed, or just let it handle logic
+            }} 
+          />
+      );
+  }
+
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans selection:bg-blue-500/30">
       
       {/* Content Area */}
       <main className="max-w-md mx-auto min-h-screen relative">
-        {activeTab === 'shop' && <Shop onPurchaseComplete={loadData} />}
-        {activeTab === 'dice' && <DiceGame user={user} onUpdate={loadData} />}
-        {activeTab === 'profile' && <Profile user={user} onUpdate={loadData} />}
+        {activeTab === 'shop' && <Shop onPurchaseComplete={() => loadData()} />}
+        {activeTab === 'dice' && <DiceGame user={user} onUpdate={() => loadData()} />}
+        {activeTab === 'profile' && <Profile user={user} onUpdate={() => loadData()} />}
       </main>
 
       {/* Bottom Navigation */}

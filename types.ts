@@ -31,6 +31,7 @@ export interface NftTransaction {
 export interface UserProfile {
   id: number;
   username: string;
+  isNewUser?: boolean; // Trigger for Onboarding Screen
   referralCode?: string; // New Privacy-focused referral code
   referrerId?: number | null; // ID of the person who invited this user
   referralDebug?: string; // Debug info from backend about linking process
