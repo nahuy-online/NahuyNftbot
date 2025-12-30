@@ -16,17 +16,21 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   const [now, setNow] = useState(Date.now());
   const { t, language, setLanguage } = useTranslation();
   
+  // History Modal State
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<NftTransaction[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  // Debug State
   const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param || "none";
 
+  // Update timer every minute
   useEffect(() => {
       const interval = setInterval(() => setNow(Date.now()), 60000);
       return () => clearInterval(interval);
   }, []);
   
+  // Lock body scroll when modal is open
   useEffect(() => {
       if (showHistory) {
           document.body.style.overflow = 'hidden';
@@ -91,14 +95,17 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
 
   const handleInvite = () => {
     try {
+        // Use privacy-safe Referral Code if available, fallback to ID only if code is missing (shouldn't happen)
         const refParam = user.referralCode || `ref_${user.id}`;
         const inviteLink = `https://t.me/${BOT_USERNAME}?start=${refParam}`;
         const shareText = t('share_text', { amount: user.nftBalance.total });
         const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(shareText)}`;
 
+        // Attempt 1: Native Telegram WebApp Method for t.me links
         if (window.Telegram?.WebApp?.openTelegramLink) {
             window.Telegram.WebApp.openTelegramLink(shareUrl);
         } 
+        // Attempt 2: Standard Window Open (often intercepted by Telegram)
         else {
             window.open(shareUrl, '_blank');
         }
@@ -150,6 +157,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
 
   return (
     <div className="p-5 pb-24 space-y-6 animate-fade-in relative">
+      {/* User Header */}
       <div className="flex items-center space-x-4 pb-2 border-b border-gray-800">
         <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 flex items-center justify-center text-2xl font-bold shadow-lg ring-2 ring-white/10">
             {user.username ? user.username.charAt(0).toUpperCase() : 'U'}
@@ -162,7 +170,9 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
         </div>
       </div>
 
+      {/* Settings & Wallet Row */}
       <div className="space-y-3">
+        {/* Wallet Connect */}
         <div className="bg-gray-800/60 backdrop-blur-md rounded-2xl p-4 border border-white/5">
             <div className="flex justify-between items-center mb-3">
                 <span className="text-gray-400 text-sm font-medium">{t('connect_wallet')}</span>
@@ -173,6 +183,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
             </div>
         </div>
 
+        {/* Language Switcher */}
         <div className="bg-gray-800/60 backdrop-blur-md rounded-2xl p-3 border border-white/5 flex justify-between items-center">
              <span className="text-gray-400 text-sm font-medium ml-1">{t('language_settings')}</span>
              <div className="flex bg-gray-900 rounded-lg p-1 border border-white/5">
@@ -192,9 +203,11 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
         </div>
       </div>
 
+      {/* Assets Grid */}
       <div>
         <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3 ml-1">{t('assets')}</h3>
         <div className="grid grid-cols-2 gap-3">
+            {/* Total NFT - Clickable for History */}
             <div 
                 onClick={() => setShowHistory(true)}
                 className="bg-gray-800 p-4 rounded-2xl border border-white/5 flex flex-col justify-between h-28 cursor-pointer hover:bg-gray-750 active:scale-95 transition-all relative group"
@@ -211,6 +224,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                 </div>
             </div>
             
+            {/* Locked NFT */}
             <div className="bg-gray-800 p-4 rounded-2xl border border-yellow-500/20 flex flex-col justify-between h-28 relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-16 h-16 bg-yellow-500/10 rounded-bl-full -mr-8 -mt-8"></div>
                 <div className="text-yellow-500/80 text-xs font-bold uppercase z-10">{t('locked')}</div>
@@ -218,6 +232,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                 <div className="text-[10px] text-gray-500 font-medium z-10">{t('unlocks_gradually')}</div>
             </div>
 
+            {/* Dice Balance - New Card */}
             <div className="col-span-2 bg-gradient-to-r from-gray-800 to-gray-800/50 p-3 rounded-2xl border border-white/5 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center text-xl">
@@ -238,6 +253,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
         </div>
       </div>
 
+      {/* Withdrawal Action */}
       <div className="glass-panel p-5 rounded-2xl">
           <div className="flex justify-between items-end mb-4">
               <div>
@@ -258,6 +274,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           </button>
       </div>
 
+      {/* Locked Details Accordion-ish */}
       {user.nftBalance.lockedDetails && user.nftBalance.lockedDetails.length > 0 && (
           <div className="space-y-2">
               <h4 className="text-xs font-bold text-gray-500 uppercase ml-1">{t('vesting_schedule')}</h4>
@@ -279,6 +296,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           </div>
       )}
 
+      {/* Referral Program */}
       <div className="pt-4 border-t border-gray-800 pb-safe">
           <div className="flex justify-between items-baseline mb-4">
              <h3 className="font-bold text-lg">{t('referral_earnings')}</h3>
@@ -292,6 +310,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           </div>
           
           <div className="grid grid-cols-3 gap-2 mb-4">
+               {/* Using integer array to use the variable and avoid TS6133 */}
                {[1, 2, 3].map((level) => (
                    <div key={level} className="bg-gray-800 p-2 rounded-lg text-center border border-white/5">
                        <div className="text-[10px] text-gray-500 uppercase">{t('level')} {level}</div>
@@ -312,12 +331,11 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           </div>
       </div>
 
+      {/* --- DEBUG ZONE --- */}
       <div className="mt-8 p-4 bg-red-900/20 border border-red-500/30 rounded-xl space-y-3">
           <div className="flex items-center gap-2 mb-2 border-b border-red-500/20 pb-2">
             <span className="text-red-500 text-lg">🛠️</span>
-            <span className="text-xs font-bold text-red-400 uppercase tracking-widest">
-                Debug Zone
-            </span>
+            <span className="text-xs font-bold text-red-400 uppercase tracking-widest">Debug Zone</span>
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
@@ -351,8 +369,10 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           </button>
       </div>
       
+      {/* --- HISTORY MODAL --- */}
       {showHistory && (
           <div className="fixed inset-0 z-[60] bg-gray-900 flex flex-col animate-fade-in">
+              {/* Modal Header */}
               <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-gray-900/90 backdrop-blur-md">
                   <h2 className="text-lg font-bold flex items-center gap-2">
                       <span className="bg-blue-500/20 p-1.5 rounded-lg text-blue-400">
@@ -368,6 +388,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                   </button>
               </div>
               
+              {/* Modal Content */}
               <div className="flex-1 overflow-y-auto p-4">
                   {loadingHistory ? (
                       <div className="flex justify-center pt-10">
@@ -389,6 +410,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                                       <div>
                                           <div className="font-bold text-sm text-white flex items-center gap-1">
                                               {tx.description}
+                                              {/* Show currency for purchases */}
                                               {tx.type === 'purchase' && tx.currency && (
                                                 <span className={`text-[10px] px-1.5 py-0.5 rounded ml-1 font-medium ${
                                                     tx.currency === Currency.STARS ? 'bg-yellow-500/20 text-yellow-400' :
@@ -407,6 +429,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                                       <span className="text-xs opacity-70">
                                           {tx.assetType === 'dice' ? '🎲' : tx.assetType === 'nft' ? 'NFT' : ''}
                                       </span>
+                                      {/* Show asterisk for locked NFTs (purchased with stars or won with star attempts) */}
                                       {tx.assetType === 'nft' && tx.isLocked && (
                                           <span className="text-yellow-500 text-sm transform -translate-y-1">*</span>
                                       )}
@@ -414,6 +437,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                               </div>
                           ))}
                           
+                          {/* Footer note for locked items */}
                           {history.some(h => h.isLocked) && (
                               <div className="pt-2 text-[10px] text-gray-500 text-center">
                                   {t('locked_policy')}

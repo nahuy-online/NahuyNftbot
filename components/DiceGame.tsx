@@ -10,6 +10,7 @@ interface DiceGameProps {
   onUpdate: () => void;
 }
 
+// Visual Effects Components
 const FireworksEffect = () => {
     const particles = Array.from({ length: 50 }).map((_, i) => {
         let angle;
@@ -72,12 +73,15 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
   const [lastRoll, setLastRoll] = useState<number | null>(null);
   const { t } = useTranslation();
   
+  // 3D Rotation
   const [rotation, setRotation] = useState<{x: number, y: number}>({ x: 0, y: 0 });
   
+  // Buy State
   const [selectedCurrency, setSelectedCurrency] = useState<Currency>(Currency.TON);
   const [selectedPack, setSelectedPack] = useState<number>(1);
   const [buyLoading, setBuyLoading] = useState(false);
   
+  // Wallet
   const [tonConnectUI] = useTonConnectUI();
 
   useEffect(() => {
@@ -106,6 +110,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
         const rollPromise = rollDice();
         const [, result] = await Promise.all([delayPromise, rollPromise]);
         
+        // 3D Rotation Logic
         const faceRotations: Record<number, {x: number, y: number}> = {
             1: { x: 0, y: 0 }, 2: { x: 0, y: 90 }, 3: { x: -90, y: 0 },
             4: { x: 90, y: 0 }, 5: { x: 0, y: -90 }, 6: { x: 180, y: 0 }
@@ -145,18 +150,33 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
   const handleBuyAttempts = async () => {
     setBuyLoading(true);
     try {
+        // 1. Create Payment
         const paymentData = await createPayment('dice', selectedPack, selectedCurrency);
         if (!paymentData.ok) throw new Error("Payment init failed");
 
+        // 2. Execute Payment
         if (selectedCurrency === Currency.STARS && paymentData.invoiceLink) {
              await new Promise<void>((resolve, reject) => {
+                 // Detect Mock Link
+                 const isMock = paymentData.invoiceLink === "https://t.me/$";
+                 
+                 if (isMock) {
+                     console.log("Mock Payment Initiated");
+                     setTimeout(() => {
+                         const confirmed = window.confirm("Mock Payment (Stars): Confirm transaction?");
+                         if (confirmed) resolve(); 
+                         else reject(new Error("Cancelled"));
+                     }, 300);
+                     return;
+                 }
+
                  if (window.Telegram?.WebApp) {
                      window.Telegram.WebApp.openInvoice(paymentData.invoiceLink!, (status) => {
                          if (status === 'paid') resolve();
                          else reject(new Error("Invoice cancelled"));
                      });
                  } else {
-                     reject(new Error("Stars payment only available in Telegram"));
+                     if(confirm("[MOCK] Pay with Stars?")) resolve(); else reject(new Error("Cancelled"));
                  }
              });
         } else if (selectedCurrency !== Currency.STARS && paymentData.transaction) {
@@ -169,6 +189,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
              await tonConnectUI.sendTransaction(paymentData.transaction);
         }
 
+        // 3. Verify
         await verifyPayment('dice', selectedPack, selectedCurrency);
 
         if (window.Telegram?.WebApp?.HapticFeedback) {
@@ -179,6 +200,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
         setView('play');
     } catch (e: any) {
         if (e.message === 'Cancelled' || e.message === 'Invoice cancelled') {
+            console.log("Purchase cancelled by user");
             return;
         }
         console.error(e);
@@ -263,11 +285,17 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
     );
   }
 
-  const getWinAmount = (roll: number) => roll;
+  // --- LOGIC: Calculate actual win amount based on roll ---
+  // EXACT LOGIC: Roll value = Amount
+  const getWinAmount = (roll: number) => {
+      return roll; // 1->1, 2->2, ..., 6->6
+  };
 
+  // Result config logic
   const getResultConfig = (roll: number) => {
       if (roll === 6) return { bg: 'bg-gradient-to-r from-yellow-600 to-amber-500', border: 'border-yellow-300', shadow: 'shadow-[0_0_30px_rgba(250,204,21,0.5)]', text: t('win_jackpot'), subtext: t('win_legendary'), Effect: FireworksEffect, icon: '👑', iconAnim: 'animate-bounce' };
       if (roll >= 4) return { bg: 'bg-gradient-to-r from-purple-600 to-pink-500', border: 'border-pink-300', shadow: 'shadow-[0_0_25px_rgba(236,72,153,0.5)]', text: t('win_amazing'), subtext: t('win_epic'), Effect: ConfettiEffect, icon: '🎉', iconAnim: 'animate-spin-slow' };
+      // For 1, 2, 3
       return { bg: 'bg-gradient-to-r from-green-600 to-emerald-600', border: 'border-green-400', shadow: 'shadow-[0_0_15px_rgba(74,222,128,0.3)]', text: t('win_basic'), subtext: t('win_nice'), Effect: null, icon: '🎲', iconAnim: 'animate-pulse' };
   };
 
@@ -276,6 +304,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
 
   return (
     <div className="p-4 flex flex-col items-center justify-center min-h-[75vh] pb-24 relative overflow-hidden">
+      {/* Background Ambience */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-64 h-64 bg-green-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
       <div className="text-center mb-8 z-10">
@@ -287,6 +316,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
 
       <div className="flex flex-col items-center w-full max-w-xs z-10">
           
+          {/* 3D Dice Scene */}
           <div className="scene mb-8">
             <div className="cube" style={{ transform: `translateZ(-50px) rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)` }}>
                 <div className="cube-face face-1"><div className="dot-container">{renderDots(1)}</div></div>
@@ -298,6 +328,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
             </div>
           </div>
           
+          {/* Result Message Area */}
           <div className="h-24 mb-10 w-full flex items-center justify-center relative">
              {lastRoll && !rolling && resultConfig ? (
                 <div className="relative w-full flex justify-center items-center animate-pop-in">
@@ -324,6 +355,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
              )}
           </div>
 
+          {/* Controls */}
           <div className="w-full space-y-4">
             <button
                 onClick={handleRoll}

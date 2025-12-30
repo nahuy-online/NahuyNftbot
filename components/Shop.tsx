@@ -19,7 +19,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
   const handleBuy = async () => {
     setLoading(true);
     try {
-      // 1. Init Payment
+      // 1. Init Payment (Get Invoice or Transaction Params)
       const paymentData = await createPayment('nft', selectedPack, selectedCurrency);
 
       if (!paymentData.ok) throw new Error("Failed to initiate payment");
@@ -28,6 +28,20 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
       if (selectedCurrency === Currency.STARS && paymentData.invoiceLink) {
          // --- TELEGRAM STARS ---
          await new Promise<void>((resolve, reject) => {
+             // Detect Mock Link to avoid "Invoice url is invalid" error in WebApp
+             const isMock = paymentData.invoiceLink === "https://t.me/$";
+
+             if (isMock) {
+                 console.log("Mock Payment Initiated");
+                 // Use a slight delay to simulate network/UI
+                 setTimeout(() => {
+                     const confirmed = window.confirm("Mock Payment (Stars): Confirm transaction?");
+                     if (confirmed) resolve(); 
+                     else reject(new Error("Cancelled"));
+                 }, 300);
+                 return;
+             }
+
              if (window.Telegram?.WebApp) {
                  window.Telegram.WebApp.openInvoice(paymentData.invoiceLink!, (status) => {
                      if (status === 'paid') {
@@ -37,26 +51,30 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
                      }
                  });
              } else {
-                 alert("Telegram WebApp not available. Cannot pay with Stars.");
-                 reject(new Error("Environment error"));
+                 // Fallback for browser testing
+                 const confirmed = confirm("[MOCK] Pay with Stars?");
+                 if (confirmed) resolve(); else reject(new Error("Cancelled"));
              }
          });
 
       } else if (selectedCurrency !== Currency.STARS && paymentData.transaction) {
          // --- TON / USDT via TonConnect ---
          if (!tonConnectUI.connected) {
-             alert(t('connect_first'));
+             alert(t('connect_first')); // "Please connect wallet"
              await tonConnectUI.openModal();
+             // Stop here, user needs to connect first
              setLoading(false); 
              return;
          }
          
+         // Send Transaction to Wallet
          await tonConnectUI.sendTransaction(paymentData.transaction);
       }
 
-      // 3. Verify Payment
+      // 3. Verify Payment on Backend
       await verifyPayment('nft', selectedPack, selectedCurrency);
       
+      // Success Feedback
       if (window.Telegram?.WebApp?.HapticFeedback) {
         window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
       }
@@ -66,13 +84,15 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
 
     } catch (e: any) {
       if (e.message === 'Cancelled' || e.message === 'Invoice cancelled') {
+          console.log("Payment flow cancelled by user.");
           return;
       }
+      
       console.error(e);
       if (window.Telegram?.WebApp?.HapticFeedback) {
         window.Telegram.WebApp.HapticFeedback.notificationOccurred('error');
       }
-      alert(t('fail_purchase')); 
+      alert(t('fail_purchase')); // Or show specific error msg
     } finally {
       setLoading(false);
     }
@@ -90,6 +110,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
         <p className="text-gray-400 text-sm">{t('shop_subtitle')}</p>
       </div>
 
+      {/* Image Showcase */}
       <div className="relative mx-auto w-64 h-64">
         <div className="absolute inset-0 bg-blue-500 rounded-2xl blur-2xl opacity-20 animate-pulse"></div>
         <div className="relative aspect-square rounded-2xl overflow-hidden shadow-2xl border border-white/10 group">
@@ -105,6 +126,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
         </div>
       </div>
 
+      {/* Currency Selector */}
       <div className="space-y-3">
         <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">{t('select_currency')}</label>
         <div className="grid grid-cols-3 gap-3">
@@ -135,6 +157,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
         )}
       </div>
 
+      {/* Pack Selector */}
       <div className="space-y-3">
         <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">{t('quantity')}</label>
         <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide snap-x">
@@ -154,6 +177,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
         </div>
       </div>
 
+      {/* Summary & Action */}
       <div className="fixed bottom-[65px] left-0 right-0 p-4 bg-gray-900/95 backdrop-blur-lg border-t border-white/10 z-40 pb-safe">
         <div className="max-w-md mx-auto flex gap-4 items-center">
             <div className="flex-1">
