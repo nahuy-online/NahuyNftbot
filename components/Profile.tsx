@@ -20,9 +20,10 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<NftTransaction[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
-
+  
   // Debug State
   const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param || "none";
+  const [debugIdInput, setDebugIdInput] = useState('');
 
   // Update timer every minute
   useEffect(() => {
@@ -30,7 +31,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       return () => clearInterval(interval);
   }, []);
   
-  // Lock body scroll when modal is open
   useEffect(() => {
       if (showHistory) {
           document.body.style.overflow = 'hidden';
@@ -95,18 +95,16 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
 
   const handleInvite = () => {
     try {
-        // Use privacy-safe Referral Code if available, fallback to ID only if code is missing (shouldn't happen)
         const refParam = user.referralCode || `ref_${user.id}`;
-        const inviteLink = `https://t.me/${BOT_USERNAME}?start=${refParam}`;
+        // DIRECT LINK FORMAT: t.me/botname/appname?startapp=code
+        const directLink = `https://t.me/${BOT_USERNAME}/app?startapp=${refParam}`;
+        
         const shareText = t('share_text', { amount: user.nftBalance.total });
-        const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(shareText)}`;
+        const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(directLink)}&text=${encodeURIComponent(shareText)}`;
 
-        // Attempt 1: Native Telegram WebApp Method for t.me links
         if (window.Telegram?.WebApp?.openTelegramLink) {
             window.Telegram.WebApp.openTelegramLink(shareUrl);
-        } 
-        // Attempt 2: Standard Window Open (often intercepted by Telegram)
-        else {
+        } else {
             window.open(shareUrl, '_blank');
         }
     } catch (e) {
@@ -121,6 +119,13 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           alert("Database Cleared. Reloading...");
           window.location.reload();
       }
+  };
+  
+  const handleSwitchUser = () => {
+      if (!debugIdInput) return;
+      localStorage.setItem('debug_user_id', debugIdInput);
+      alert(`Switched to User ${debugIdInput}. Reloading...`);
+      window.location.reload();
   };
 
   const formatTimeLeft = (target: number) => {
@@ -170,9 +175,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
         </div>
       </div>
 
-      {/* Settings & Wallet Row */}
+      {/* Settings & Wallet */}
       <div className="space-y-3">
-        {/* Wallet Connect */}
         <div className="bg-gray-800/60 backdrop-blur-md rounded-2xl p-4 border border-white/5">
             <div className="flex justify-between items-center mb-3">
                 <span className="text-gray-400 text-sm font-medium">{t('connect_wallet')}</span>
@@ -182,23 +186,13 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                 <TonConnectButton className="w-full" />
             </div>
         </div>
-
-        {/* Language Switcher */}
+        
+        {/* Language */}
         <div className="bg-gray-800/60 backdrop-blur-md rounded-2xl p-3 border border-white/5 flex justify-between items-center">
              <span className="text-gray-400 text-sm font-medium ml-1">{t('language_settings')}</span>
              <div className="flex bg-gray-900 rounded-lg p-1 border border-white/5">
-                 <button 
-                    onClick={() => handleLanguageChange('en')} 
-                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all duration-200 ${language === 'en' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
-                 >
-                    EN
-                 </button>
-                 <button 
-                    onClick={() => handleLanguageChange('ru')} 
-                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all duration-200 ${language === 'ru' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
-                 >
-                    RU
-                 </button>
+                 <button onClick={() => handleLanguageChange('en')} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${language === 'en' ? 'bg-gray-700 text-white' : 'text-gray-500'}`}>EN</button>
+                 <button onClick={() => handleLanguageChange('ru')} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${language === 'ru' ? 'bg-gray-700 text-white' : 'text-gray-500'}`}>RU</button>
              </div>
         </div>
       </div>
@@ -207,48 +201,29 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       <div>
         <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3 ml-1">{t('assets')}</h3>
         <div className="grid grid-cols-2 gap-3">
-            {/* Total NFT - Clickable for History */}
-            <div 
-                onClick={() => setShowHistory(true)}
-                className="bg-gray-800 p-4 rounded-2xl border border-white/5 flex flex-col justify-between h-28 cursor-pointer hover:bg-gray-750 active:scale-95 transition-all relative group"
-            >
+            <div onClick={() => setShowHistory(true)} className="bg-gray-800 p-4 rounded-2xl border border-white/5 flex flex-col justify-between h-28 cursor-pointer relative group">
                 <div className="flex justify-between items-start">
                     <div className="text-gray-400 text-xs font-bold uppercase">{t('total_balance')}</div>
-                    <div className="bg-white/10 p-1 rounded-full opacity-50 group-hover:opacity-100 transition-opacity">
-                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
-                    </div>
+                    <div className="bg-white/10 p-1 rounded-full opacity-50"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 20v-6M6 20V10M18 20V4"/></svg></div>
                 </div>
                 <div className="text-3xl font-black text-white">{user.nftBalance.total} <span className="text-sm font-medium text-gray-500">NFT</span></div>
-                <div className="w-full h-1 bg-gray-700 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-500 w-full"></div>
-                </div>
+                <div className="w-full h-1 bg-gray-700 rounded-full overflow-hidden"><div className="h-full bg-blue-500 w-full"></div></div>
             </div>
-            
-            {/* Locked NFT */}
             <div className="bg-gray-800 p-4 rounded-2xl border border-yellow-500/20 flex flex-col justify-between h-28 relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-16 h-16 bg-yellow-500/10 rounded-bl-full -mr-8 -mt-8"></div>
                 <div className="text-yellow-500/80 text-xs font-bold uppercase z-10">{t('locked')}</div>
                 <div className="text-3xl font-black text-yellow-500 z-10">{user.nftBalance.locked} <span className="text-sm font-medium text-yellow-500/50">NFT</span></div>
                 <div className="text-[10px] text-gray-500 font-medium z-10">{t('unlocks_gradually')}</div>
             </div>
-
-            {/* Dice Balance - New Card */}
             <div className="col-span-2 bg-gradient-to-r from-gray-800 to-gray-800/50 p-3 rounded-2xl border border-white/5 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center text-xl">
-                        🎲
-                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center text-xl">🎲</div>
                     <div>
                         <div className="text-xs font-bold text-gray-400 uppercase">{t('game_attempts')}</div>
                         <div className="text-lg font-bold text-white">{user.diceBalance.available} {t('spins')}</div>
                     </div>
                 </div>
-                <button 
-                    onClick={() => onUpdate()} 
-                    className="text-xs bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg transition-colors text-gray-300"
-                >
-                   {t('available_btn')}
-                </button>
+                <button onClick={() => onUpdate()} className="text-xs bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg transition-colors text-gray-300">{t('available_btn')}</button>
             </div>
         </div>
       </div>
@@ -256,25 +231,14 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       {/* Withdrawal Action */}
       <div className="glass-panel p-5 rounded-2xl">
           <div className="flex justify-between items-end mb-4">
-              <div>
-                <span className="text-gray-300 font-medium text-sm block mb-1">{t('available_withdraw')}</span>
-                <span className="text-2xl font-bold text-green-400">{user.nftBalance.available} NFT</span>
-              </div>
+              <div><span className="text-gray-300 font-medium text-sm block mb-1">{t('available_withdraw')}</span><span className="text-2xl font-bold text-green-400">{user.nftBalance.available} NFT</span></div>
           </div>
-          <button 
-            onClick={handleWithdraw}
-            disabled={withdrawing || user.nftBalance.available === 0}
-            className={`w-full py-4 rounded-xl font-bold shadow-lg transition-transform active:scale-95 ${
-                user.nftBalance.available > 0 
-                ? 'bg-white text-black hover:bg-gray-100' 
-                : 'bg-gray-700 text-gray-500 cursor-not-allowed'
-            }`}
-          >
+          <button onClick={handleWithdraw} disabled={withdrawing || user.nftBalance.available === 0} className={`w-full py-4 rounded-xl font-bold shadow-lg transition-transform active:scale-95 ${user.nftBalance.available > 0 ? 'bg-white text-black hover:bg-gray-100' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}>
               {withdrawing ? t('withdraw_processing') : t('withdraw_btn')}
           </button>
       </div>
 
-      {/* Locked Details Accordion-ish */}
+      {/* Vesting */}
       {user.nftBalance.lockedDetails && user.nftBalance.lockedDetails.length > 0 && (
           <div className="space-y-2">
               <h4 className="text-xs font-bold text-gray-500 uppercase ml-1">{t('vesting_schedule')}</h4>
@@ -282,45 +246,33 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                   {user.nftBalance.lockedDetails.sort((a,b) => a.unlockDate - b.unlockDate).map((item, idx) => (
                       <div key={idx} className="flex justify-between items-center p-3 hover:bg-white/5 transition-colors">
                           <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded bg-gray-800 flex items-center justify-center text-xs font-bold text-gray-300">
-                                  #{idx+1}
-                              </div>
+                              <div className="w-8 h-8 rounded bg-gray-800 flex items-center justify-center text-xs font-bold text-gray-300">#{idx+1}</div>
                               <span className="font-bold text-white">{item.amount} NFT</span>
                           </div>
-                          <span className="text-yellow-500 font-mono text-xs bg-yellow-500/10 px-2 py-1 rounded">
-                              {formatTimeLeft(item.unlockDate)}
-                          </span>
+                          <span className="text-yellow-500 font-mono text-xs bg-yellow-500/10 px-2 py-1 rounded">{formatTimeLeft(item.unlockDate)}</span>
                       </div>
                   ))}
               </div>
           </div>
       )}
 
-      {/* Referral Program */}
+      {/* Referral */}
       <div className="pt-4 border-t border-gray-800 pb-safe">
           <div className="flex justify-between items-baseline mb-4">
              <h3 className="font-bold text-lg">{t('referral_earnings')}</h3>
-             <button 
-                onClick={handleInvite}
-                className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-full font-bold transition-colors flex items-center gap-1 active:bg-blue-700"
-             >
+             <button onClick={handleInvite} className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-full font-bold transition-colors flex items-center gap-1 active:bg-blue-700">
                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
                 {t('invite_btn')}
              </button>
           </div>
-          
           <div className="grid grid-cols-3 gap-2 mb-4">
-               {/* Using integer array to use the variable and avoid TS6133 */}
                {[1, 2, 3].map((level) => (
                    <div key={level} className="bg-gray-800 p-2 rounded-lg text-center border border-white/5">
                        <div className="text-[10px] text-gray-500 uppercase">{t('level')} {level}</div>
-                       <div className="font-bold text-lg">
-                           {(user.referralStats as any)[`level${level}`]}
-                       </div>
+                       <div className="font-bold text-lg">{(user.referralStats as any)[`level${level}`]}</div>
                    </div>
                ))}
           </div>
-
           <div className="bg-gradient-to-r from-gray-800 to-gray-900 p-4 rounded-xl border border-white/5 flex justify-between items-center">
              <div className="text-xs text-gray-400">{t('total_rewards')}</div>
              <div className="flex gap-3 text-xs font-mono font-bold">
@@ -337,114 +289,36 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
             <span className="text-red-500 text-lg">🛠️</span>
             <span className="text-xs font-bold text-red-400 uppercase tracking-widest">Debug Zone</span>
           </div>
-
           <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
-              <div className="text-gray-500">Start Param:</div>
-              <div className="text-white break-all">{startParam}</div>
-              
-              <div className="text-gray-500">My Ref Code:</div>
-              <div className="text-green-400">{user.referralCode || "loading..."}</div>
-              
-              <div className="text-gray-500">Referred By ID:</div>
-              <div className={`font-bold ${user.referrerId ? "text-green-400" : "text-red-500"}`}>
-                  {user.referrerId ? user.referrerId : "none"}
-              </div>
-
-              {user.referralDebug && (
-                <>
-                    <div className="text-gray-500 col-span-2 mt-2">Backend Log:</div>
-                    <div className="col-span-2 bg-black/30 p-2 rounded border border-white/10 text-gray-400 whitespace-pre-wrap">
-                        {user.referralDebug}
-                    </div>
-                </>
-              )}
+              <div className="text-gray-500">Start Param:</div><div className="text-white break-all">{startParam}</div>
+              <div className="text-gray-500">My Ref Code:</div><div className="text-green-400">{user.referralCode || "loading..."}</div>
+              <div className="text-gray-500">Referred By:</div><div className={`font-bold ${user.referrerId ? "text-green-400" : "text-red-500"}`}>{user.referrerId || "none"}</div>
+              {user.referralDebug && <><div className="text-gray-500 col-span-2 mt-2">Log:</div><div className="col-span-2 bg-black/30 p-2 rounded border border-white/10 text-gray-400 whitespace-pre-wrap">{user.referralDebug}</div></>}
           </div>
 
-          <button 
-            onClick={handleDebugReset}
-            className="w-full mt-2 text-xs font-bold text-white bg-red-600/80 hover:bg-red-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
-          >
-              <span>⚠️</span>
-              WIPE DB & RESET
-          </button>
+          <div className="flex gap-2 mt-4">
+              <input 
+                 type="text" 
+                 placeholder="Simulate ID (e.g. 555)" 
+                 className="bg-black/50 border border-red-500/30 text-white text-xs p-2 rounded flex-1"
+                 value={debugIdInput}
+                 onChange={(e) => setDebugIdInput(e.target.value)}
+              />
+              <button onClick={handleSwitchUser} className="bg-red-600 text-white text-xs px-3 rounded font-bold">Switch</button>
+          </div>
+
+          <button onClick={handleDebugReset} className="w-full mt-2 text-xs font-bold text-white bg-red-600/80 hover:bg-red-500 py-3 rounded-lg flex items-center justify-center gap-2"><span>⚠️</span> WIPE DB & RESET</button>
       </div>
-      
-      {/* --- HISTORY MODAL --- */}
+
+      {/* History Modal */}
       {showHistory && (
           <div className="fixed inset-0 z-[60] bg-gray-900 flex flex-col animate-fade-in">
-              {/* Modal Header */}
               <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-gray-900/90 backdrop-blur-md">
-                  <h2 className="text-lg font-bold flex items-center gap-2">
-                      <span className="bg-blue-500/20 p-1.5 rounded-lg text-blue-400">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
-                      </span>
-                      {t('tx_history')}
-                  </h2>
-                  <button 
-                    onClick={() => setShowHistory(false)}
-                    className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white"
-                  >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                  </button>
+                  <h2 className="text-lg font-bold flex items-center gap-2"><span className="bg-blue-500/20 p-1.5 rounded-lg text-blue-400"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 20v-6M6 20V10M18 20V4"/></svg></span>{t('tx_history')}</h2>
+                  <button onClick={() => setShowHistory(false)} className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg></button>
               </div>
-              
-              {/* Modal Content */}
               <div className="flex-1 overflow-y-auto p-4">
-                  {loadingHistory ? (
-                      <div className="flex justify-center pt-10">
-                          <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
-                      </div>
-                  ) : history.length === 0 ? (
-                      <div className="text-center text-gray-500 pt-10 flex flex-col items-center">
-                          <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mb-4 text-3xl opacity-50">📂</div>
-                          <p>{t('no_tx')}</p>
-                      </div>
-                  ) : (
-                      <div className="space-y-3">
-                          {history.map((tx) => (
-                              <div key={tx.id} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex items-center justify-between">
-                                  <div className="flex items-center gap-3">
-                                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl bg-gray-700/50`}>
-                                          {getTxIcon(tx.type, tx.assetType)}
-                                      </div>
-                                      <div>
-                                          <div className="font-bold text-sm text-white flex items-center gap-1">
-                                              {tx.description}
-                                              {/* Show currency for purchases */}
-                                              {tx.type === 'purchase' && tx.currency && (
-                                                <span className={`text-[10px] px-1.5 py-0.5 rounded ml-1 font-medium ${
-                                                    tx.currency === Currency.STARS ? 'bg-yellow-500/20 text-yellow-400' :
-                                                    tx.currency === Currency.TON ? 'bg-blue-500/20 text-blue-400' :
-                                                    'bg-green-500/20 text-green-400'
-                                                }`}>
-                                                    {tx.currency}
-                                                </span>
-                                              )}
-                                          </div>
-                                          <div className="text-[10px] text-gray-500">{formatDate(tx.timestamp)}</div>
-                                      </div>
-                                  </div>
-                                  <div className={`font-mono font-bold text-lg flex items-center gap-1 ${tx.type === 'withdraw' ? 'text-red-400' : 'text-green-400'}`}>
-                                      {tx.type === 'withdraw' ? '-' : '+'}{tx.amount}
-                                      <span className="text-xs opacity-70">
-                                          {tx.assetType === 'dice' ? '🎲' : tx.assetType === 'nft' ? 'NFT' : ''}
-                                      </span>
-                                      {/* Show asterisk for locked NFTs (purchased with stars or won with star attempts) */}
-                                      {tx.assetType === 'nft' && tx.isLocked && (
-                                          <span className="text-yellow-500 text-sm transform -translate-y-1">*</span>
-                                      )}
-                                  </div>
-                              </div>
-                          ))}
-                          
-                          {/* Footer note for locked items */}
-                          {history.some(h => h.isLocked) && (
-                              <div className="pt-2 text-[10px] text-gray-500 text-center">
-                                  {t('locked_policy')}
-                              </div>
-                          )}
-                      </div>
-                  )}
+                  {loadingHistory ? <div className="flex justify-center pt-10"><div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"></div></div> : history.length === 0 ? <div className="text-center text-gray-500 pt-10 flex flex-col items-center"><div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mb-4 text-3xl opacity-50">📂</div><p>{t('no_tx')}</p></div> : <div className="space-y-3">{history.map((tx) => (<div key={tx.id} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex items-center justify-between"><div className="flex items-center gap-3"><div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl bg-gray-700/50`}>{getTxIcon(tx.type, tx.assetType)}</div><div><div className="font-bold text-sm text-white flex items-center gap-1">{tx.description}{tx.type === 'purchase' && tx.currency && (<span className={`text-[10px] px-1.5 py-0.5 rounded ml-1 font-medium ${tx.currency === Currency.STARS ? 'bg-yellow-500/20 text-yellow-400' : tx.currency === Currency.TON ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'}`}>{tx.currency}</span>)}</div><div className="text-[10px] text-gray-500">{formatDate(tx.timestamp)}</div></div></div><div className={`font-mono font-bold text-lg flex items-center gap-1 ${tx.type === 'withdraw' ? 'text-red-400' : 'text-green-400'}`}>{tx.type === 'withdraw' ? '-' : '+'}{tx.amount}<span className="text-xs opacity-70">{tx.assetType === 'dice' ? '🎲' : tx.assetType === 'nft' ? 'NFT' : ''}</span>{tx.assetType === 'nft' && tx.isLocked && (<span className="text-yellow-500 text-sm transform -translate-y-1">*</span>)}</div></div>))}</div>}
               </div>
           </div>
       )}
