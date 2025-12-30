@@ -23,70 +23,76 @@ const Icons = {
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('shop');
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [isCanceled, setIsCanceled] = useState(false);
   const { t } = useTranslation();
   const [tonConnectUI] = useTonConnectUI();
   
-  // Prevent double-firing in Strict Mode
   const initRef = useRef(false);
 
-  // Helper to trigger registration flow
+  // Helper to safely check version and show popup
+  const safeShowPopup = (title: string, message: string, onConfirm: () => void, onCancel: () => void) => {
+      const webApp = window.Telegram?.WebApp;
+      
+      // Strict version check manually to avoid library errors
+      let canUsePopup = false;
+      if (webApp && webApp.version) {
+          const v = parseFloat(webApp.version);
+          if (!isNaN(v) && v >= 6.2) {
+              canUsePopup = true;
+          }
+      }
+
+      if (canUsePopup && webApp && webApp.showPopup) {
+          try {
+              webApp.showPopup({
+                  title: title,
+                  message: message,
+                  buttons: [
+                      { type: 'default', text: 'Agree & Start', id: 'agree' },
+                      { type: 'cancel', text: 'Cancel', id: 'cancel' }
+                  ]
+              }, (btnId) => {
+                  if (btnId === 'agree') onConfirm();
+                  else onCancel();
+              });
+          } catch (e) {
+              console.warn("showPopup failed despite version check, falling back", e);
+              // Fallback if the method throws
+              if (window.confirm(`${title}\n\n${message}`)) onConfirm();
+              else onCancel();
+          }
+      } else {
+          // Fallback for version < 6.2 or browser
+          if (window.confirm(`${title}\n\n${message}`)) onConfirm();
+          else onCancel();
+      }
+  };
+
   const handleRegistration = async (refParam?: string) => {
-      // Small delay to ensure Loading UI renders first
+      // Delay slightly to allow UI paint
       await new Promise(r => setTimeout(r, 100));
 
-      try {
-          const webApp = window.Telegram?.WebApp;
-          
-          if (webApp) {
-              // Check if showPopup is supported (v6.2+)
-              // If isVersionAtLeast is undefined (very old versions), assume false.
-              const supportsPopup = webApp.isVersionAtLeast && webApp.isVersionAtLeast('6.2');
+      const webApp = window.Telegram?.WebApp;
 
-              if (supportsPopup) {
-                  webApp.showPopup({
-                      title: 'Welcome to NFT Genesis',
-                      message: 'By continuing, you agree to our Terms of Service and Privacy Policy.',
-                      buttons: [
-                          { type: 'default', text: 'Agree & Start', id: 'agree' },
-                          { type: 'cancel', text: 'Cancel', id: 'cancel' }
-                      ]
-                  }, async (btnId) => {
-                      if (btnId === 'agree') {
-                          // Call API with register=true
-                          const registeredData = await fetchUserProfile(refParam, true);
-                          setUser(registeredData);
-                      } else {
-                          webApp.close();
-                      }
-                  });
-              } else {
-                  // Fallback for older versions (< 6.2) which don't support showPopup
-                  // Using setTimeout to unblock the render thread before confirm
-                  setTimeout(async () => {
-                      const confirmed = window.confirm("Welcome to NFT Genesis\n\nBy continuing, you agree to our Terms of Service and Privacy Policy.");
-                      if (confirmed) {
-                          const registeredData = await fetchUserProfile(refParam, true);
-                          setUser(registeredData);
-                      } else {
-                          webApp.close();
-                      }
-                  }, 50);
+      safeShowPopup(
+          'Welcome to NFT Genesis',
+          'By continuing, you agree to our Terms of Service and Privacy Policy.',
+          async () => {
+              // Confirm
+              try {
+                  const registeredData = await fetchUserProfile(refParam, true);
+                  setUser(registeredData);
+              } catch (e) {
+                  setError("Registration failed. Check connection.");
               }
-          } else {
-              // Browser Fallback (Localhost)
-               setTimeout(async () => {
-                  if (confirm("Welcome! Agree to Terms of Service?")) {
-                      const registeredData = await fetchUserProfile(refParam, true);
-                      setUser(registeredData);
-                  } else {
-                      setIsCanceled(true);
-                  }
-               }, 50);
+          },
+          () => {
+              // Cancel
+              if (webApp && webApp.close) webApp.close();
+              setIsCanceled(true);
           }
-      } catch (e) {
-          console.error("Registration error", e);
-      }
+      );
   };
 
   const loadData = async () => {
@@ -95,27 +101,24 @@ const App: React.FC = () => {
 
     try {
       const manualRefCode = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
-      console.log("Loading data with param:", manualRefCode);
       
-      // 1. Fetch User (Normal Mode - No Register flag yet)
+      // 1. Fetch User
       const data = await fetchUserProfile(manualRefCode, false);
       
       // 2. Check isNewUser
       if (data.isNewUser) {
-          // If user is new, trigger Popup
           await handleRegistration(manualRefCode);
       } else {
-          // User exists, set state
           setUser(data);
       }
-
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to load user", e);
+      setError(e.message || "Connection Error");
     }
   };
 
   const refreshUser = () => {
-      fetchUserProfile().then(setUser);
+      fetchUserProfile().then(setUser).catch(console.error);
   };
 
   useEffect(() => {
@@ -123,7 +126,10 @@ const App: React.FC = () => {
     if (window.Telegram?.WebApp) {
         window.Telegram.WebApp.ready();
         window.Telegram.WebApp.expand();
-        window.Telegram.WebApp.enableClosingConfirmation();
+        // Check existence before calling
+        if (window.Telegram.WebApp.enableClosingConfirmation) {
+            window.Telegram.WebApp.enableClosingConfirmation();
+        }
     }
     
     loadData();
@@ -136,13 +142,21 @@ const App: React.FC = () => {
         <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white p-6 text-center">
             <div>
                 <h1 className="text-xl font-bold text-red-400 mb-2">Registration Canceled</h1>
-                <p className="text-gray-400 mb-4">You must accept the terms to use this application.</p>
-                <button 
-                    onClick={() => window.location.reload()}
-                    className="bg-gray-800 px-4 py-2 rounded-lg"
-                >
-                    Restart
-                </button>
+                <button onClick={() => window.location.reload()} className="bg-gray-800 px-4 py-2 rounded-lg mt-4">Restart</button>
+            </div>
+        </div>
+      );
+  }
+
+  if (error) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white p-6 text-center">
+            <div>
+                <div className="text-4xl mb-4">⚠️</div>
+                <h1 className="text-xl font-bold text-red-400 mb-2">Connection Error</h1>
+                <p className="text-gray-400 mb-4 text-sm">{error}</p>
+                <p className="text-xs text-gray-600 mb-4">Ensure Backend is running on port 8080</p>
+                <button onClick={() => window.location.reload()} className="bg-blue-600 px-6 py-2 rounded-lg font-bold">Retry</button>
             </div>
         </div>
       );
