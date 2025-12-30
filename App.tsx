@@ -155,7 +155,7 @@ const App: React.FC = () => {
                 <div className="text-4xl mb-4">⚠️</div>
                 <h1 className="text-xl font-bold text-red-400 mb-2">Connection Error</h1>
                 <p className="text-gray-400 mb-4 text-sm">{error}</p>
-                <p className="text-xs text-gray-600 mb-4">Ensure Backend is running on port 8080</p>
+                <p className="text-xs text-gray-600 mb-4">Ensure Backend is running on port 3001</p>
                 <button onClick={() => window.location.reload()} className="bg-blue-600 px-6 py-2 rounded-lg font-bold">Retry</button>
             </div>
         </div>
