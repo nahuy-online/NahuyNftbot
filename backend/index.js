@@ -21,7 +21,7 @@ app.use(cors());
 
 // Log all incoming requests for debugging
 app.use((req, res, next) => {
-    console.log(`[Backend Log] ${req.method} ${req.originalUrl}`);
+    console.log(`[Backend Log] ${req.method} ${req.url}`);
     next();
 });
 
@@ -398,8 +398,8 @@ app.post('/api/debug/reset', async (req, res) => {
     }
 });
 
+// Explicitly handle /api/user AND /user to be safe against proxy changes
 app.get('/api/user', handleGetUser);
-// FALLBACK: If proxy strips /api prefix for some reason
 app.get('/user', handleGetUser);
 
 app.post('/api/payment/create', async (req, res) => {
@@ -511,8 +511,8 @@ app.post('/api/withdraw', async (req, res) => res.json({ ok: true }));
 
 // 404 Handler - MUST return JSON
 app.use((req, res) => {
-    console.warn(`[Backend 404] Route not found: ${req.method} ${req.originalUrl}`);
-    res.status(404).json({ error: "Backend 404", message: `Route not found: ${req.method} ${req.originalUrl}` });
+    console.warn(`[Backend 404] Route not found: ${req.method} ${req.url}`);
+    res.status(404).json({ error: "Backend 404", message: `Route not found: ${req.method} ${req.url}` });
 });
 
 // Start Server
