@@ -31,6 +31,7 @@ export interface NftTransaction {
 export interface UserProfile {
   id: number;
   username: string;
+  referralCode?: string; // New Privacy-focused referral code
   nftBalance: {
     total: number;
     available: number;

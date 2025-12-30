@@ -92,7 +92,9 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
 
   const handleInvite = () => {
     try {
-        const inviteLink = `https://t.me/${BOT_USERNAME}?start=ref_${user.id}`;
+        // Use privacy-safe Referral Code if available, fallback to ID only if code is missing (shouldn't happen)
+        const refParam = user.referralCode || `ref_${user.id}`;
+        const inviteLink = `https://t.me/${BOT_USERNAME}?start=${refParam}`;
         const shareText = t('share_text', { amount: user.nftBalance.total });
         const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(shareText)}`;
 

@@ -20,6 +20,7 @@ const getStorageKey = (userId: number) => `${BASE_STORAGE_KEY}_${userId}`;
 const getInitialData = (userId: number): UserProfile => ({
     id: userId,
     username: window.Telegram?.WebApp?.initDataUnsafe?.user?.username || `User_${userId}`,
+    referralCode: Math.random().toString(36).substring(2, 8), // Generate mock code
     nftBalance: { 
         total: 0, 
         available: 0, 
@@ -90,6 +91,11 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
     // 1. GET USER
     if (endpoint.includes('/user')) {
         // In mock mode, we don't process referrals, but we return the user object
+        // Ensure mock user has a ref code
+        if (!db.referralCode) {
+            db.referralCode = Math.random().toString(36).substring(2, 8);
+            saveLocalDb(userId, db);
+        }
         return db;
     }
 
@@ -256,7 +262,7 @@ export const debugResetDb = async (): Promise<void> => {
 };
 
 export const fetchUserProfile = async (refId?: string): Promise<UserProfile> => {
-    // Append refId if provided
+    // Pass refId directly (it is now a code, e.g. "a92bx1")
     let url = '/user';
     if (refId) url += `?refId=${refId}`;
     return await apiRequest(url);
