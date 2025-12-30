@@ -10,6 +10,8 @@ services:
     restart: always
     ports:
       - "80:80" # Map host 80 to container 80 (Vite Preview)
+    environment:
+      - VITE_API_TARGET=http://backend:3001
     depends_on:
       - backend
 

@@ -30,14 +30,22 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
     const response = await fetch(url, config);
     
     if (!response.ok) {
-        const errorText = await response.text();
+        const contentType = response.headers.get("content-type");
+        let errorText = "";
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+            const errJson = await response.json();
+            errorText = errJson.error || JSON.stringify(errJson);
+        } else {
+            errorText = await response.text();
+            // Truncate long HTML errors (like standard 404 pages)
+            if (errorText.length > 200) errorText = errorText.substring(0, 200) + "...";
+        }
         throw new Error(`Backend Error ${response.status}: ${errorText}`);
     }
     
     return await response.json();
   } catch (error: any) {
     console.error("❌ API Request Failed:", url, error);
-    // Rethrow to stop the app or show error UI, instead of silently using mock data
     throw error;
   }
 };
