@@ -95,13 +95,11 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
     if (endpoint.includes('/payment/create')) {
         const isStars = body.currency === 'STARS';
         
-        // --- FIX: Use a valid generic wallet address for mock fallsbacks ---
-        // Null addresses cause wallets to error/cancel immediately.
-        // This is a generic active foundation/burn address that is technically valid.
-        const mockAddress = "UQAQnxLq1g0K8a8A1eA4m5_tA-3e6f9b8c7d6e5f4a3b2c1";
+        // --- FIX: Use user's specific testnet wallet ---
+        const mockAddress = "0QBycgJ7cxTLe4Y84HG6tOGQgf-284Es4zJzVJM8R2h1U_av";
 
         const tonTransaction = {
-            validUntil: Math.floor(Date.now() / 1000) + 600, // 10 min
+            validUntil: Math.floor(Date.now() / 1000) + 3600, // 1 hour validity
             messages: [
                 {
                     address: mockAddress, 

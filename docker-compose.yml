@@ -22,7 +22,6 @@ services:
       - "8080"
     environment:
       # --- DATABASE SETTINGS ---
-      # Fill these in Dockhost UI based on your PostgreSQL Service
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_USER=user
@@ -31,7 +30,7 @@ services:
       - DB_SSL=false
 
       # --- APP SETTINGS ---
-      # Fill these in Dockhost UI
-      # BOT_TOKEN=...
-      # RECEIVER_TON_ADDRESS_TESTNET=...
-      # TONAPI_KEY=...
+      # Pass these from the Host Environment (do not hardcode here if using secrets)
+      - BOT_TOKEN
+      - RECEIVER_TON_ADDRESS_TESTNET
+      - TONAPI_KEY

@@ -6,11 +6,12 @@ import pg from 'pg';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// --- ENV CONFIGURATION FIX ---
+// --- ENV CONFIGURATION ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Try to load .env from root (../.env) first, then local .env
+// Note: If no file exists, these calls do nothing (which is fine if env vars are injected by Docker)
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config(); 
 
@@ -22,16 +23,12 @@ app.use(cors());
 const PORT = process.env.PORT || 8080;
 const BOT_TOKEN = process.env.BOT_TOKEN;
 
-// FALLBACK ADDRESS: If env is missing, use a generic TON Foundation address (valid for testing UI)
-// This prevents "Transaction canceled" due to undefined address
-const DEFAULT_WALLET = "UQAQnxLq1g0K8a8A1eA4m5_tA-3e6f9b8c7d6e5f4a3b2c1"; 
-const TON_WALLET = process.env.RECEIVER_TON_ADDRESS_TESTNET || DEFAULT_WALLET;
+// FALLBACK ADDRESS: User's specific Testnet Wallet
+// If RECEIVER_TON_ADDRESS_TESTNET is not found in env, use this immediately.
+const USER_TESTNET_WALLET = "0QBycgJ7cxTLe4Y84HG6tOGQgf-284Es4zJzVJM8R2h1U_av"; 
+const TON_WALLET = process.env.RECEIVER_TON_ADDRESS_TESTNET || USER_TESTNET_WALLET;
 
-if (TON_WALLET === DEFAULT_WALLET) {
-    console.warn("⚠️ WARNING: RECEIVER_TON_ADDRESS_TESTNET is not set. Using fallback address.");
-} else {
-    console.log("✅ Using Wallet Address:", TON_WALLET);
-}
+console.log(`✅ Using Payment Wallet Address: ${TON_WALLET}`);
 
 // Prices
 const PRICES = {
@@ -252,13 +249,14 @@ app.post('/api/payment/create', async (req, res) => {
         } catch(e) { res.status(500).json({ok: false}); }
     } else {
         const tonAmount = (type === 'nft' ? PRICES.nft.TON : PRICES.dice.TON) * amount;
+        
         // Convert to Nanotons (1 TON = 1,000,000,000)
-        // Simple multiplication might have floating point issues, using string based math or BigInt is safer for production
-        // Here we use simple calculation for demo: 0.01 * 1e9 = 10000000
+        // Ensure integer string
         const nanoTons = Math.floor(tonAmount * 1000000000).toString();
 
         const tonTransaction = {
-            validUntil: Math.floor(Date.now() / 1000) + 600, // 10 min
+            // Increased validity window to 1 hour (3600s) to handle any server clock skew issues
+            validUntil: Math.floor(Date.now() / 1000) + 3600, 
             messages: [
                 {
                     address: TON_WALLET, 
@@ -266,7 +264,7 @@ app.post('/api/payment/create', async (req, res) => {
                 }
             ]
         };
-        console.log("Sending TON Transaction payload:", JSON.stringify(tonTransaction));
+        console.log(`Sending TON Transaction to ${TON_WALLET}, amount: ${nanoTons}`);
         res.json({ ok: true, currency: 'TON', transaction: tonTransaction });
     }
 });
