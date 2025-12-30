@@ -30,8 +30,8 @@ console.log(`✅ Using Payment Wallet Address: ${TON_WALLET}`);
 
 // Prices - Synced with Frontend Constants generally, but TON kept low for Testnet
 const PRICES = {
-    nft: { STARS: 2000, TON: 0.05 }, // 0.05 TON for testnet usability
-    dice: { STARS: 6666, TON: 0.1 }
+    nft: { STARS: 2000, TON: 0.011 }, // 0.05 TON for testnet usability
+    dice: { STARS: 6666, TON: 0.036 }
 };
 
 // Referral Percentages (Level 1, Level 2, Level 3)

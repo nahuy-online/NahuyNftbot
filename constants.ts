@@ -6,14 +6,14 @@ export const BOT_USERNAME = 'nahuy_NFT_bot';
 // Prices per 1 Item (NFT or Attempt)
 export const NFT_PRICES: PriceConfig = {
   STARS: 2000,
-  TON: 11,
+  TON: 0.011,
   USDT: 36.6
 };
 
 // Based on TZ Section 3.3
 export const DICE_ATTEMPT_PRICES: PriceConfig = {
   STARS: 6666,
-  TON: 36.6,
+  TON: 0.0366,
   USDT: 121
 };
 
