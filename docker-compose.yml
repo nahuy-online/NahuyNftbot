@@ -9,11 +9,13 @@ services:
     container_name: nft_bot_container
     restart: always
     ports:
-      - "80:80" # Map host 80 to container 80 (Vite Preview)
+      - "80:80"
     environment:
       - VITE_API_TARGET=http://backend:3001
     depends_on:
       - backend
+    networks:
+      - app-network
 
   # BACKEND
   backend:
@@ -23,7 +25,6 @@ services:
     expose:
       - "3001"
     environment:
-      # --- DATABASE SETTINGS ---
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_USER=user
@@ -31,13 +32,15 @@ services:
       - DB_NAME=nft_db
       - DB_SSL=false
       - PORT=3001
-
-      # --- APP SETTINGS ---
+      # Pass secrets from host environment
       - BOT_TOKEN
       - RECEIVER_TON_ADDRESS_TESTNET
       - TONAPI_KEY
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
 
   # DATABASE
   postgres:
@@ -55,6 +58,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - app-network
 
 volumes:
   postgres_data:
+
+networks:
+  app-network:
+    driver: bridge
