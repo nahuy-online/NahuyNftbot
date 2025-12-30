@@ -43,8 +43,7 @@ const App: React.FC = () => {
         window.Telegram.WebApp.enableClosingConfirmation();
     }
     
-    // Note: We no longer need manual disconnect logic here.
-    // The UserScopedStorage in index.tsx handles separating wallet sessions per Telegram User ID.
+    // Wallet session management is now handled by initSession() in index.tsx
 
     loadData();
   }, [tonConnectUI]);
