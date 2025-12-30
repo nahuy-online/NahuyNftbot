@@ -361,6 +361,25 @@ async function distributeReward(client, referrerId, currency, totalAmount, level
     }
 }
 
+// --- CONTROLLER LOGIC WRAPPERS ---
+
+const handleGetUser = async (req, res) => {
+    try {
+        const userId = req.query.id;
+        const rawRef = req.query.refId;
+        const register = req.query.register === 'true'; 
+        const refCode = rawRef ? rawRef.replace(/^ref_/, '') : null;
+        
+        if (!userId) throw new Error("ID required");
+        
+        const user = await getUser(userId, "User", refCode, register);
+        res.json(user);
+    } catch (e) {
+        console.error("Get User Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+};
+
 // --- ROUTES ---
 
 // Health check / Root
@@ -379,22 +398,9 @@ app.post('/api/debug/reset', async (req, res) => {
     }
 });
 
-app.get('/api/user', async (req, res) => {
-    try {
-        const userId = req.query.id;
-        const rawRef = req.query.refId;
-        const register = req.query.register === 'true'; 
-        const refCode = rawRef ? rawRef.replace(/^ref_/, '') : null;
-        
-        if (!userId) throw new Error("ID required");
-        
-        const user = await getUser(userId, "User", refCode, register);
-        res.json(user);
-    } catch (e) {
-        console.error("Get User Error:", e);
-        res.status(500).json({ error: e.message });
-    }
-});
+app.get('/api/user', handleGetUser);
+// FALLBACK: If proxy strips /api prefix for some reason
+app.get('/user', handleGetUser);
 
 app.post('/api/payment/create', async (req, res) => {
     const { id, type, amount, currency } = req.body;

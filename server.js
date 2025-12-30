@@ -8,34 +8,34 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 80;
-// Target the backend service. Default to docker service name 'backend'
-const API_TARGET = process.env.VITE_API_TARGET || 'http://backend:3001';
+// Default to localhost for local runs, or use env var for Docker
+const API_TARGET = process.env.VITE_API_TARGET || 'http://localhost:3001';
 
 console.log(`[Server] Starting on port ${PORT}...`);
 console.log(`[Server] Proxying /api requests to ${API_TARGET}`);
 
 // PROXY CONFIGURATION
-// Mount the proxy middleware at '/api'.
-// Express strips the '/api' prefix from req.url before passing it to the middleware.
-// We use pathRewrite to prepend '/api' so the backend receives the full intended path.
+// Mount at /api. 
+// We use pathRewrite to ensure the /api prefix is preserved if the backend expects it,
+// OR we rely on the backend handling the stripped path.
+// Based on your backend config, it handles both /api/user and /user.
+// We will send the path as-is (rewriting root of mount point to /api/) to be safe.
 app.use('/api', createProxyMiddleware({
     target: API_TARGET,
     changeOrigin: true,
     pathRewrite: {
-        '^/': '/api/' // Rewrite the root (which is effectively /api/ from client view) back to /api/
+        '^/': '/api/' // Ensures backend receives /api/user when frontend requests /api/user
     },
     onProxyReq: (proxyReq, req, res) => {
-        // console.log(`[Proxy] Forwarding ${req.method} ${req.originalUrl} -> ${API_TARGET}/api${req.url}`);
+        // console.log(`[Proxy] ${req.method} ${req.originalUrl} -> ${API_TARGET}${req.path}`);
     },
     onError: (err, req, res) => {
         console.error(`[Proxy Error] ${req.method} ${req.originalUrl}: ${err.message}`);
-        
         if (!res.headersSent) {
             res.status(502).json({ 
                 error: "Proxy Gateway Error", 
-                message: "Cannot connect to Backend API. Ensure backend service is running.",
-                details: err.message,
-                target: API_TARGET
+                message: `Cannot connect to Backend at ${API_TARGET}`,
+                details: err.message
             });
         }
     }
@@ -44,21 +44,12 @@ app.use('/api', createProxyMiddleware({
 const distPath = path.join(__dirname, 'dist');
 app.use(express.static(distPath));
 
-// SPA Fallback for non-API routes
+// SPA Fallback
 app.get('*', (req, res) => {
-    // If it looks like an API call but wasn't caught above, return 404 json
     if (req.url.startsWith('/api')) {
-        return res.status(404).json({ error: "API Route Not Found (Frontend)" });
+        return res.status(404).json({ error: "API Route Not Found" });
     }
-    
-    // Check if index.html exists before trying to send it to avoid "Error: ENOENT" or similar
-    // causing confusing 404s
-    res.sendFile(path.join(distPath, 'index.html'), (err) => {
-        if (err) {
-            console.error("[Server] Error sending index.html:", err);
-            res.status(500).send("Server Error: Unable to load application.");
-        }
-    });
+    res.sendFile(path.join(distPath, 'index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {

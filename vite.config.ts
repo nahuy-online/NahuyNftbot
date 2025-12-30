@@ -6,7 +6,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   
-  // CRITICAL: process.env.VITE_API_TARGET must be checked first for Docker runtime injection
+  // Default to localhost:3001 if env var is missing
   const apiUrl = process.env.VITE_API_TARGET || env.VITE_API_TARGET || 'http://localhost:3001';
 
   console.log(`[Vite Config] Proxying /api requests to: ${apiUrl}`);
@@ -26,13 +26,12 @@ export default defineConfig(({ mode }) => {
           target: apiUrl,
           changeOrigin: true,
           secure: false,
+          // Ensure we don't strip /api, or if we do, backend handles it.
+          // Since backend has app.get('/api/user'), we should preserve it.
+          // Vite proxy usually preserves path by default.
           configure: (proxy, options) => {
               proxy.on('error', (err, req, res) => {
-                  console.error(`Proxy Connection Error to ${apiUrl} for ${req.url}:`, err);
-                  if (!res.headersSent) {
-                      res.writeHead(502, { 'Content-Type': 'application/json' });
-                      res.end(JSON.stringify({ error: "Proxy Error", details: err.message }));
-                  }
+                  console.error(`Proxy Error to ${apiUrl}:`, err);
               });
           }
         }
@@ -45,16 +44,7 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: apiUrl,
           changeOrigin: true,
-          secure: false,
-          configure: (proxy, options) => {
-              proxy.on('error', (err, req, res) => {
-                  console.error(`Proxy Connection Error to ${apiUrl} for ${req.url}:`, err);
-                  if (!res.headersSent) {
-                      res.writeHead(502, { 'Content-Type': 'application/json' });
-                      res.end(JSON.stringify({ error: "Proxy Error", details: err.message }));
-                  }
-              });
-          }
+          secure: false
         }
       } 
     }
