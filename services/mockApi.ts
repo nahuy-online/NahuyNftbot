@@ -90,7 +90,10 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
 
     // 1. GET USER
     if (endpoint.includes('/user')) {
-        // In mock mode, we don't process referrals, but we return the user object
+        // Mock referral handling
+        // If query string has refId, logic to handle it could go here, 
+        // but simple mock just returns the user DB.
+        
         // Ensure mock user has a ref code
         if (!db.referralCode) {
             db.referralCode = Math.random().toString(36).substring(2, 8);

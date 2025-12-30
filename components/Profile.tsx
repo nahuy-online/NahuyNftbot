@@ -161,7 +161,15 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
         </div>
         <div>
             <h2 className="text-xl font-bold text-white">@{user.username || 'User'}</h2>
-            <p className="text-xs text-gray-400 font-mono">ID: {user.id}</p>
+            <div className="flex gap-2 items-center">
+                <p className="text-xs text-gray-400 font-mono">ID: {user.id}</p>
+                {/* Debug Info: Who invited me? */}
+                {(user as any).referrerId && (
+                     <span className="text-[10px] bg-gray-800 px-1.5 py-0.5 rounded text-gray-500 border border-white/5">
+                        Ref: {(user as any).referrerId}
+                     </span>
+                )}
+            </div>
         </div>
       </div>
 

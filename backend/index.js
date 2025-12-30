@@ -159,25 +159,36 @@ function generateReferralCode() {
 async function getUser(id, username, incomingRefCode) {
     const client = await pool.connect();
     try {
-        // 1. Check if user exists
-        const checkRes = await client.query('SELECT id, referral_code FROM users WHERE id = $1', [id]);
+        // 1. Check if user exists (Select referrer_id too!)
+        const checkRes = await client.query('SELECT id, referral_code, referrer_id FROM users WHERE id = $1', [id]);
         const existingUser = checkRes.rows[0];
         const isNewUser = !existingUser;
         
         let actualReferrerId = null;
         let myReferralCode = existingUser?.referral_code;
 
-        // 2. If new user, handle referral logic
-        if (isNewUser && incomingRefCode) {
-            console.log(`🔍 Checking referral code: ${incomingRefCode} for new user ${id}`);
-            const refCheck = await client.query('SELECT id FROM users WHERE referral_code = $1', [incomingRefCode]);
-            if (refCheck.rows.length > 0) {
-                actualReferrerId = refCheck.rows[0].id;
-                // Prevent self-referral
-                if (actualReferrerId == id) actualReferrerId = null;
-                console.log(`✅ Referrer found: ${actualReferrerId}`);
-            } else {
-                console.log(`❌ Invalid referral code`);
+        // 2. Resolve Referral Code if present
+        if (incomingRefCode) {
+            // Don't search if we are referring ourselves
+            let isSelf = false;
+            if (existingUser && existingUser.referral_code === incomingRefCode) isSelf = true;
+            if (String(incomingRefCode) === String(id)) isSelf = true;
+
+            if (!isSelf) {
+                console.log(`🔍 Checking referral code: ${incomingRefCode} for user ${id}`);
+                
+                // A. Try finding by unique Referral Code
+                let refCheck = await client.query('SELECT id FROM users WHERE referral_code = $1', [incomingRefCode]);
+                
+                // B. If not found, try finding by User ID (legacy support for ref_12345 format)
+                if (refCheck.rows.length === 0 && !isNaN(parseInt(incomingRefCode))) {
+                     refCheck = await client.query('SELECT id FROM users WHERE id = $1', [incomingRefCode]);
+                }
+    
+                if (refCheck.rows.length > 0) {
+                    actualReferrerId = refCheck.rows[0].id;
+                    if (actualReferrerId == id) actualReferrerId = null; // Double check self-referral
+                }
             }
         }
 
@@ -186,17 +197,26 @@ async function getUser(id, username, incomingRefCode) {
             myReferralCode = generateReferralCode();
         }
 
-        // 4. Upsert User
-        // Note: We only set referrer_id on INSERT. We do not update it if user exists.
+        // 4. UPSERT LOGIC
         if (isNewUser) {
+            console.log(`🆕 Creating NEW user ${id} with referrer ${actualReferrerId}`);
             await client.query(`
                 INSERT INTO users (id, username, referral_code, referrer_id) VALUES ($1, $2, $3, $4)
             `, [id, username, myReferralCode, actualReferrerId]);
         } else {
-            // Just update username and ensure referral code exists
-            await client.query(`
-                UPDATE users SET username = $1, referral_code = $2 WHERE id = $3
-            `, [username, myReferralCode, id]);
+            // User Exists
+            // LATE BINDING: If user exists but has NO referrer, and we found one now -> Update!
+            if (existingUser.referrer_id === null && actualReferrerId !== null) {
+                console.log(`🔗 LATE BINDING: Linking User ${id} to Referrer ${actualReferrerId}`);
+                await client.query(`
+                    UPDATE users SET username = $1, referral_code = $2, referrer_id = $3 WHERE id = $4
+                `, [username, myReferralCode, actualReferrerId, id]);
+            } else {
+                // Just update username/code
+                await client.query(`
+                    UPDATE users SET username = $1, referral_code = $2 WHERE id = $3
+                `, [username, myReferralCode, id]);
+            }
         }
 
         // 5. Fetch Full User Data
@@ -212,7 +232,8 @@ async function getUser(id, username, incomingRefCode) {
         return {
             id: parseInt(u.id),
             username: u.username,
-            referralCode: u.referral_code, // Return the code
+            referralCode: u.referral_code,
+            referrerId: u.referrer_id ? parseInt(u.referrer_id) : null, // Send back who invited me for UI
             nftBalance: {
                 total: u.nft_total,
                 available: u.nft_available,
@@ -279,6 +300,7 @@ async function processPurchase(userId, type, packSize, currency, txId) {
         const referrerId = uRes.rows[0]?.referrer_id;
 
         if (referrerId) {
+            console.log(`💰 Processing Referral Rewards for Referrer: ${referrerId} from Buyer: ${userId}`);
             const purchaseAmount = (type === 'nft' ? PRICES.nft[currency] : PRICES.dice[currency]) * packSize;
             
             await distributeReward(client, referrerId, currency, purchaseAmount, 0); // Lvl 1
@@ -292,6 +314,8 @@ async function processPurchase(userId, type, packSize, currency, txId) {
                     await distributeReward(client, r3Res.rows[0].referrer_id, currency, purchaseAmount, 2); // Lvl 3
                 }
             }
+        } else {
+            console.log(`ℹ️ Buyer ${userId} has no referrer. No rewards distributed.`);
         }
 
         await client.query('COMMIT');
@@ -309,6 +333,8 @@ async function distributeReward(client, referrerId, currency, totalAmount, level
     const percentage = REF_LEVELS[levelIndex];
     const reward = totalAmount * percentage;
     if (reward <= 0) return;
+
+    console.log(`   -> Reward Lvl ${levelIndex+1}: User ${referrerId} gets ${reward} ${currency}`);
 
     if (currency === 'STARS') {
         const starsReward = Math.floor(reward);
@@ -343,7 +369,7 @@ app.get('/api/user', async (req, res) => {
     try {
         const userId = req.query.id;
         // Just take the raw refId parameter (now a string code)
-        const refCode = req.query.refId || null;
+        const refCode = req.query.refId ? req.query.refId.replace('ref_', '') : null;
         
         if (!userId) throw new Error("ID required");
         
@@ -391,6 +417,37 @@ app.post('/api/payment/create', async (req, res) => {
             messages: [{ address: TON_WALLET, amount: nanoTons }]
         };
         res.json({ ok: true, currency: 'TON', transaction: tonTransaction });
+    }
+});
+
+// IMPORTANT: This was previously a stub. Now it processes the purchase.
+app.post('/api/payment/verify', async (req, res) => {
+    const { id, type, amount, currency } = req.body;
+    
+    if (!id || !amount) {
+        return res.status(400).json({ error: "Missing data" });
+    }
+
+    try {
+        console.log(`✅ Verifying TON Payment for User ${id}: ${amount} ${type}`);
+        
+        // In a real production environment, you should verify the transaction on blockchain
+        // using the user's wallet address or a comment/payload attached to the tx.
+        // For this demo, we assume the frontend (TonConnect) was successful.
+        
+        // Generate a pseudo-unique hash for this transaction since we don't have the real hash from frontend here
+        const txId = `ton_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        const success = await processPurchase(id, type, parseInt(amount), currency, txId);
+        
+        if (success) {
+            res.json({ ok: true });
+        } else {
+            res.status(500).json({ error: "Processing failed" });
+        }
+    } catch(e) {
+        console.error("Verify Error", e);
+        res.status(500).json({ error: e.message });
     }
 });
 
@@ -455,6 +512,5 @@ app.get('/api/history', async (req, res) => {
 });
 
 app.post('/api/withdraw', async (req, res) => res.json({ ok: true }));
-app.post('/api/payment/verify', async (req, res) => res.json({ ok: true }));
 
 app.listen(PORT, () => console.log(`Backend running on port ${PORT}`));
