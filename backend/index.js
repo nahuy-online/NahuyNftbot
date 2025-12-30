@@ -21,7 +21,7 @@ app.use(cors());
 
 // Log all incoming requests for debugging
 app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+    console.log(`[Backend Log] ${req.method} ${req.originalUrl}`);
     next();
 });
 
@@ -505,6 +505,7 @@ app.post('/api/withdraw', async (req, res) => res.json({ ok: true }));
 
 // 404 Handler - MUST return JSON
 app.use((req, res) => {
+    console.warn(`[Backend 404] Route not found: ${req.method} ${req.originalUrl}`);
     res.status(404).json({ error: "Backend 404", message: `Route not found: ${req.method} ${req.originalUrl}` });
 });
 
