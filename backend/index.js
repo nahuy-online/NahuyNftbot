@@ -363,7 +363,9 @@ async function distributeReward(client, referrerId, currency, totalAmount, level
 
 // --- ROUTES ---
 
-app.get('/api', (req, res) => res.send('NFT Backend API Running'));
+// Health check / Root
+app.get('/', (req, res) => res.json({ ok: true, service: 'nft-backend' }));
+app.get('/api', (req, res) => res.json({ ok: true, service: 'nft-backend-api' }));
 
 app.post('/api/debug/reset', async (req, res) => {
     const client = await pool.connect();
@@ -501,7 +503,7 @@ app.get('/api/history', async (req, res) => {
 
 app.post('/api/withdraw', async (req, res) => res.json({ ok: true }));
 
-// 404 Handler
+// 404 Handler - MUST return JSON
 app.use((req, res) => {
     res.status(404).json({ error: "Backend 404", message: `Route not found: ${req.method} ${req.originalUrl}` });
 });
