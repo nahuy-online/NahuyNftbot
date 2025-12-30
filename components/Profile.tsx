@@ -349,6 +349,15 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
               <div className={`font-bold ${user.referrerId ? "text-green-400" : "text-red-500"}`}>
                   {user.referrerId ? user.referrerId : "none"}
               </div>
+
+              {user.referralDebug && (
+                <>
+                    <div className="text-gray-500 col-span-2 mt-2">Backend Log:</div>
+                    <div className="col-span-2 bg-black/30 p-2 rounded border border-white/10 text-gray-400 whitespace-pre-wrap">
+                        {user.referralDebug}
+                    </div>
+                </>
+              )}
           </div>
 
           <button 

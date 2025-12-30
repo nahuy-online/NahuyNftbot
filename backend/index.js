@@ -158,7 +158,11 @@ function generateReferralCode() {
 
 async function getUser(id, username, incomingRefCode) {
     const client = await pool.connect();
+    let debugLog = [];
+    
     try {
+        debugLog.push(`Processing User ${id}. Incoming Code: "${incomingRefCode}"`);
+        
         // 1. Check if user exists (Select referrer_id too!)
         const checkRes = await client.query('SELECT id, referral_code, referrer_id FROM users WHERE id = $1', [id]);
         const existingUser = checkRes.rows[0];
@@ -168,38 +172,46 @@ async function getUser(id, username, incomingRefCode) {
         let myReferralCode = existingUser?.referral_code;
 
         // 2. Resolve Referral Code if present
-        if (incomingRefCode) {
+        if (incomingRefCode && incomingRefCode !== "none" && incomingRefCode !== "") {
             const codeStr = String(incomingRefCode).trim();
-            console.log(`🔍 Resolving RefParam: "${codeStr}" for User: ${id}`);
-
-            // Don't search if we are referring ourselves
+            
+            // Check self-referral (Code match)
             let isSelf = false;
             if (existingUser && existingUser.referral_code === codeStr) isSelf = true;
             if (codeStr === String(id)) isSelf = true;
 
-            if (!isSelf && codeStr !== "none" && codeStr !== "") {
+            if (!isSelf) {
                 // A. Try finding by unique Referral Code
                 let refCheck = await client.query('SELECT id FROM users WHERE referral_code = $1', [codeStr]);
                 
-                // B. If not found, try finding by User ID (legacy support, ONLY if numeric)
-                if (refCheck.rows.length === 0) {
+                if (refCheck.rows.length > 0) {
+                     actualReferrerId = refCheck.rows[0].id;
+                     debugLog.push(`Found referrer by Code: ${actualReferrerId}`);
+                } else {
+                     // B. If not found, try finding by User ID (Legacy)
                      // STRICT CHECK: Only if string is pure digits
                      if (/^\d+$/.test(codeStr)) {
-                         console.log(`   -> Treating "${codeStr}" as User ID (Legacy)`);
                          refCheck = await client.query('SELECT id FROM users WHERE id = $1', [codeStr]);
+                         if (refCheck.rows.length > 0) {
+                             actualReferrerId = refCheck.rows[0].id;
+                             debugLog.push(`Found referrer by ID: ${actualReferrerId}`);
+                         } else {
+                             debugLog.push(`Ref ID ${codeStr} not found in DB`);
+                         }
+                     } else {
+                         debugLog.push(`Ref Code ${codeStr} not found in DB`);
                      }
                 }
     
-                if (refCheck.rows.length > 0) {
-                    actualReferrerId = refCheck.rows[0].id;
-                    if (actualReferrerId == id) actualReferrerId = null; // Double check self-referral
-                    console.log(`   ✅ Found Referrer ID: ${actualReferrerId}`);
-                } else {
-                    console.log(`   ❌ Referrer not found for code: "${codeStr}"`);
+                if (actualReferrerId && String(actualReferrerId) === String(id)) {
+                    actualReferrerId = null; 
+                    debugLog.push("Self-referral detected after ID resolution");
                 }
             } else {
-                console.log("   -> Self-referral or empty code detected. Skipping.");
+                debugLog.push("Self-referral rejected early");
             }
+        } else {
+            debugLog.push("No valid incoming ref code");
         }
 
         // 3. Generate Referral Code for this user if missing
@@ -209,20 +221,20 @@ async function getUser(id, username, incomingRefCode) {
 
         // 4. UPSERT LOGIC
         if (isNewUser) {
-            console.log(`🆕 Creating NEW user ${id} with referrer ${actualReferrerId}`);
+            debugLog.push(`Creating NEW user. RefID: ${actualReferrerId}`);
             await client.query(`
                 INSERT INTO users (id, username, referral_code, referrer_id) VALUES ($1, $2, $3, $4)
             `, [id, username, myReferralCode, actualReferrerId]);
         } else {
-            // User Exists
-            // LATE BINDING: If user exists but has NO referrer, and we found one now -> Update!
-            if (existingUser.referrer_id === null && actualReferrerId !== null) {
-                console.log(`🔗 LATE BINDING: Linking User ${id} to Referrer ${actualReferrerId}`);
+            // User Exists - Check Late Binding
+            // We use loose comparison for null checks to be safe
+            if (!existingUser.referrer_id && actualReferrerId) {
+                debugLog.push(`LATE BINDING: Linking ${id} to ${actualReferrerId}`);
                 await client.query(`
                     UPDATE users SET username = $1, referral_code = $2, referrer_id = $3 WHERE id = $4
                 `, [username, myReferralCode, actualReferrerId, id]);
             } else {
-                // Just update username/code
+                debugLog.push(`User exists. Current Ref: ${existingUser.referrer_id}. New Ref candidate: ${actualReferrerId}`);
                 await client.query(`
                     UPDATE users SET username = $1, referral_code = $2 WHERE id = $3
                 `, [username, myReferralCode, id]);
@@ -243,7 +255,8 @@ async function getUser(id, username, incomingRefCode) {
             id: parseInt(u.id),
             username: u.username,
             referralCode: u.referral_code,
-            referrerId: u.referrer_id ? parseInt(u.referrer_id) : null, // Send back who invited me for UI
+            referrerId: u.referrer_id ? parseInt(u.referrer_id) : null,
+            referralDebug: debugLog.join(" | "), // SEND DEBUG LOGS TO FRONTEND
             nftBalance: {
                 total: u.nft_total,
                 available: u.nft_available,
@@ -379,7 +392,9 @@ app.get('/api/user', async (req, res) => {
     try {
         const userId = req.query.id;
         // Just take the raw refId parameter (now a string code)
-        const refCode = req.query.refId ? req.query.refId.replace('ref_', '') : null;
+        // Ensure we strip 'ref_' if frontend sent it, but 'abc' stays 'abc'
+        const rawRef = req.query.refId;
+        const refCode = rawRef ? rawRef.replace(/^ref_/, '') : null;
         
         if (!userId) throw new Error("ID required");
         
