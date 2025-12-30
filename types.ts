@@ -32,6 +32,7 @@ export interface UserProfile {
   id: number;
   username: string;
   referralCode?: string; // New Privacy-focused referral code
+  referrerId?: number | null; // ID of the person who invited this user
   nftBalance: {
     total: number;
     available: number;

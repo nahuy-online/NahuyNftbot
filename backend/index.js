@@ -169,26 +169,36 @@ async function getUser(id, username, incomingRefCode) {
 
         // 2. Resolve Referral Code if present
         if (incomingRefCode) {
+            const codeStr = String(incomingRefCode).trim();
+            console.log(`🔍 Resolving RefParam: "${codeStr}" for User: ${id}`);
+
             // Don't search if we are referring ourselves
             let isSelf = false;
-            if (existingUser && existingUser.referral_code === incomingRefCode) isSelf = true;
-            if (String(incomingRefCode) === String(id)) isSelf = true;
+            if (existingUser && existingUser.referral_code === codeStr) isSelf = true;
+            if (codeStr === String(id)) isSelf = true;
 
-            if (!isSelf) {
-                console.log(`🔍 Checking referral code: ${incomingRefCode} for user ${id}`);
-                
+            if (!isSelf && codeStr !== "none" && codeStr !== "") {
                 // A. Try finding by unique Referral Code
-                let refCheck = await client.query('SELECT id FROM users WHERE referral_code = $1', [incomingRefCode]);
+                let refCheck = await client.query('SELECT id FROM users WHERE referral_code = $1', [codeStr]);
                 
-                // B. If not found, try finding by User ID (legacy support for ref_12345 format)
-                if (refCheck.rows.length === 0 && !isNaN(parseInt(incomingRefCode))) {
-                     refCheck = await client.query('SELECT id FROM users WHERE id = $1', [incomingRefCode]);
+                // B. If not found, try finding by User ID (legacy support, ONLY if numeric)
+                if (refCheck.rows.length === 0) {
+                     // STRICT CHECK: Only if string is pure digits
+                     if (/^\d+$/.test(codeStr)) {
+                         console.log(`   -> Treating "${codeStr}" as User ID (Legacy)`);
+                         refCheck = await client.query('SELECT id FROM users WHERE id = $1', [codeStr]);
+                     }
                 }
     
                 if (refCheck.rows.length > 0) {
                     actualReferrerId = refCheck.rows[0].id;
                     if (actualReferrerId == id) actualReferrerId = null; // Double check self-referral
+                    console.log(`   ✅ Found Referrer ID: ${actualReferrerId}`);
+                } else {
+                    console.log(`   ❌ Referrer not found for code: "${codeStr}"`);
                 }
+            } else {
+                console.log("   -> Self-referral or empty code detected. Skipping.");
             }
         }
 

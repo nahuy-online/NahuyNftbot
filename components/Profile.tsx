@@ -21,6 +21,9 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   const [history, setHistory] = useState<NftTransaction[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  // Debug State
+  const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param || "none";
+
   // Update timer every minute
   useEffect(() => {
       const interval = setInterval(() => setNow(Date.now()), 60000);
@@ -163,12 +166,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
             <h2 className="text-xl font-bold text-white">@{user.username || 'User'}</h2>
             <div className="flex gap-2 items-center">
                 <p className="text-xs text-gray-400 font-mono">ID: {user.id}</p>
-                {/* Debug Info: Who invited me? */}
-                {(user as any).referrerId && (
-                     <span className="text-[10px] bg-gray-800 px-1.5 py-0.5 rounded text-gray-500 border border-white/5">
-                        Ref: {(user as any).referrerId}
-                     </span>
-                )}
             </div>
         </div>
       </div>
@@ -334,13 +331,32 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           </div>
       </div>
 
-      {/* DEBUG BUTTON */}
-      <div className="pt-8 pb-4 flex justify-center opacity-50 hover:opacity-100 transition-opacity">
+      {/* --- DEBUG ZONE --- */}
+      <div className="mt-8 p-4 bg-red-900/20 border border-red-500/30 rounded-xl space-y-3">
+          <div className="flex items-center gap-2 mb-2 border-b border-red-500/20 pb-2">
+            <span className="text-red-500 text-lg">🛠️</span>
+            <span className="text-xs font-bold text-red-400 uppercase tracking-widest">Debug Zone</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+              <div className="text-gray-500">Start Param:</div>
+              <div className="text-white break-all">{startParam}</div>
+              
+              <div className="text-gray-500">My Ref Code:</div>
+              <div className="text-green-400">{user.referralCode || "loading..."}</div>
+              
+              <div className="text-gray-500">Referred By ID:</div>
+              <div className={`font-bold ${user.referrerId ? "text-green-400" : "text-red-500"}`}>
+                  {user.referrerId ? user.referrerId : "none"}
+              </div>
+          </div>
+
           <button 
             onClick={handleDebugReset}
-            className="text-[10px] font-mono text-red-500 border border-red-500/30 px-3 py-1 rounded hover:bg-red-500/10"
+            className="w-full mt-2 text-xs font-bold text-white bg-red-600/80 hover:bg-red-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
           >
-              ⚠️ DEBUG: RESET DB
+              <span>⚠️</span>
+              WIPE DB & RESET
           </button>
       </div>
       
