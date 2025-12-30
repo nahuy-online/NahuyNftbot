@@ -18,6 +18,12 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+// Log all incoming requests for debugging
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+});
+
 // --- CONFIG ---
 // Changed default port to 3001 to avoid conflicts with other services (Jenkins, Tomcat, etc.)
 const PORT = process.env.PORT || 3001;
@@ -524,4 +530,5 @@ app.get('/api/history', async (req, res) => {
 
 app.post('/api/withdraw', async (req, res) => res.json({ ok: true }));
 
-app.listen(PORT, () => console.log(`🚀 Backend running on port ${PORT}`));
+// Bind to 0.0.0.0 to allow external access (Docker, etc.)
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Backend running on port ${PORT}`));

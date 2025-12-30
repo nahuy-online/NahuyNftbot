@@ -26,6 +26,8 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
       url += queryPart;
   }
 
+  console.log(`📡 Fetching: ${url}`);
+
   try {
     const response = await fetch(url, config);
     
