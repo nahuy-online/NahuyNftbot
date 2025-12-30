@@ -1,18 +1,16 @@
 import { UserProfile, Currency, NftTransaction, PaymentInitResponse } from '../types';
-import { NFT_PRICES, DICE_ATTEMPT_PRICES } from '../constants'; // Import constants for fallback calculation
+import { NFT_PRICES, DICE_ATTEMPT_PRICES } from '../constants';
 
 const API_BASE = '/api'; 
-const BASE_STORAGE_KEY = 'nft_app_db_v5'; // Bump version
+const BASE_STORAGE_KEY = 'nft_app_db_v6'; 
 
 // --- HELPER: LOCAL STORAGE DB ---
 
 const getUserId = (): number => {
-    // Force fresh read of initData
     if (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) {
         return window.Telegram.WebApp.initDataUnsafe.user.id;
     }
-    // Fallback for browser testing
-    return 12345;
+    return 12345; 
 };
 
 const getStorageKey = (userId: number) => `${BASE_STORAGE_KEY}_${userId}`;
@@ -20,7 +18,10 @@ const getStorageKey = (userId: number) => `${BASE_STORAGE_KEY}_${userId}`;
 const getInitialData = (userId: number): UserProfile => ({
     id: userId,
     username: window.Telegram?.WebApp?.initDataUnsafe?.user?.username || `User_${userId}`,
-    referralCode: Math.random().toString(36).substring(2, 8), // Generate mock code
+    isNewUser: true, // Flag indicating this is a fresh profile
+    referralCode: Math.random().toString(36).substring(2, 8),
+    referrerId: null,
+    referralDebug: "Mock Init",
     nftBalance: { 
         total: 0, 
         available: 0, 
@@ -45,9 +46,7 @@ const getLocalDb = (userId: number): UserProfile => {
     if (stored) {
         return JSON.parse(stored);
     }
-    const newData = getInitialData(userId);
-    localStorage.setItem(key, JSON.stringify(newData));
-    return newData;
+    return getInitialData(userId);
 };
 
 const saveLocalDb = (userId: number, data: UserProfile) => {
@@ -75,30 +74,64 @@ const addTransaction = (userId: number, tx: Partial<NftTransaction>) => {
 
 // --- MOCK LOGIC HANDLERS ---
 
-const handleMockFallback = async (endpoint: string, method: string, body?: any) => {
-    await new Promise(r => setTimeout(r, 600));
+const handleMockFallback = async (endpoint: string, method: string, body?: any, queryParams?: string) => {
+    await new Promise(r => setTimeout(r, 400)); 
 
     const userId = body?.id || getUserId();
-    const db = getLocalDb(userId);
-
+    
     // DEBUG RESET
     if (endpoint.includes('/debug/reset')) {
         console.log("MOCK RESET");
-        localStorage.clear();
+        Object.keys(localStorage).forEach(key => {
+            if(key.includes('nft_app_db')) localStorage.removeItem(key);
+        });
         return { ok: true };
     }
 
+    let db = getLocalDb(userId);
+
     // 1. GET USER
     if (endpoint.includes('/user')) {
-        // Mock referral handling
-        // If query string has refId, logic to handle it could go here, 
-        // but simple mock just returns the user DB.
-        
-        // Ensure mock user has a ref code
-        if (!db.referralCode) {
-            db.referralCode = Math.random().toString(36).substring(2, 8);
+        let refId: string | null = null;
+        let shouldRegister = false;
+
+        if (queryParams) {
+            const params = new URLSearchParams(queryParams);
+            refId = params.get('refId');
+            shouldRegister = params.get('register') === 'true';
+        }
+
+        const debugLog = [`[Mock] Request. Ref: ${refId || 'none'}, Register: ${shouldRegister}`];
+
+        const key = getStorageKey(userId);
+        const exists = localStorage.getItem(key) !== null;
+
+        // NEW LOGIC: If user does not exist AND register is false, return preview
+        if (!exists && !shouldRegister) {
+             return { ...getInitialData(userId), isNewUser: true };
+        }
+
+        // Registration or Existing User Logic
+        if (!exists && shouldRegister) {
+            // REGISTER NEW
+            db.isNewUser = false;
+            if (refId && refId !== "none") {
+                 db.referrerId = 777; 
+                 debugLog.push(`Registration: Linked to Mock User 777 via code ${refId}`);
+            }
+            saveLocalDb(userId, db);
+        } else if (exists) {
+            // EXISTING
+            db.isNewUser = false;
+            // Late Binding
+            if (!db.referrerId && refId && refId !== "none") {
+                 db.referrerId = 777; 
+                 debugLog.push(`Late Binding: Linked to Mock User 777 via code ${refId}`);
+            }
             saveLocalDb(userId, db);
         }
+
+        db.referralDebug = debugLog.join(" | ");
         return db;
     }
 
@@ -114,10 +147,8 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
         const { type, amount, currency } = body;
         const isStars = currency === 'STARS';
         
-        // --- FIX: Use user's specific testnet wallet ---
         const mockAddress = "0QBycgJ7cxTLe4Y84HG6tOGQgf-284Es4zJzVJM8R2h1U_av";
 
-        // --- FIX: Calculate actual amount for Mock Transaction ---
         let unitPrice = 0;
         if (type === 'nft') unitPrice = NFT_PRICES[currency as Currency];
         else unitPrice = DICE_ATTEMPT_PRICES[currency as Currency];
@@ -126,13 +157,8 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
         const nanoTons = Math.round(totalTon * 1000000000).toString();
 
         const tonTransaction = {
-            validUntil: Math.floor(Date.now() / 1000) + 3600, // 1 hour validity
-            messages: [
-                {
-                    address: mockAddress, 
-                    amount: nanoTons // Dynamic amount
-                }
-            ]
+            validUntil: Math.floor(Date.now() / 1000) + 3600, 
+            messages: [{ address: mockAddress, amount: nanoTons }]
         };
 
         return { 
@@ -179,7 +205,7 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
             throw new Error("No attempts left");
         }
 
-        const roll = Math.floor(Math.random() * 6) + 1; // 1-6
+        const roll = Math.floor(Math.random() * 6) + 1; 
         
         db.diceBalance.available -= 1;
         db.diceBalance.used += 1;
@@ -190,7 +216,6 @@ const handleMockFallback = async (endpoint: string, method: string, body?: any) 
             isStarsAttempt = true;
         }
 
-        // EXACT LOGIC: 6=6, 5=5, ... 1=1
         const winAmount = roll;
 
         if (winAmount > 0) {
@@ -246,8 +271,10 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
   };
 
   let url = `${API_BASE}${endpoint}`;
+  const queryPart = url.includes('?') ? `&id=${userId}` : `?id=${userId}`;
+  
   if (method === 'GET') {
-      url += url.includes('?') ? `&id=${userId}` : `?id=${userId}`;
+      url += queryPart;
   }
 
   try {
@@ -255,8 +282,9 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
     if (!response.ok) throw new Error("Backend error");
     return await response.json();
   } catch (error: any) {
-    // Fallback to local
-    return handleMockFallback(endpoint, method, { id: userId, ...body });
+    console.warn("Backend Unreachable, using Mock Fallback. Error:", error.message);
+    const queryParams = url.split('?')[1] || '';
+    return handleMockFallback(endpoint, method, { id: userId, ...body }, queryParams);
   }
 };
 
@@ -264,10 +292,15 @@ export const debugResetDb = async (): Promise<void> => {
     await apiRequest('/debug/reset', 'POST');
 };
 
-export const fetchUserProfile = async (refId?: string): Promise<UserProfile> => {
-    // Pass refId directly (it is now a code, e.g. "a92bx1")
+export const fetchUserProfile = async (refId?: string, register: boolean = false): Promise<UserProfile> => {
+    // Pass refId directly and register flag
     let url = '/user';
-    if (refId) url += `?refId=${refId}`;
+    const params = [];
+    if (refId) params.push(`refId=${refId}`);
+    if (register) params.push(`register=true`);
+    
+    if (params.length > 0) url += `?${params.join('&')}`;
+    
     return await apiRequest(url);
 };
 

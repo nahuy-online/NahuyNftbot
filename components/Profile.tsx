@@ -23,6 +23,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
 
   // Debug State
   const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param || "none";
+  const isMockMode = user.referralDebug?.includes("[Mock]");
 
   // Update timer every minute
   useEffect(() => {
@@ -335,7 +336,9 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       <div className="mt-8 p-4 bg-red-900/20 border border-red-500/30 rounded-xl space-y-3">
           <div className="flex items-center gap-2 mb-2 border-b border-red-500/20 pb-2">
             <span className="text-red-500 text-lg">🛠️</span>
-            <span className="text-xs font-bold text-red-400 uppercase tracking-widest">Debug Zone</span>
+            <span className="text-xs font-bold text-red-400 uppercase tracking-widest">
+                Debug Zone {isMockMode && <span className="bg-yellow-500 text-black px-1 rounded ml-1">MOCK MODE</span>}
+            </span>
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">

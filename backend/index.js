@@ -28,13 +28,12 @@ const TON_WALLET = process.env.RECEIVER_TON_ADDRESS_TESTNET || USER_TESTNET_WALL
 
 console.log(`✅ Using Payment Wallet Address: ${TON_WALLET}`);
 
-// Prices - Synced with Frontend Constants generally, but TON kept low for Testnet
+// Prices
 const PRICES = {
-    nft: { STARS: 2000, TON: 0.011 }, // 0.05 TON for testnet usability
+    nft: { STARS: 2000, TON: 0.011 },
     dice: { STARS: 6666, TON: 0.036 }
 };
 
-// Referral Percentages (Level 1, Level 2, Level 3)
 const REF_LEVELS = [0.05, 0.03, 0.01]; 
 
 // --- DATABASE CONFIGURATION ---
@@ -56,7 +55,6 @@ const initDB = async () => {
         try {
             const client = await pool.connect();
             try {
-                // 1. Create Base Tables
                 await client.query(`
                     CREATE TABLE IF NOT EXISTS users (
                         id BIGINT PRIMARY KEY,
@@ -94,7 +92,6 @@ const initDB = async () => {
                     );
                 `);
 
-                // 2. Add Columns if they don't exist (Migration)
                 await client.query(`
                     ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer_id BIGINT;
                     ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code TEXT UNIQUE;
@@ -121,7 +118,6 @@ initDB();
 // --- TELEGRAM BOT ---
 if (BOT_TOKEN) {
     const bot = new TelegramBot(BOT_TOKEN, { polling: true });
-    bot.on('polling_error', (error) => console.error(`[polling_error] ${error.code}: ${error.message}`));
     
     bot.on('pre_checkout_query', (query) => {
         bot.answerPreCheckoutQuery(query.id, true).catch(() => {});
@@ -143,9 +139,6 @@ if (BOT_TOKEN) {
             const args = msg.text.split(' ');
             const refParam = args.length > 1 ? args[1] : null;
             
-            // Construct direct app link to preserve params
-            // Note: In local dev or some clients, startapp params might still be tricky,
-            // but this is the standard way.
             const opts = {
                 reply_markup: {
                     inline_keyboard: [[{ 
@@ -163,55 +156,69 @@ if (BOT_TOKEN) {
 // --- CORE LOGIC ---
 
 function generateReferralCode() {
-    return crypto.randomBytes(4).toString('hex'); // 8 char random string
+    return crypto.randomBytes(4).toString('hex');
 }
 
-async function getUser(id, username, incomingRefCode) {
+async function getUser(id, username, incomingRefCode, shouldRegister = false) {
     const client = await pool.connect();
     let debugLog = [];
-    let isNewUser = false;
     
     try {
-        debugLog.push(`Processing User ${id}. Incoming Code: "${incomingRefCode}"`);
+        debugLog.push(`Req User ${id}. Ref: "${incomingRefCode || 'none'}"`);
         
-        // 1. Check if user exists (Select referrer_id too!)
+        // 1. Check if user exists
         const checkRes = await client.query('SELECT id, referral_code, referrer_id FROM users WHERE id = $1', [id]);
         const existingUser = checkRes.rows[0];
-        isNewUser = !existingUser;
+        const isNewUser = !existingUser;
+
+        // CRITICAL CHANGE: If user is new AND we are not in registration mode, return preview only.
+        if (isNewUser && !shouldRegister) {
+            return {
+                id: parseInt(id),
+                username: username,
+                isNewUser: true, // Frontend will see this and show Popup
+                referralDebug: "New User - Waiting for Consent",
+                nftBalance: { total: 0, available: 0, locked: 0, lockedDetails: [] },
+                diceBalance: { available: 0, starsAttempts: 0, used: 0 },
+                referralStats: { level1: 0, level2: 0, level3: 0, earnings: { STARS: 0, TON: 0, USDT: 0 } }
+            };
+        }
+        
+        // IF WE ARE HERE: Either user exists OR shouldRegister is true
         
         let actualReferrerId = null;
         let myReferralCode = existingUser?.referral_code;
 
-        // 2. Resolve Referral Code if present
+        // 2. Resolve Referral Code if present (and useful)
         if (incomingRefCode && incomingRefCode !== "none" && incomingRefCode !== "") {
             const codeStr = String(incomingRefCode).trim();
             
-            // Check self-referral (Code match)
+            // Check self-referral
             let isSelf = false;
             if (existingUser && existingUser.referral_code === codeStr) isSelf = true;
             if (codeStr === String(id)) isSelf = true;
 
             if (!isSelf) {
-                // A. Try finding by unique Referral Code
+                // Try finding by unique Referral Code
                 let refCheck = await client.query('SELECT id FROM users WHERE referral_code = $1', [codeStr]);
                 
                 if (refCheck.rows.length > 0) {
                      actualReferrerId = refCheck.rows[0].id;
-                     debugLog.push(`Found referrer by Code: ${actualReferrerId}`);
+                     debugLog.push(`Resolved Ref Code to ID: ${actualReferrerId}`);
                 } else {
-                     // B. If not found, try finding by User ID (Legacy)
+                     // Try finding by User ID (Legacy)
                      if (/^\d+$/.test(codeStr)) {
                          refCheck = await client.query('SELECT id FROM users WHERE id = $1', [codeStr]);
                          if (refCheck.rows.length > 0) {
                              actualReferrerId = refCheck.rows[0].id;
-                             debugLog.push(`Found referrer by ID: ${actualReferrerId}`);
+                             debugLog.push(`Resolved Ref ID: ${actualReferrerId}`);
                          }
                      }
                 }
     
                 if (actualReferrerId && String(actualReferrerId) === String(id)) {
                     actualReferrerId = null; 
-                    debugLog.push("Self-referral detected");
+                    debugLog.push("Err: Self-referral");
                 }
             }
         }
@@ -222,20 +229,16 @@ async function getUser(id, username, incomingRefCode) {
         }
 
         // 4. UPSERT LOGIC
-        // IMPORTANT: We only INSERT if isNewUser. 
-        // We only UPDATE referrer if it was null previously (Late Binding).
-        
         if (isNewUser) {
-            // Check if we are "registering" or just checking.
-            // For now, getUser acts as "Login/Register".
-            debugLog.push(`Creating NEW user. RefID: ${actualReferrerId}`);
+            // INSERT (Registration)
+            debugLog.push(`REGISTERING. RefID: ${actualReferrerId}`);
             await client.query(`
                 INSERT INTO users (id, username, referral_code, referrer_id) VALUES ($1, $2, $3, $4)
             `, [id, username, myReferralCode, actualReferrerId]);
         } else {
-            // User Exists
+            // UPDATE (Late Binding or Username sync)
             if (!existingUser.referrer_id && actualReferrerId) {
-                debugLog.push(`LATE BINDING: Linking ${id} to ${actualReferrerId}`);
+                debugLog.push(`Linking Existing User to ${actualReferrerId}`);
                 await client.query(`
                     UPDATE users SET username = $1, referral_code = $2, referrer_id = $3 WHERE id = $4
                 `, [username, myReferralCode, actualReferrerId, id]);
@@ -249,7 +252,6 @@ async function getUser(id, username, incomingRefCode) {
         const u = res.rows[0];
         const lockedRes = await client.query('SELECT amount, unlock_date FROM locked_nfts WHERE user_id = $1', [id]);
 
-        // 6. Calculate Referral Stats
         const lvl1 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id = $1', [id]);
         const lvl2 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id = $1)', [id]);
         const lvl3 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id = $1))', [id]);
@@ -258,7 +260,7 @@ async function getUser(id, username, incomingRefCode) {
             id: parseInt(u.id),
             username: u.username,
             referralCode: u.referral_code,
-            isNewUser: isNewUser, // RETURN THIS FLAG
+            isNewUser: false, // They are now registered/exist
             referrerId: u.referrer_id ? parseInt(u.referrer_id) : null,
             referralDebug: debugLog.join(" | "),
             nftBalance: {
@@ -341,8 +343,6 @@ async function processPurchase(userId, type, packSize, currency, txId) {
                     await distributeReward(client, r3Res.rows[0].referrer_id, currency, purchaseAmount, 2); // Lvl 3
                 }
             }
-        } else {
-            console.log(`ℹ️ Buyer ${userId} has no referrer. No rewards distributed.`);
         }
 
         await client.query('COMMIT');
@@ -361,8 +361,6 @@ async function distributeReward(client, referrerId, currency, totalAmount, level
     const reward = totalAmount * percentage;
     if (reward <= 0) return;
 
-    console.log(`   -> Reward Lvl ${levelIndex+1}: User ${referrerId} gets ${reward} ${currency}`);
-
     if (currency === 'STARS') {
         const starsReward = Math.floor(reward);
         if (starsReward > 0) {
@@ -377,7 +375,6 @@ async function distributeReward(client, referrerId, currency, totalAmount, level
 
 // --- ROUTES ---
 
-// ADMIN DEBUG ROUTE
 app.post('/api/debug/reset', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -396,11 +393,12 @@ app.get('/api/user', async (req, res) => {
     try {
         const userId = req.query.id;
         const rawRef = req.query.refId;
+        const register = req.query.register === 'true'; // Check explicit register flag
         const refCode = rawRef ? rawRef.replace(/^ref_/, '') : null;
         
         if (!userId) throw new Error("ID required");
         
-        const user = await getUser(userId, "User", refCode);
+        const user = await getUser(userId, "User", refCode, register);
         res.json(user);
     } catch (e) {
         console.error("Get User Error:", e);
@@ -433,11 +431,7 @@ app.post('/api/payment/create', async (req, res) => {
     } else {
         const unitPrice = (type === 'nft' ? PRICES.nft.TON : PRICES.dice.TON);
         const totalTonAmount = unitPrice * quantity;
-        
-        // 1 TON = 1e9 nanotons.
         const nanoTons = Math.round(totalTonAmount * 1000000000).toString();
-
-        console.log(`Payment: ${quantity} x ${unitPrice} = ${totalTonAmount} TON`);
 
         const tonTransaction = {
             validUntil: Math.floor(Date.now() / 1000) + 3600, 
@@ -449,21 +443,14 @@ app.post('/api/payment/create', async (req, res) => {
 
 app.post('/api/payment/verify', async (req, res) => {
     const { id, type, amount, currency } = req.body;
-    
-    if (!id || !amount) {
-        return res.status(400).json({ error: "Missing data" });
-    }
+    if (!id || !amount) return res.status(400).json({ error: "Missing data" });
 
     try {
         console.log(`✅ Verifying TON Payment for User ${id}: ${amount} ${type}`);
         const txId = `ton_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const success = await processPurchase(id, type, parseInt(amount), currency, txId);
-        
-        if (success) {
-            res.json({ ok: true });
-        } else {
-            res.status(500).json({ error: "Processing failed" });
-        }
+        if (success) res.json({ ok: true });
+        else res.status(500).json({ error: "Processing failed" });
     } catch(e) {
         console.error("Verify Error", e);
         res.status(500).json({ error: e.message });

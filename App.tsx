@@ -1,8 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Shop } from './components/Shop';
 import { DiceGame } from './components/DiceGame';
 import { Profile } from './components/Profile';
-import { Welcome } from './components/Welcome';
 import { UserProfile, Tab } from './types';
 import { fetchUserProfile } from './services/mockApi';
 import { useTranslation } from './i18n/LanguageContext';
@@ -24,32 +23,99 @@ const Icons = {
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('shop');
   const [user, setUser] = useState<UserProfile | null>(null);
-  // Separate state to track if we are in the "onboarding" phase
-  const [isOnboarding, setIsOnboarding] = useState(false);
+  const [isCanceled, setIsCanceled] = useState(false);
   const { t } = useTranslation();
   const [tonConnectUI] = useTonConnectUI();
+  
+  // Prevent double-firing in Strict Mode
+  const initRef = useRef(false);
 
-  const loadData = async (manualRefCode?: string) => {
+  // Helper to trigger registration flow
+  const handleRegistration = async (refParam?: string) => {
+      // Small delay to ensure Loading UI renders first
+      await new Promise(r => setTimeout(r, 100));
+
+      try {
+          const webApp = window.Telegram?.WebApp;
+          
+          if (webApp) {
+              // Check if showPopup is supported (v6.2+)
+              // If isVersionAtLeast is undefined (very old versions), assume false.
+              const supportsPopup = webApp.isVersionAtLeast && webApp.isVersionAtLeast('6.2');
+
+              if (supportsPopup) {
+                  webApp.showPopup({
+                      title: 'Welcome to NFT Genesis',
+                      message: 'By continuing, you agree to our Terms of Service and Privacy Policy.',
+                      buttons: [
+                          { type: 'default', text: 'Agree & Start', id: 'agree' },
+                          { type: 'cancel', text: 'Cancel', id: 'cancel' }
+                      ]
+                  }, async (btnId) => {
+                      if (btnId === 'agree') {
+                          // Call API with register=true
+                          const registeredData = await fetchUserProfile(refParam, true);
+                          setUser(registeredData);
+                      } else {
+                          webApp.close();
+                      }
+                  });
+              } else {
+                  // Fallback for older versions (< 6.2) which don't support showPopup
+                  // Using setTimeout to unblock the render thread before confirm
+                  setTimeout(async () => {
+                      const confirmed = window.confirm("Welcome to NFT Genesis\n\nBy continuing, you agree to our Terms of Service and Privacy Policy.");
+                      if (confirmed) {
+                          const registeredData = await fetchUserProfile(refParam, true);
+                          setUser(registeredData);
+                      } else {
+                          webApp.close();
+                      }
+                  }, 50);
+              }
+          } else {
+              // Browser Fallback (Localhost)
+               setTimeout(async () => {
+                  if (confirm("Welcome! Agree to Terms of Service?")) {
+                      const registeredData = await fetchUserProfile(refParam, true);
+                      setUser(registeredData);
+                  } else {
+                      setIsCanceled(true);
+                  }
+               }, 50);
+          }
+      } catch (e) {
+          console.error("Registration error", e);
+      }
+  };
+
+  const loadData = async () => {
+    if (initRef.current) return;
+    initRef.current = true;
+
     try {
-      // 1. Get Param from Telegram or Manual Override
-      const startParam = manualRefCode || window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+      const manualRefCode = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+      console.log("Loading data with param:", manualRefCode);
       
-      console.log("Loading data with param:", startParam);
+      // 1. Fetch User (Normal Mode - No Register flag yet)
+      const data = await fetchUserProfile(manualRefCode, false);
       
-      const data = await fetchUserProfile(startParam);
-      setUser(data);
-
-      // 2. Logic: If Backend says "isNewUser", we MUST show Onboarding
-      // UNLESS we just came from Onboarding (which passes manualRefCode).
-      if (data.isNewUser && !manualRefCode) {
-          setIsOnboarding(true);
+      // 2. Check isNewUser
+      if (data.isNewUser) {
+          // If user is new, trigger Popup
+          await handleRegistration(manualRefCode);
       } else {
-          setIsOnboarding(false);
+          // User exists, set state
+          setUser(data);
       }
 
     } catch (e) {
       console.error("Failed to load user", e);
     }
+  };
+
+  const refreshUser = () => {
+      fetchUserProfile().then(setUser);
   };
 
   useEffect(() => {
@@ -60,11 +126,27 @@ const App: React.FC = () => {
         window.Telegram.WebApp.enableClosingConfirmation();
     }
     
-    // Wallet session management is now handled by initSession() in index.tsx
     loadData();
   }, [tonConnectUI]);
 
   // --- RENDERING ---
+
+  if (isCanceled) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white p-6 text-center">
+            <div>
+                <h1 className="text-xl font-bold text-red-400 mb-2">Registration Canceled</h1>
+                <p className="text-gray-400 mb-4">You must accept the terms to use this application.</p>
+                <button 
+                    onClick={() => window.location.reload()}
+                    className="bg-gray-800 px-4 py-2 rounded-lg"
+                >
+                    Restart
+                </button>
+            </div>
+        </div>
+      );
+  }
 
   if (!user) {
     return (
@@ -77,28 +159,14 @@ const App: React.FC = () => {
     );
   }
 
-  // SHOW ONBOARDING IF NEW USER
-  if (isOnboarding) {
-      return (
-          <Welcome 
-            initialRefParam={window.Telegram?.WebApp?.initDataUnsafe?.start_param}
-            onComplete={(code) => {
-                // When they click "Start", we reload data WITH the code they entered (or confirmed)
-                // This will hit backend again, perform Late Binding, and set isNewUser=false (or we just ignore it in UI)
-                loadData(code || "none"); // Send "none" string if empty to force backend update if needed, or just let it handle logic
-            }} 
-          />
-      );
-  }
-
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans selection:bg-blue-500/30">
       
       {/* Content Area */}
       <main className="max-w-md mx-auto min-h-screen relative">
-        {activeTab === 'shop' && <Shop onPurchaseComplete={() => loadData()} />}
-        {activeTab === 'dice' && <DiceGame user={user} onUpdate={() => loadData()} />}
-        {activeTab === 'profile' && <Profile user={user} onUpdate={() => loadData()} />}
+        {activeTab === 'shop' && <Shop onPurchaseComplete={refreshUser} />}
+        {activeTab === 'dice' && <DiceGame user={user} onUpdate={refreshUser} />}
+        {activeTab === 'profile' && <Profile user={user} onUpdate={refreshUser} />}
       </main>
 
       {/* Bottom Navigation */}
