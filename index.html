@@ -90,6 +90,17 @@
         animation: confetti-fountain 3.5s cubic-bezier(0.1, 0.7, 0.1, 1) forwards;
       }
 
+      /* Sparkle Animations for Roll 4 */
+      @keyframes sparkle-float {
+        0%, 100% { transform: scale(1); opacity: 0.8; }
+        50% { transform: scale(0.6); opacity: 0.4; }
+      }
+      
+      @keyframes sparkle-ping {
+        0% { transform: scale(0.5); opacity: 0.8; }
+        100% { transform: scale(2.5); opacity: 0; }
+      }
+
       /* Pulse Ring */
       @keyframes pulse-ring {
         0% { transform: scale(0.8); opacity: 0.8; box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7); }

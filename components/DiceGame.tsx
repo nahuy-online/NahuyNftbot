@@ -86,7 +86,7 @@ const SparklesEffect = () => {
              <div className="absolute inset-0 bg-cyan-500/10 animate-pulse"></div>
              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-blue-500/20 blur-2xl rounded-full"></div>
              
-             {/* Floating Stars */}
+             {/* Floating Stars using 'sparkle-float' global animation */}
              {stars.map(s => (
                  <div 
                     key={s.id} 
@@ -95,24 +95,23 @@ const SparklesEffect = () => {
                         left: `${s.left}%`, 
                         top: `${s.top}%`, 
                         fontSize: `${10 * s.scale}px`,
-                        animation: `pulse ${s.duration}s ease-in-out infinite`,
-                        animationDelay: `${s.delay}s`,
-                        opacity: 0.8
+                        animation: `sparkle-float ${s.duration}s ease-in-out infinite`,
+                        animationDelay: `${s.delay}s`
                     }} 
                  >✦</div>
              ))}
 
-             {/* Ping Bursts */}
+             {/* Burst Pings using 'sparkle-ping' global animation */}
              {stars.slice(0, 10).map(s => (
                  <div 
                     key={`burst-${s.id}`} 
-                    className="absolute bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)] animate-ping"
+                    className="absolute bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)]"
                     style={{ 
                         left: `${s.left}%`, 
                         top: `${s.top}%`, 
                         width: '4px', 
                         height: '4px', 
-                        animationDuration: '1s',
+                        animation: `sparkle-ping 1.5s ease-out infinite`,
                         animationDelay: `${s.delay}s` 
                     }} 
                  />
