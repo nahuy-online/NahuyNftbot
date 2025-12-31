@@ -11,7 +11,8 @@ interface DiceGameProps {
   onUpdate: () => void;
 }
 
-// Visual Effects Components
+// --- VISUAL EFFECTS ---
+
 const FireworksEffect = () => {
     const particles = Array.from({ length: 50 }).map((_, i) => {
         let angle;
@@ -67,6 +68,52 @@ const ConfettiEffect = () => {
         </div>
     );
 };
+
+const SparklesEffect = () => {
+    // Distinct from confetti: Random static pops/pings instead of falling movement
+    const sparkles = Array.from({ length: 25 }).map((_, i) => ({
+        id: i,
+        left: `${Math.random() * 100}%`,
+        top: `${Math.random() * 100}%`,
+        delay: Math.random() * 1.5,
+        scale: 0.5 + Math.random()
+    }));
+
+    return (
+        <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden rounded-2xl">
+             <div className="absolute inset-0 bg-cyan-500/10 animate-pulse rounded-2xl"></div>
+             {sparkles.map(s => (
+                 <div 
+                    key={s.id} 
+                    className="absolute bg-cyan-300 rounded-full shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-ping"
+                    style={{ 
+                        left: s.left, 
+                        top: s.top, 
+                        width: '4px', 
+                        height: '4px', 
+                        animationDuration: '1.2s',
+                        animationDelay: `${s.delay}s` 
+                    }} 
+                 />
+             ))}
+             {sparkles.slice(0, 10).map(s => (
+                 <div 
+                    key={`static-${s.id}`} 
+                    className="absolute text-white/60 animate-bounce"
+                    style={{ 
+                        left: s.left, 
+                        top: s.top, 
+                        fontSize: '10px',
+                        animationDuration: '3s',
+                        animationDelay: `${s.delay}s` 
+                    }} 
+                 >✦</div>
+             ))}
+        </div>
+    );
+};
+
+// --- MAIN COMPONENT ---
 
 export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
   const [view, setView] = useState<'play' | 'buy'>('play');
@@ -295,13 +342,15 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
   // Result config logic
   const getResultConfig = (roll: number) => {
       // 6: Gold, Legendary only
-      if (roll === 6) return { bg: 'bg-gradient-to-r from-yellow-600 to-amber-500', border: 'border-yellow-300', shadow: 'shadow-[0_0_30px_rgba(250,204,21,0.5)]', text: t('win_legendary'), subtext: t('win_jackpot'), Effect: FireworksEffect, icon: '👑', iconAnim: 'animate-bounce' };
+      // SWAPPED: Main Text = JACKPOT, Sub Text = LEGENDARY
+      if (roll === 6) return { bg: 'bg-gradient-to-r from-yellow-600 to-amber-500', border: 'border-yellow-300', shadow: 'shadow-[0_0_30px_rgba(250,204,21,0.5)]', text: t('win_jackpot'), subtext: t('win_legendary'), Effect: FireworksEffect, icon: '👑', iconAnim: 'animate-bounce' };
       
       // 5: Purple, Amazing
       if (roll === 5) return { bg: 'bg-gradient-to-r from-purple-600 to-pink-500', border: 'border-pink-300', shadow: 'shadow-[0_0_25px_rgba(236,72,153,0.5)]', text: t('win_amazing'), subtext: t('win_epic'), Effect: ConfettiEffect, icon: '🎉', iconAnim: 'animate-spin-slow' };
       
       // 4: Blue/Cyan, Great Win
-      if (roll === 4) return { bg: 'bg-gradient-to-r from-blue-600 to-cyan-500', border: 'border-cyan-300', shadow: 'shadow-[0_0_20px_rgba(6,182,212,0.5)]', text: t('win_great'), subtext: t('win_rare'), Effect: ConfettiEffect, icon: '✨', iconAnim: 'animate-pulse' };
+      // UPDATED EFFECT: SparklesEffect
+      if (roll === 4) return { bg: 'bg-gradient-to-r from-blue-600 to-cyan-500', border: 'border-cyan-300', shadow: 'shadow-[0_0_20px_rgba(6,182,212,0.5)]', text: t('win_great'), subtext: t('win_rare'), Effect: SparklesEffect, icon: '✨', iconAnim: 'animate-pulse' };
 
       // 3: Green, Nice Catch
       if (roll === 3) return { bg: 'bg-gradient-to-r from-green-600 to-emerald-600', border: 'border-green-400', shadow: 'shadow-[0_0_15px_rgba(74,222,128,0.3)]', text: t('win_basic'), subtext: t('win_nice'), Effect: null, icon: '🎲', iconAnim: 'animate-pulse' };
