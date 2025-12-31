@@ -70,44 +70,52 @@ const ConfettiEffect = () => {
 };
 
 const SparklesEffect = () => {
-    // Distinct from confetti: Random static pops/pings instead of falling movement
-    const sparkles = Array.from({ length: 25 }).map((_, i) => ({
+    // A magical, energetic effect for "Rare Find" / 4
+    const stars = Array.from({ length: 25 }).map((_, i) => ({
         id: i,
-        left: `${Math.random() * 100}%`,
-        top: `${Math.random() * 100}%`,
-        delay: Math.random() * 1.5,
-        scale: 0.5 + Math.random()
+        left: Math.random() * 100,
+        top: Math.random() * 100,
+        scale: 0.5 + Math.random(),
+        delay: Math.random() * 1,
+        duration: 1.5 + Math.random()
     }));
 
     return (
         <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden rounded-2xl">
-             <div className="absolute inset-0 bg-cyan-500/10 animate-pulse rounded-2xl"></div>
-             {sparkles.map(s => (
+             {/* Background Aura */}
+             <div className="absolute inset-0 bg-cyan-500/10 animate-pulse"></div>
+             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-blue-500/20 blur-2xl rounded-full"></div>
+             
+             {/* Floating Stars */}
+             {stars.map(s => (
                  <div 
                     key={s.id} 
-                    className="absolute bg-cyan-300 rounded-full shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-ping"
+                    className="absolute text-cyan-200"
                     style={{ 
-                        left: s.left, 
-                        top: s.top, 
+                        left: `${s.left}%`, 
+                        top: `${s.top}%`, 
+                        fontSize: `${10 * s.scale}px`,
+                        animation: `pulse ${s.duration}s ease-in-out infinite`,
+                        animationDelay: `${s.delay}s`,
+                        opacity: 0.8
+                    }} 
+                 >✦</div>
+             ))}
+
+             {/* Ping Bursts */}
+             {stars.slice(0, 10).map(s => (
+                 <div 
+                    key={`burst-${s.id}`} 
+                    className="absolute bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)] animate-ping"
+                    style={{ 
+                        left: `${s.left}%`, 
+                        top: `${s.top}%`, 
                         width: '4px', 
                         height: '4px', 
-                        animationDuration: '1.2s',
+                        animationDuration: '1s',
                         animationDelay: `${s.delay}s` 
                     }} 
                  />
-             ))}
-             {sparkles.slice(0, 10).map(s => (
-                 <div 
-                    key={`static-${s.id}`} 
-                    className="absolute text-white/60 animate-bounce"
-                    style={{ 
-                        left: s.left, 
-                        top: s.top, 
-                        fontSize: '10px',
-                        animationDuration: '3s',
-                        animationDelay: `${s.delay}s` 
-                    }} 
-                 >✦</div>
              ))}
         </div>
     );
@@ -181,7 +189,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
         onUpdate(); 
         
         if (window.Telegram?.WebApp?.HapticFeedback) {
-            if (result >= 5) {
+            if (result >= 4) { // Success haptic for 4, 5, 6
                 window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
             } else {
                 window.Telegram.WebApp.HapticFeedback.impactOccurred('heavy');
@@ -342,14 +350,16 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
   // Result config logic
   const getResultConfig = (roll: number) => {
       // 6: Gold, Legendary only
-      // SWAPPED: Main Text = JACKPOT, Sub Text = LEGENDARY
+      // Main Text = JACKPOT, Sub Text = LEGENDARY
       if (roll === 6) return { bg: 'bg-gradient-to-r from-yellow-600 to-amber-500', border: 'border-yellow-300', shadow: 'shadow-[0_0_30px_rgba(250,204,21,0.5)]', text: t('win_jackpot'), subtext: t('win_legendary'), Effect: FireworksEffect, icon: '👑', iconAnim: 'animate-bounce' };
       
       // 5: Purple, Amazing
+      // Main Text = AMAZING, Sub Text = Epic Win
       if (roll === 5) return { bg: 'bg-gradient-to-r from-purple-600 to-pink-500', border: 'border-pink-300', shadow: 'shadow-[0_0_25px_rgba(236,72,153,0.5)]', text: t('win_amazing'), subtext: t('win_epic'), Effect: ConfettiEffect, icon: '🎉', iconAnim: 'animate-spin-slow' };
       
       // 4: Blue/Cyan, Great Win
-      // UPDATED EFFECT: SparklesEffect
+      // Main Text = GREAT!, Sub Text = Great Win (Rare Find)
+      // Updated Effect: SparklesEffect
       if (roll === 4) return { bg: 'bg-gradient-to-r from-blue-600 to-cyan-500', border: 'border-cyan-300', shadow: 'shadow-[0_0_20px_rgba(6,182,212,0.5)]', text: t('win_great'), subtext: t('win_rare'), Effect: SparklesEffect, icon: '✨', iconAnim: 'animate-pulse' };
 
       // 3: Green, Nice Catch
