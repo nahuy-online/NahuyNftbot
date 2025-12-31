@@ -58,10 +58,11 @@
       }
 
       /* --- 1. FIREWORKS (ROLL 6) --- */
-      /* Streaks radiating outward */
+      /* Streaks radiating outward, slow fade */
       @keyframes firework-streak-burst {
         0% { transform: translate(0, 0) rotate(var(--rot)) scale(1); opacity: 1; }
         10% { opacity: 1; }
+        80% { opacity: 1; }
         100% { transform: translate(var(--tx), var(--ty)) rotate(var(--rot)) scale(0.5); opacity: 0; }
       }
       
@@ -73,22 +74,23 @@
         height: 12px; /* Elongated spark */
         border-radius: 1px;
         transform-origin: center center;
-        animation: firework-streak-burst 1.5s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
+        /* Cubic-bezier for "explosive" start, then slow drift */
+        animation: firework-streak-burst 3s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
       }
 
       /* --- 2. CONFETTI (ROLL 5) --- */
-      /* Fountain effect with gravity feeling */
-      @keyframes confetti-fall {
+      /* Fountain effect: Shoot up/side, then drift down */
+      @keyframes confetti-arc {
         0% { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; }
-        25% { transform: translate(var(--ctx), var(--cty)) rotate(90deg) scale(1); opacity: 1; } /* Peak of fountain roughly */
-        100% { transform: translate(calc(var(--ctx) * 1.2), calc(var(--cty) + 100px)) rotate(var(--crot)) scale(0.8); opacity: 0; } /* Fall down */
+        30% { transform: translate(var(--tx), var(--ty)) rotate(180deg) scale(1); opacity: 1; } /* Reach Peak */
+        100% { transform: translate(calc(var(--tx) * 1.5), calc(var(--ty) + 200px)) rotate(720deg) scale(0.8); opacity: 0; } /* Fall with gravity */
       }
       
       .confetti-piece {
         position: absolute;
         top: 50%;
         left: 50%;
-        animation: confetti-fall 3s ease-out forwards;
+        animation: confetti-arc 3s ease-out forwards;
       }
 
       /* --- 3. SPARKLES (ROLL 4) --- */
@@ -96,7 +98,8 @@
       @keyframes sparkle-blast {
         0% { transform: translate(0, 0) scale(0) rotate(0deg); opacity: 0; }
         10% { transform: translate(0, 0) scale(1.5) rotate(45deg); opacity: 1; }
-        100% { transform: translate(var(--sx), var(--sy)) scale(0) rotate(360deg); opacity: 0; }
+        80% { opacity: 1; }
+        100% { transform: translate(var(--tx), var(--ty)) scale(0) rotate(360deg); opacity: 0; }
       }
 
       .sparkle-star {
@@ -106,7 +109,7 @@
         font-weight: bold;
         line-height: 0;
         /* Ease-out for fast start, slow end */
-        animation: sparkle-blast 2s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
+        animation: sparkle-blast 3s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
       }
 
       /* Pulse Ring */

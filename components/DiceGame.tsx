@@ -11,20 +11,33 @@ interface DiceGameProps {
   onUpdate: () => void;
 }
 
-// --- VISUAL EFFECTS ---
+// --- VISUAL EFFECTS HELPERS ---
+
+// Helper to get an angle that avoids the center (Top/Up direction -90deg)
+// We want two cones: Top-Right (-15 to -75) and Top-Left (-105 to -165)
+const getSafeAngle = () => {
+    const isRight = Math.random() > 0.5;
+    // 0 is Right, -90 is Up, -180 is Left
+    if (isRight) {
+        // -15 to -75
+        return (-15 - Math.random() * 60) * (Math.PI / 180);
+    } else {
+        // -105 to -165
+        return (-105 - Math.random() * 60) * (Math.PI / 180);
+    }
+};
 
 // 1. FIREWORKS (For 6/Jackpot) - Gold/Orange, streaks, explosive
 const FireworksEffect = () => {
     const particles = Array.from({ length: 70 }).map((_, i) => {
-        const angleDeg = Math.random() * 360;
-        const angleRad = angleDeg * (Math.PI / 180);
-        const distance = 100 + Math.random() * 140; 
+        const angleRad = getSafeAngle();
+        const angleDeg = angleRad * (180 / Math.PI);
+        const distance = 160 + Math.random() * 180; // Fly further for 3s
         
         const tx = Math.cos(angleRad) * distance;
         const ty = Math.sin(angleRad) * distance;
         
         // Rotate streak to point outwards from center
-        // +90 because default vertical line points down/up
         const rotation = angleDeg + 90;
 
         return { 
@@ -33,7 +46,7 @@ const FireworksEffect = () => {
             ty: `${ty}px`, 
             rot: `${rotation}deg`,
             color: ['#FFD700', '#FFA500', '#FF4500', '#FFFFFF', '#FFFF00'][Math.floor(Math.random() * 5)],
-            delay: Math.random() * 0.2
+            delay: Math.random() * 0.4
         };
     });
     return (
@@ -45,7 +58,8 @@ const FireworksEffect = () => {
                         '--ty': p.ty, 
                         '--rot': p.rot,
                         backgroundColor: p.color, 
-                        animationDelay: `${p.delay}s`
+                        animationDelay: `${p.delay}s`,
+                        animationDuration: '3s'
                     } as React.CSSProperties} />
             ))}
             <div className="absolute w-40 h-40 bg-yellow-500/10 blur-[60px] rounded-full animate-pulse z-0"></div>
@@ -55,24 +69,35 @@ const FireworksEffect = () => {
 
 // 2. CONFETTI (For 5/Amazing) - Multi-color, strips, gravity fall
 const ConfettiEffect = () => {
-    const pieces = Array.from({ length: 40 }).map((_, i) => {
-        // Fountain angles: mostly upwards (-45 to -135 deg)
-        const angle = (-45 - Math.random() * 90) * (Math.PI / 180);
-        const distance = 120 + Math.random() * 80;
-        const tx = Math.cos(angle) * distance;
-        const ty = Math.sin(angle) * distance;
-        const rot = Math.random() * 360;
+    const pieces = Array.from({ length: 50 }).map((_, i) => {
+        const angleRad = getSafeAngle();
+        // Slightly shorter distance for confetti peak before falling
+        const distance = 140 + Math.random() * 100; 
+        
+        const tx = Math.cos(angleRad) * distance;
+        const ty = Math.sin(angleRad) * distance;
+        
         return {
-            id: i, tx: `${tx}px`, ty: `${ty}px`, rot: `${rot}deg`,
+            id: i, 
+            tx: `${tx}px`, 
+            ty: `${ty}px`, 
             color: ['#F472B6', '#34D399', '#60A5FA', '#FBBF24', '#A78BFA'][i % 5],
-            delay: Math.random() * 0.2
+            delay: Math.random() * 0.3
         };
     });
     return (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
             {pieces.map(p => (
                 <div key={p.id} className="confetti-piece"
-                    style={{ '--ctx': p.tx, '--cty': p.ty, '--crot': p.rot, backgroundColor: p.color, width: Math.random() > 0.5 ? '6px' : '4px', height: Math.random() > 0.5 ? '8px' : '12px', animationDelay: `${p.delay}s` } as React.CSSProperties} />
+                    style={{ 
+                        '--tx': p.tx, 
+                        '--ty': p.ty, 
+                        backgroundColor: p.color, 
+                        width: Math.random() > 0.5 ? '6px' : '4px', 
+                        height: Math.random() > 0.5 ? '8px' : '12px', 
+                        animationDelay: `${p.delay}s`,
+                        animationDuration: '3s'
+                    } as React.CSSProperties} />
             ))}
         </div>
     );
@@ -80,27 +105,17 @@ const ConfettiEffect = () => {
 
 // 3. SPARKLES (For 4/Great) - Cyan/Blue, Stars, Fly Out Side/Up, Spin
 const SparklesEffect = () => {
-    const stars = Array.from({ length: 40 }).map((_, i) => {
-        // Avoid straight up (-90 deg) to not hit the cube.
-        // Go Sides (-0 to -60) and (-120 to -180).
-        const isRight = Math.random() > 0.5;
-        // Angles: 0 is Right, -90 is Up, -180 is Left.
-        // Right Side: -10 to -60 degrees
-        // Left Side: -120 to -170 degrees
-        const angleDeg = isRight 
-            ? (-10 - Math.random() * 50) 
-            : (-120 - Math.random() * 50);
-            
-        const angle = angleDeg * (Math.PI / 180);
-        const distance = 140 + Math.random() * 120; // Fly far
+    const stars = Array.from({ length: 45 }).map((_, i) => {
+        const angleRad = getSafeAngle();
+        const distance = 180 + Math.random() * 160; // Fly far
         
-        const tx = Math.cos(angle) * distance;
-        const ty = Math.sin(angle) * distance;
+        const tx = Math.cos(angleRad) * distance;
+        const ty = Math.sin(angleRad) * distance;
 
         return {
             id: i,
-            sx: `${tx}px`, // Use sx/sy for sparkle-blast keyframe
-            sy: `${ty}px`,
+            tx: `${tx}px`,
+            ty: `${ty}px`,
             scale: 0.5 + Math.random() * 0.8,
             delay: Math.random() * 0.5,
             color: ['#22d3ee', '#a5f3fc', '#ffffff'][Math.floor(Math.random() * 3)]
@@ -118,12 +133,12 @@ const SparklesEffect = () => {
                     key={s.id} 
                     className="sparkle-star"
                     style={{ 
-                        '--sx': s.sx,
-                        '--sy': s.sy,
+                        '--tx': s.tx,
+                        '--ty': s.ty,
                         color: s.color,
                         fontSize: `${14 * s.scale}px`,
                         animationDelay: `${s.delay}s`,
-                        animationDuration: '3s' // Explicitly set 3s duration
+                        animationDuration: '3s' 
                     } as React.CSSProperties} 
                  >
                     {Math.random() > 0.6 ? '✦' : '★'}
