@@ -57,48 +57,54 @@
         100% { transform: skewX(-20deg) translateX(150%); }
       }
 
-      /* --- PARTICLES FOR WINNING --- */
-      
-      /* Firework Particle - 3.5s duration */
+      /* --- 1. FIREWORKS (ROLL 6) --- */
+      /* Fast explosion, slows down */
       @keyframes firework-burst {
         0% { transform: translate(0, 0) scale(1); opacity: 1; }
-        40% { opacity: 1; } /* Keep visible longer */
-        100% { transform: translate(var(--tx), var(--ty)) scale(0.1); opacity: 0; }
+        50% { opacity: 1; }
+        100% { transform: translate(var(--tx), var(--ty)) scale(0); opacity: 0; }
       }
       
       .firework-particle {
         position: absolute;
         top: 50%;
         left: 50%;
-        width: 6px;
-        height: 6px;
         border-radius: 50%;
-        animation: firework-burst 3.5s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
+        /* Cubic-bezier for "explosive" start */
+        animation: firework-burst 2s cubic-bezier(0.25, 1, 0.5, 1) forwards;
       }
 
-      /* Confetti Fountain - 3.5s duration */
-      @keyframes confetti-fountain {
+      /* --- 2. CONFETTI (ROLL 5) --- */
+      /* Fountain effect with gravity feeling */
+      @keyframes confetti-fall {
         0% { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; }
-        20% { opacity: 1; }
-        100% { transform: translate(var(--ctx), var(--cty)) rotate(var(--crot)) scale(0.8); opacity: 0; }
+        25% { transform: translate(var(--ctx), var(--cty)) rotate(90deg) scale(1); opacity: 1; } /* Peak of fountain roughly */
+        100% { transform: translate(calc(var(--ctx) * 1.2), calc(var(--cty) + 100px)) rotate(var(--crot)) scale(0.8); opacity: 0; } /* Fall down */
       }
       
       .confetti-piece {
         position: absolute;
         top: 50%;
         left: 50%;
-        animation: confetti-fountain 3.5s cubic-bezier(0.1, 0.7, 0.1, 1) forwards;
+        animation: confetti-fall 3s ease-out forwards;
       }
 
-      /* Sparkle Animations for Roll 4 */
-      @keyframes sparkle-float {
-        0%, 100% { transform: scale(1); opacity: 0.8; }
-        50% { transform: scale(0.6); opacity: 0.4; }
+      /* --- 3. SPARKLES (ROLL 4) --- */
+      /* Magical fly-out: Starts small, moves fast, spins */
+      @keyframes sparkle-blast {
+        0% { transform: translate(0, 0) scale(0) rotate(0deg); opacity: 0; }
+        10% { transform: translate(0, 0) scale(1.5) rotate(45deg); opacity: 1; }
+        100% { transform: translate(var(--sx), var(--sy)) scale(0) rotate(360deg); opacity: 0; }
       }
-      
-      @keyframes sparkle-ping {
-        0% { transform: scale(0.5); opacity: 0.8; }
-        100% { transform: scale(2.5); opacity: 0; }
+
+      .sparkle-star {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        font-weight: bold;
+        line-height: 0;
+        /* Ease-out for fast start, slow end */
+        animation: sparkle-blast 2s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
       }
 
       /* Pulse Ring */

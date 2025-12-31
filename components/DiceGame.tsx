@@ -13,106 +13,95 @@ interface DiceGameProps {
 
 // --- VISUAL EFFECTS ---
 
+// 1. FIREWORKS (For 6/Jackpot) - Gold/Orange, round dots, explosive
 const FireworksEffect = () => {
-    const particles = Array.from({ length: 50 }).map((_, i) => {
-        let angle;
-        if (Math.random() > 0.5) {
-            angle = (-60 + Math.random() * 70) * (Math.PI / 180);
-        } else {
-            angle = (-120 - Math.random() * 70) * (Math.PI / 180);
-        }
-        const distance = 120 + Math.random() * 180; 
+    const particles = Array.from({ length: 60 }).map((_, i) => {
+        // Full radial explosion
+        const angle = (Math.random() * 360) * (Math.PI / 180);
+        const distance = 120 + Math.random() * 150; 
         const tx = Math.cos(angle) * distance;
         const ty = Math.sin(angle) * distance;
         return { 
             id: i, tx: `${tx}px`, ty: `${ty}px`, 
-            color: ['#FFD700', '#FFA500', '#FFFFFF', '#FF4500', '#00FFFF'][Math.floor(Math.random() * 5)],
-            delay: Math.random() * 0.5
+            color: ['#FFD700', '#FFA500', '#FF4500', '#FFFF00'][Math.floor(Math.random() * 4)],
+            delay: Math.random() * 0.4
         };
     });
     return (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
             {particles.map(p => (
-                <div key={p.id} className="firework-particle shadow-[0_0_10px_currentColor]"
-                    style={{ '--tx': p.tx, '--ty': p.ty, backgroundColor: p.color, color: p.color, animationDelay: `${p.delay}s`, width: Math.random() > 0.7 ? '4px' : '6px', height: Math.random() > 0.7 ? '4px' : '6px' } as React.CSSProperties} />
+                <div key={p.id} className="firework-particle shadow-[0_0_8px_currentColor]"
+                    style={{ '--tx': p.tx, '--ty': p.ty, backgroundColor: p.color, animationDelay: `${p.delay}s`, width: Math.random() > 0.5 ? '4px' : '6px', height: Math.random() > 0.5 ? '4px' : '6px' } as React.CSSProperties} />
             ))}
-            <div className="absolute w-40 h-40 bg-yellow-400/10 blur-[60px] rounded-full animate-pulse z-0"></div>
+            <div className="absolute w-40 h-40 bg-yellow-500/10 blur-[60px] rounded-full animate-pulse z-0"></div>
         </div>
     );
 };
 
+// 2. CONFETTI (For 5/Amazing) - Multi-color, strips, gravity fall
 const ConfettiEffect = () => {
     const pieces = Array.from({ length: 40 }).map((_, i) => {
-        let angle;
-        if (Math.random() > 0.5) {
-             angle = (-20 - Math.random() * 50) * (Math.PI / 180);
-        } else {
-             angle = (-160 + Math.random() * 50) * (Math.PI / 180);
-        }
-        const distance = 150 + Math.random() * 100;
+        // Fountain angles: mostly upwards (-45 to -135 deg)
+        const angle = (-45 - Math.random() * 90) * (Math.PI / 180);
+        const distance = 120 + Math.random() * 80;
         const tx = Math.cos(angle) * distance;
         const ty = Math.sin(angle) * distance;
-        const rot = Math.random() * 720 - 360;
+        const rot = Math.random() * 360;
         return {
             id: i, tx: `${tx}px`, ty: `${ty}px`, rot: `${rot}deg`,
             color: ['#F472B6', '#34D399', '#60A5FA', '#FBBF24', '#A78BFA'][i % 5],
-            delay: Math.random() * 0.3, duration: 3.5 + Math.random() 
+            delay: Math.random() * 0.2
         };
     });
     return (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
             {pieces.map(p => (
                 <div key={p.id} className="confetti-piece"
-                    style={{ '--ctx': p.tx, '--cty': p.ty, '--crot': p.rot, backgroundColor: p.color, width: Math.random() > 0.5 ? '6px' : '4px', height: Math.random() > 0.5 ? '6px' : '10px', animationDelay: `${p.delay}s`, animationDuration: `${p.duration}s` } as React.CSSProperties} />
+                    style={{ '--ctx': p.tx, '--cty': p.ty, '--crot': p.rot, backgroundColor: p.color, width: Math.random() > 0.5 ? '6px' : '4px', height: Math.random() > 0.5 ? '8px' : '12px', animationDelay: `${p.delay}s` } as React.CSSProperties} />
             ))}
         </div>
     );
 };
 
+// 3. SPARKLES (For 4/Great) - Cyan/Blue, Stars, Fly Out, Spin
 const SparklesEffect = () => {
-    // Generate particles that fly OUTWARDS from center (using translation), not just float inside
-    const stars = Array.from({ length: 30 }).map((_, i) => {
-        // Random angle for explosion effect
+    const stars = Array.from({ length: 35 }).map((_, i) => {
+        // Radial explosion
         const angle = (Math.random() * 360) * (Math.PI / 180);
-        // Distance needs to be large enough to fly OUT of the card
-        const distance = 80 + Math.random() * 150; 
+        const distance = 100 + Math.random() * 180; // Fly far!
         
         const tx = Math.cos(angle) * distance;
         const ty = Math.sin(angle) * distance;
 
         return {
             id: i,
-            tx: `${tx}px`,
-            ty: `${ty}px`,
-            scale: 0.5 + Math.random(),
-            delay: Math.random() * 0.2,
-            // Cyan, Light Blue, White colors
-            color: ['#22d3ee', '#a5f3fc', '#ffffff', '#60a5fa'][Math.floor(Math.random() * 4)]
+            sx: `${tx}px`, // Use sx/sy for sparkle-blast keyframe
+            sy: `${ty}px`,
+            scale: 0.6 + Math.random(),
+            delay: Math.random() * 0.3,
+            color: ['#22d3ee', '#a5f3fc', '#ffffff'][Math.floor(Math.random() * 3)]
         };
     });
 
     return (
-        // IMPORTANT: No overflow-hidden here, so they fly out over other elements
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
              {/* Background Aura */}
-             <div className="absolute w-48 h-48 bg-cyan-500/20 blur-[50px] rounded-full animate-pulse"></div>
+             <div className="absolute w-40 h-40 bg-cyan-400/10 blur-[50px] rounded-full animate-pulse"></div>
              
              {/* Flying Stars */}
              {stars.map(s => (
                  <div 
                     key={s.id} 
-                    className="absolute font-bold"
+                    className="sparkle-star"
                     style={{ 
-                        '--tx': s.tx, // Reuse the firework logic for translation
-                        '--ty': s.ty,
+                        '--sx': s.sx,
+                        '--sy': s.sy,
                         color: s.color,
-                        fontSize: `${12 * s.scale}px`,
-                        // Reuse firework-burst animation but with stars
-                        animation: `firework-burst 2s cubic-bezier(0.1, 0.8, 0.2, 1) forwards`,
+                        fontSize: `${14 * s.scale}px`,
                         animationDelay: `${s.delay}s`
                     } as React.CSSProperties} 
                  >
-                    {Math.random() > 0.5 ? '✦' : '✨'}
+                    {Math.random() > 0.6 ? '✦' : '★'}
                  </div>
              ))}
         </div>
@@ -347,17 +336,13 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
 
   // Result config logic
   const getResultConfig = (roll: number) => {
-      // 6: Gold, Legendary only
-      // Main Text = JACKPOT (Big), Sub Text = LEGENDARY (Small on top)
+      // 6: Gold, Legendary only (Fireworks)
       if (roll === 6) return { bg: 'bg-gradient-to-r from-yellow-600 to-amber-500', border: 'border-yellow-300', shadow: 'shadow-[0_0_30px_rgba(250,204,21,0.5)]', text: t('win_jackpot'), subtext: t('win_legendary'), Effect: FireworksEffect, icon: '👑', iconAnim: 'animate-bounce' };
       
-      // 5: Purple, Amazing
-      // Main Text = AMAZING, Sub Text = Epic Win
+      // 5: Purple, Amazing (Confetti)
       if (roll === 5) return { bg: 'bg-gradient-to-r from-purple-600 to-pink-500', border: 'border-pink-300', shadow: 'shadow-[0_0_25px_rgba(236,72,153,0.5)]', text: t('win_amazing'), subtext: t('win_epic'), Effect: ConfettiEffect, icon: '🎉', iconAnim: 'animate-spin-slow' };
       
-      // 4: Blue/Cyan, Great Win
-      // Main Text = GREAT!, Sub Text = Excellent
-      // Updated Effect: SparklesEffect (Flying stars)
+      // 4: Blue/Cyan, Great Win (Sparkles/Stars)
       if (roll === 4) return { bg: 'bg-gradient-to-r from-blue-600 to-cyan-500', border: 'border-cyan-300', shadow: 'shadow-[0_0_20px_rgba(6,182,212,0.5)]', text: t('win_great'), subtext: t('win_rare'), Effect: SparklesEffect, icon: '✨', iconAnim: 'animate-pulse' };
 
       // 3: Green, Nice Catch
