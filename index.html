@@ -57,48 +57,47 @@
         100% { transform: skewX(-20deg) translateX(150%); }
       }
 
-      /* --- 1. FIREWORKS (ROLL 6) --- */
-      /* Streaks radiating outward, slow fade */
-      @keyframes firework-streak-burst {
-        0% { transform: translate(0, 0) rotate(var(--rot)) scale(1); opacity: 1; }
-        10% { opacity: 1; }
-        80% { opacity: 1; }
-        100% { transform: translate(var(--tx), var(--ty)) rotate(var(--rot)) scale(0.5); opacity: 0; }
+      /* --- UNIFIED ANIMATION CURVE --- */
+      /* All particles use this timing to ensure same speed/duration */
+      
+      /* 1. FIREWORKS (ROLL 6) - Streaks */
+      @keyframes firework-unified {
+        0% { transform: translate(0, 0) rotate(var(--rot)) scale(0.5); opacity: 0; }
+        10% { opacity: 1; transform: translate(calc(var(--tx) * 0.1), calc(var(--ty) * 0.1)) rotate(var(--rot)) scale(1); }
+        100% { transform: translate(var(--tx), var(--ty)) rotate(var(--rot)) scale(0.2); opacity: 0; }
       }
       
       .firework-streak {
         position: absolute;
         top: 50%;
         left: 50%;
-        width: 3px;
-        height: 12px; /* Elongated spark */
-        border-radius: 1px;
+        width: 4px;
+        height: 16px; /* Longer streak for 🎇 effect */
+        border-radius: 2px;
         transform-origin: center center;
-        /* Cubic-bezier for "explosive" start, then slow drift */
-        animation: firework-streak-burst 3s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
+        /* Same bezier as others for unified speed */
+        animation: firework-unified 3s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
       }
 
-      /* --- 2. CONFETTI (ROLL 5) --- */
-      /* Fountain effect: Shoot up/side, then drift down */
-      @keyframes confetti-arc {
-        0% { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; }
-        30% { transform: translate(var(--tx), var(--ty)) rotate(180deg) scale(1); opacity: 1; } /* Reach Peak */
-        100% { transform: translate(calc(var(--tx) * 1.5), calc(var(--ty) + 200px)) rotate(720deg) scale(0.8); opacity: 0; } /* Fall with gravity */
+      /* 2. CONFETTI (ROLL 5) - Rectangles */
+      @keyframes confetti-unified {
+        0% { transform: translate(0, 0) rotate(0deg) scale(0); opacity: 0; }
+        15% { opacity: 1; transform: translate(calc(var(--tx) * 0.15), calc(var(--ty) * 0.15)) rotate(90deg) scale(1); }
+        100% { transform: translate(var(--tx), var(--ty)) rotate(720deg) scale(0.8); opacity: 0; }
       }
       
       .confetti-piece {
         position: absolute;
         top: 50%;
         left: 50%;
-        animation: confetti-arc 3s ease-out forwards;
+        /* Same bezier */
+        animation: confetti-unified 3s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
       }
 
-      /* --- 3. SPARKLES (ROLL 4) --- */
-      /* Magical fly-out: Starts small, moves fast, spins */
-      @keyframes sparkle-blast {
+      /* 3. SPARKLES (ROLL 4) - Stars/Icons */
+      @keyframes sparkle-unified {
         0% { transform: translate(0, 0) scale(0) rotate(0deg); opacity: 0; }
-        10% { transform: translate(0, 0) scale(1.5) rotate(45deg); opacity: 1; }
-        80% { opacity: 1; }
+        15% { transform: translate(calc(var(--tx) * 0.15), calc(var(--ty) * 0.15)) scale(1.5) rotate(45deg); opacity: 1; }
         100% { transform: translate(var(--tx), var(--ty)) scale(0) rotate(360deg); opacity: 0; }
       }
 
@@ -108,8 +107,8 @@
         left: 50%;
         font-weight: bold;
         line-height: 0;
-        /* Ease-out for fast start, slow end */
-        animation: sparkle-blast 3s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
+        /* Same bezier */
+        animation: sparkle-unified 3s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
       }
 
       /* Pulse Ring */

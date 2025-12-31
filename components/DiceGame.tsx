@@ -15,6 +15,7 @@ interface DiceGameProps {
 
 // Helper to get an angle that avoids the center (Top/Up direction -90deg)
 // We want two cones: Top-Right (-15 to -75) and Top-Left (-105 to -165)
+// This logic is now shared for uniform spread.
 const getSafeAngle = () => {
     const isRight = Math.random() > 0.5;
     // 0 is Right, -90 is Up, -180 is Left
@@ -27,17 +28,19 @@ const getSafeAngle = () => {
     }
 };
 
-// 1. FIREWORKS (For 6/Jackpot) - Gold/Orange, streaks, explosive
+// 1. FIREWORKS (For 6/Jackpot) - Gold/Orange, streaks 🎇
+// Identical spread to 4 and 5
 const FireworksEffect = () => {
     const particles = Array.from({ length: 70 }).map((_, i) => {
         const angleRad = getSafeAngle();
         const angleDeg = angleRad * (180 / Math.PI);
-        const distance = 160 + Math.random() * 180; // Fly further for 3s
+        const distance = 160 + Math.random() * 180; // Unified distance
         
         const tx = Math.cos(angleRad) * distance;
         const ty = Math.sin(angleRad) * distance;
         
-        // Rotate streak to point outwards from center
+        // Rotate streak to align with movement vector
+        // +90 because CSS 'height' makes it a vertical line by default
         const rotation = angleDeg + 90;
 
         return { 
@@ -67,12 +70,12 @@ const FireworksEffect = () => {
     );
 };
 
-// 2. CONFETTI (For 5/Amazing) - Multi-color, strips, gravity fall
+// 2. CONFETTI (For 5/Amazing) - Multi-color, strips 🎉
+// Identical spread to 4 and 6 (no gravity, just blast out)
 const ConfettiEffect = () => {
     const pieces = Array.from({ length: 50 }).map((_, i) => {
         const angleRad = getSafeAngle();
-        // Slightly shorter distance for confetti peak before falling
-        const distance = 140 + Math.random() * 100; 
+        const distance = 160 + Math.random() * 180; // Unified distance
         
         const tx = Math.cos(angleRad) * distance;
         const ty = Math.sin(angleRad) * distance;
@@ -103,11 +106,12 @@ const ConfettiEffect = () => {
     );
 };
 
-// 3. SPARKLES (For 4/Great) - Cyan/Blue, Stars, Fly Out Side/Up, Spin
+// 3. SPARKLES (For 4/Great) - Cyan/Blue, Stars ✨
+// Identical spread to 5 and 6
 const SparklesEffect = () => {
     const stars = Array.from({ length: 45 }).map((_, i) => {
         const angleRad = getSafeAngle();
-        const distance = 180 + Math.random() * 160; // Fly far
+        const distance = 160 + Math.random() * 180; // Unified distance
         
         const tx = Math.cos(angleRad) * distance;
         const ty = Math.sin(angleRad) * distance;
