@@ -70,51 +70,50 @@ const ConfettiEffect = () => {
 };
 
 const SparklesEffect = () => {
-    // A magical, energetic effect for "Rare Find" / 4
-    const stars = Array.from({ length: 25 }).map((_, i) => ({
-        id: i,
-        left: Math.random() * 100,
-        top: Math.random() * 100,
-        scale: 0.5 + Math.random(),
-        delay: Math.random() * 1,
-        duration: 1.5 + Math.random()
-    }));
+    // Generate particles that fly OUTWARDS from center (using translation), not just float inside
+    const stars = Array.from({ length: 30 }).map((_, i) => {
+        // Random angle for explosion effect
+        const angle = (Math.random() * 360) * (Math.PI / 180);
+        // Distance needs to be large enough to fly OUT of the card
+        const distance = 80 + Math.random() * 150; 
+        
+        const tx = Math.cos(angle) * distance;
+        const ty = Math.sin(angle) * distance;
+
+        return {
+            id: i,
+            tx: `${tx}px`,
+            ty: `${ty}px`,
+            scale: 0.5 + Math.random(),
+            delay: Math.random() * 0.2,
+            // Cyan, Light Blue, White colors
+            color: ['#22d3ee', '#a5f3fc', '#ffffff', '#60a5fa'][Math.floor(Math.random() * 4)]
+        };
+    });
 
     return (
-        <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden rounded-2xl">
+        // IMPORTANT: No overflow-hidden here, so they fly out over other elements
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
              {/* Background Aura */}
-             <div className="absolute inset-0 bg-cyan-500/10 animate-pulse"></div>
-             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-blue-500/20 blur-2xl rounded-full"></div>
+             <div className="absolute w-48 h-48 bg-cyan-500/20 blur-[50px] rounded-full animate-pulse"></div>
              
-             {/* Floating Stars using 'sparkle-float' global animation */}
+             {/* Flying Stars */}
              {stars.map(s => (
                  <div 
                     key={s.id} 
-                    className="absolute text-cyan-200"
+                    className="absolute font-bold"
                     style={{ 
-                        left: `${s.left}%`, 
-                        top: `${s.top}%`, 
-                        fontSize: `${10 * s.scale}px`,
-                        animation: `sparkle-float ${s.duration}s ease-in-out infinite`,
+                        '--tx': s.tx, // Reuse the firework logic for translation
+                        '--ty': s.ty,
+                        color: s.color,
+                        fontSize: `${12 * s.scale}px`,
+                        // Reuse firework-burst animation but with stars
+                        animation: `firework-burst 2s cubic-bezier(0.1, 0.8, 0.2, 1) forwards`,
                         animationDelay: `${s.delay}s`
-                    }} 
-                 >✦</div>
-             ))}
-
-             {/* Burst Pings using 'sparkle-ping' global animation */}
-             {stars.slice(0, 10).map(s => (
-                 <div 
-                    key={`burst-${s.id}`} 
-                    className="absolute bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)]"
-                    style={{ 
-                        left: `${s.left}%`, 
-                        top: `${s.top}%`, 
-                        width: '4px', 
-                        height: '4px', 
-                        animation: `sparkle-ping 1.5s ease-out infinite`,
-                        animationDelay: `${s.delay}s` 
-                    }} 
-                 />
+                    } as React.CSSProperties} 
+                 >
+                    {Math.random() > 0.5 ? '✦' : '✨'}
+                 </div>
              ))}
         </div>
     );
@@ -349,7 +348,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
   // Result config logic
   const getResultConfig = (roll: number) => {
       // 6: Gold, Legendary only
-      // Main Text = JACKPOT, Sub Text = LEGENDARY
+      // Main Text = JACKPOT (Big), Sub Text = LEGENDARY (Small on top)
       if (roll === 6) return { bg: 'bg-gradient-to-r from-yellow-600 to-amber-500', border: 'border-yellow-300', shadow: 'shadow-[0_0_30px_rgba(250,204,21,0.5)]', text: t('win_jackpot'), subtext: t('win_legendary'), Effect: FireworksEffect, icon: '👑', iconAnim: 'animate-bounce' };
       
       // 5: Purple, Amazing
@@ -357,8 +356,8 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
       if (roll === 5) return { bg: 'bg-gradient-to-r from-purple-600 to-pink-500', border: 'border-pink-300', shadow: 'shadow-[0_0_25px_rgba(236,72,153,0.5)]', text: t('win_amazing'), subtext: t('win_epic'), Effect: ConfettiEffect, icon: '🎉', iconAnim: 'animate-spin-slow' };
       
       // 4: Blue/Cyan, Great Win
-      // Main Text = GREAT!, Sub Text = Great Win (Rare Find)
-      // Updated Effect: SparklesEffect
+      // Main Text = GREAT!, Sub Text = Excellent
+      // Updated Effect: SparklesEffect (Flying stars)
       if (roll === 4) return { bg: 'bg-gradient-to-r from-blue-600 to-cyan-500', border: 'border-cyan-300', shadow: 'shadow-[0_0_20px_rgba(6,182,212,0.5)]', text: t('win_great'), subtext: t('win_rare'), Effect: SparklesEffect, icon: '✨', iconAnim: 'animate-pulse' };
 
       // 3: Green, Nice Catch
