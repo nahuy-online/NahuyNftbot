@@ -13,25 +13,40 @@ interface DiceGameProps {
 
 // --- VISUAL EFFECTS ---
 
-// 1. FIREWORKS (For 6/Jackpot) - Gold/Orange, round dots, explosive
+// 1. FIREWORKS (For 6/Jackpot) - Gold/Orange, streaks, explosive
 const FireworksEffect = () => {
-    const particles = Array.from({ length: 60 }).map((_, i) => {
-        // Full radial explosion
-        const angle = (Math.random() * 360) * (Math.PI / 180);
-        const distance = 120 + Math.random() * 150; 
-        const tx = Math.cos(angle) * distance;
-        const ty = Math.sin(angle) * distance;
+    const particles = Array.from({ length: 70 }).map((_, i) => {
+        const angleDeg = Math.random() * 360;
+        const angleRad = angleDeg * (Math.PI / 180);
+        const distance = 100 + Math.random() * 140; 
+        
+        const tx = Math.cos(angleRad) * distance;
+        const ty = Math.sin(angleRad) * distance;
+        
+        // Rotate streak to point outwards from center
+        // +90 because default vertical line points down/up
+        const rotation = angleDeg + 90;
+
         return { 
-            id: i, tx: `${tx}px`, ty: `${ty}px`, 
-            color: ['#FFD700', '#FFA500', '#FF4500', '#FFFF00'][Math.floor(Math.random() * 4)],
-            delay: Math.random() * 0.4
+            id: i, 
+            tx: `${tx}px`, 
+            ty: `${ty}px`, 
+            rot: `${rotation}deg`,
+            color: ['#FFD700', '#FFA500', '#FF4500', '#FFFFFF', '#FFFF00'][Math.floor(Math.random() * 5)],
+            delay: Math.random() * 0.2
         };
     });
     return (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
             {particles.map(p => (
-                <div key={p.id} className="firework-particle shadow-[0_0_8px_currentColor]"
-                    style={{ '--tx': p.tx, '--ty': p.ty, backgroundColor: p.color, animationDelay: `${p.delay}s`, width: Math.random() > 0.5 ? '4px' : '6px', height: Math.random() > 0.5 ? '4px' : '6px' } as React.CSSProperties} />
+                <div key={p.id} className="firework-streak shadow-[0_0_8px_currentColor]"
+                    style={{ 
+                        '--tx': p.tx, 
+                        '--ty': p.ty, 
+                        '--rot': p.rot,
+                        backgroundColor: p.color, 
+                        animationDelay: `${p.delay}s`
+                    } as React.CSSProperties} />
             ))}
             <div className="absolute w-40 h-40 bg-yellow-500/10 blur-[60px] rounded-full animate-pulse z-0"></div>
         </div>
@@ -63,12 +78,21 @@ const ConfettiEffect = () => {
     );
 };
 
-// 3. SPARKLES (For 4/Great) - Cyan/Blue, Stars, Fly Out, Spin
+// 3. SPARKLES (For 4/Great) - Cyan/Blue, Stars, Fly Out Side/Up, Spin
 const SparklesEffect = () => {
-    const stars = Array.from({ length: 35 }).map((_, i) => {
-        // Radial explosion
-        const angle = (Math.random() * 360) * (Math.PI / 180);
-        const distance = 100 + Math.random() * 180; // Fly far!
+    const stars = Array.from({ length: 40 }).map((_, i) => {
+        // Avoid straight up (-90 deg) to not hit the cube.
+        // Go Sides (-0 to -60) and (-120 to -180).
+        const isRight = Math.random() > 0.5;
+        // Angles: 0 is Right, -90 is Up, -180 is Left.
+        // Right Side: -10 to -60 degrees
+        // Left Side: -120 to -170 degrees
+        const angleDeg = isRight 
+            ? (-10 - Math.random() * 50) 
+            : (-120 - Math.random() * 50);
+            
+        const angle = angleDeg * (Math.PI / 180);
+        const distance = 140 + Math.random() * 120; // Fly far
         
         const tx = Math.cos(angle) * distance;
         const ty = Math.sin(angle) * distance;
@@ -77,8 +101,8 @@ const SparklesEffect = () => {
             id: i,
             sx: `${tx}px`, // Use sx/sy for sparkle-blast keyframe
             sy: `${ty}px`,
-            scale: 0.6 + Math.random(),
-            delay: Math.random() * 0.3,
+            scale: 0.5 + Math.random() * 0.8,
+            delay: Math.random() * 0.5,
             color: ['#22d3ee', '#a5f3fc', '#ffffff'][Math.floor(Math.random() * 3)]
         };
     });
@@ -98,7 +122,8 @@ const SparklesEffect = () => {
                         '--sy': s.sy,
                         color: s.color,
                         fontSize: `${14 * s.scale}px`,
-                        animationDelay: `${s.delay}s`
+                        animationDelay: `${s.delay}s`,
+                        animationDuration: '3s' // Explicitly set 3s duration
                     } as React.CSSProperties} 
                  >
                     {Math.random() > 0.6 ? '✦' : '★'}

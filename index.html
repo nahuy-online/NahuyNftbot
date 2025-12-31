@@ -58,20 +58,22 @@
       }
 
       /* --- 1. FIREWORKS (ROLL 6) --- */
-      /* Fast explosion, slows down */
-      @keyframes firework-burst {
-        0% { transform: translate(0, 0) scale(1); opacity: 1; }
-        50% { opacity: 1; }
-        100% { transform: translate(var(--tx), var(--ty)) scale(0); opacity: 0; }
+      /* Streaks radiating outward */
+      @keyframes firework-streak-burst {
+        0% { transform: translate(0, 0) rotate(var(--rot)) scale(1); opacity: 1; }
+        10% { opacity: 1; }
+        100% { transform: translate(var(--tx), var(--ty)) rotate(var(--rot)) scale(0.5); opacity: 0; }
       }
       
-      .firework-particle {
+      .firework-streak {
         position: absolute;
         top: 50%;
         left: 50%;
-        border-radius: 50%;
-        /* Cubic-bezier for "explosive" start */
-        animation: firework-burst 2s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+        width: 3px;
+        height: 12px; /* Elongated spark */
+        border-radius: 1px;
+        transform-origin: center center;
+        animation: firework-streak-burst 1.5s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
       }
 
       /* --- 2. CONFETTI (ROLL 5) --- */
