@@ -29,9 +29,9 @@ const getSafeAngle = () => {
 };
 
 // 1. FIREWORKS (For 6/Jackpot) - Gold/Orange, streaks 🎇
-// Identical spread to 4 and 5
+// Identical spread logic to others
 const FireworksEffect = () => {
-    const particles = Array.from({ length: 70 }).map((_, i) => {
+    const particles = Array.from({ length: 90 }).map((_, i) => {
         const angleRad = getSafeAngle();
         const angleDeg = angleRad * (180 / Math.PI);
         const distance = 160 + Math.random() * 180; // Unified distance
@@ -40,7 +40,7 @@ const FireworksEffect = () => {
         const ty = Math.sin(angleRad) * distance;
         
         // Rotate streak to align with movement vector
-        // +90 because CSS 'height' makes it a vertical line by default
+        // +90 because CSS gradient assumes bottom-to-top is the 'forward' visually for rotation
         const rotation = angleDeg + 90;
 
         return { 
@@ -48,30 +48,31 @@ const FireworksEffect = () => {
             tx: `${tx}px`, 
             ty: `${ty}px`, 
             rot: `${rotation}deg`,
-            color: ['#FFD700', '#FFA500', '#FF4500', '#FFFFFF', '#FFFF00'][Math.floor(Math.random() * 5)],
+            // Fire Colors
+            color: ['#FFD700', '#FFA500', '#FF4500', '#FF8C00'][Math.floor(Math.random() * 4)],
             delay: Math.random() * 0.4
         };
     });
     return (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
             {particles.map(p => (
-                <div key={p.id} className="firework-streak shadow-[0_0_8px_currentColor]"
+                <div key={p.id} className="firework-streak"
                     style={{ 
                         '--tx': p.tx, 
                         '--ty': p.ty, 
                         '--rot': p.rot,
-                        backgroundColor: p.color, 
+                        color: p.color, // CSS currentColor uses this
                         animationDelay: `${p.delay}s`,
                         animationDuration: '3s'
                     } as React.CSSProperties} />
             ))}
-            <div className="absolute w-40 h-40 bg-yellow-500/10 blur-[60px] rounded-full animate-pulse z-0"></div>
+            <div className="absolute w-40 h-40 bg-orange-500/20 blur-[60px] rounded-full animate-pulse z-0"></div>
         </div>
     );
 };
 
 // 2. CONFETTI (For 5/Amazing) - Multi-color, strips 🎉
-// Identical spread to 4 and 6 (no gravity, just blast out)
+// Identical spread logic to others
 const ConfettiEffect = () => {
     const pieces = Array.from({ length: 50 }).map((_, i) => {
         const angleRad = getSafeAngle();
@@ -107,7 +108,7 @@ const ConfettiEffect = () => {
 };
 
 // 3. SPARKLES (For 4/Great) - Cyan/Blue, Stars ✨
-// Identical spread to 5 and 6
+// Identical spread logic to others
 const SparklesEffect = () => {
     const stars = Array.from({ length: 45 }).map((_, i) => {
         const angleRad = getSafeAngle();

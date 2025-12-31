@@ -57,14 +57,14 @@
         100% { transform: skewX(-20deg) translateX(150%); }
       }
 
-      /* --- UNIFIED ANIMATION CURVE --- */
-      /* All particles use this timing to ensure same speed/duration */
+      /* --- UNIFIED ANIMATION CURVE (3 Seconds) --- */
       
-      /* 1. FIREWORKS (ROLL 6) - Streaks */
+      /* 1. FIREWORKS (ROLL 6) - Realistic Sparks 🎇 */
       @keyframes firework-unified {
-        0% { transform: translate(0, 0) rotate(var(--rot)) scale(0.5); opacity: 0; }
+        0% { transform: translate(0, 0) rotate(var(--rot)) scale(0.2); opacity: 0; }
         10% { opacity: 1; transform: translate(calc(var(--tx) * 0.1), calc(var(--ty) * 0.1)) rotate(var(--rot)) scale(1); }
-        100% { transform: translate(var(--tx), var(--ty)) rotate(var(--rot)) scale(0.2); opacity: 0; }
+        80% { opacity: 1; }
+        100% { transform: translate(var(--tx), var(--ty)) rotate(var(--rot)) scale(0.5); opacity: 0; }
       }
       
       .firework-streak {
@@ -72,17 +72,22 @@
         top: 50%;
         left: 50%;
         width: 4px;
-        height: 16px; /* Longer streak for 🎇 effect */
-        border-radius: 2px;
+        height: 24px; /* Long trail */
+        /* Gradient: Transparent Tail -> Color Body -> White Hot Head */
+        background: linear-gradient(to top, transparent 0%, currentColor 60%, white 100%);
+        border-radius: 4px; 
         transform-origin: center center;
-        /* Same bezier as others for unified speed */
+        /* Strong Glow */
+        box-shadow: 0 0 8px 1px currentColor;
+        /* Blend mode for fire effect */
+        mix-blend-mode: screen; 
         animation: firework-unified 3s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
       }
 
       /* 2. CONFETTI (ROLL 5) - Rectangles */
       @keyframes confetti-unified {
         0% { transform: translate(0, 0) rotate(0deg) scale(0); opacity: 0; }
-        15% { opacity: 1; transform: translate(calc(var(--tx) * 0.15), calc(var(--ty) * 0.15)) rotate(90deg) scale(1); }
+        10% { opacity: 1; transform: translate(calc(var(--tx) * 0.1), calc(var(--ty) * 0.1)) rotate(90deg) scale(1); }
         100% { transform: translate(var(--tx), var(--ty)) rotate(720deg) scale(0.8); opacity: 0; }
       }
       
@@ -90,14 +95,13 @@
         position: absolute;
         top: 50%;
         left: 50%;
-        /* Same bezier */
         animation: confetti-unified 3s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
       }
 
       /* 3. SPARKLES (ROLL 4) - Stars/Icons */
       @keyframes sparkle-unified {
         0% { transform: translate(0, 0) scale(0) rotate(0deg); opacity: 0; }
-        15% { transform: translate(calc(var(--tx) * 0.15), calc(var(--ty) * 0.15)) scale(1.5) rotate(45deg); opacity: 1; }
+        10% { transform: translate(calc(var(--tx) * 0.1), calc(var(--ty) * 0.1)) scale(1.5) rotate(45deg); opacity: 1; }
         100% { transform: translate(var(--tx), var(--ty)) scale(0) rotate(360deg); opacity: 0; }
       }
 
@@ -107,7 +111,6 @@
         left: 50%;
         font-weight: bold;
         line-height: 0;
-        /* Same bezier */
         animation: sparkle-unified 3s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
       }
 
