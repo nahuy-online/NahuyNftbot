@@ -1,5 +1,6 @@
 
-import { UserProfile, Currency, NftTransaction, PaymentInitResponse } from '../types';
+import { UserProfile, Currency, NftTransaction } from '../types';
+import { NFT_PRICES, DICE_ATTEMPT_PRICES } from '../constants';
 
 const API_BASE = '/api'; 
 
@@ -29,6 +30,50 @@ const getLocalState = (userId: number, username: string) => {
 
 const updateLocalState = (user: UserProfile) => {
     localStorage.setItem(`mock_user_${user.id}`, JSON.stringify(user));
+};
+
+// HELPER: Find a user ID in localStorage by their referral code
+const findUserIdByCode = (code: string): number | null => {
+    try {
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('mock_user_')) {
+                const raw = localStorage.getItem(key);
+                if (raw) {
+                    const data = JSON.parse(raw) as UserProfile;
+                    if (data.referralCode && data.referralCode.toLowerCase() === code.toLowerCase()) {
+                        return data.id;
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.error("Mock DB Scan error", e);
+    }
+    return null;
+};
+
+// HELPER: Distribute Rewards to Referrer in LocalStorage
+const distributeMockRewards = (referrerId: number, totalAmount: number, currency: Currency) => {
+    const key = `mock_user_${referrerId}`;
+    const stored = localStorage.getItem(key);
+    if (!stored) return;
+
+    try {
+        const referrer = JSON.parse(stored) as UserProfile;
+        
+        // Level 1 Reward (7%)
+        const reward = currency === Currency.STARS 
+            ? Math.floor(totalAmount * 0.07) 
+            : parseFloat((totalAmount * 0.07).toFixed(4));
+            
+        referrer.referralStats.earnings[currency] += reward;
+        
+        localStorage.setItem(key, JSON.stringify(referrer));
+        console.log(`[Mock] 💰 Sent ${reward} ${currency} to referrer ${referrerId}`);
+    } catch (e) {
+        console.error("Failed to distribute mock rewards", e);
+    }
 };
 
 const getLocalHistory = (userId: number): NftTransaction[] => {
@@ -70,19 +115,38 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
         const user = getLocalState(userId, username);
         
         if (endpoint === '/auth') {
-             // Simulate Referral Binding in Mock
              const { startParam } = payload;
+             
+             // Try to bind if not bound
              if (!user.referrerId && startParam && startParam !== "none" && startParam !== user.referralCode) {
-                 // In mock, we just pretend we found a user with ID 77777 or parse the ref code if it has an ID style
-                 let mockRefId = 77777;
-                 // If start param looks like ref_123, use 123
-                 if (startParam.startsWith('ref_') && /^\d+$/.test(startParam.replace('ref_',''))) {
-                     mockRefId = parseInt(startParam.replace('ref_',''));
+                 // 1. Try to find REAL mock user
+                 const realRefId = findUserIdByCode(startParam);
+                 
+                 // 2. Fallback to extracting ID from "ref_123" if user wiped DB but remembers code
+                 let fallbackId = null;
+                 if (!realRefId && startParam.startsWith('ref_')) {
+                     const parts = startParam.replace('ref_', '');
+                     if (/^\d+$/.test(parts)) fallbackId = parseInt(parts);
                  }
-                 user.referrerId = mockRefId;
-                 user.referralDebug = `Mock: Bound to ${mockRefId} via param`;
-                 user.referralStats.level1 = 1; // Fake a stat increment for visual feedback
-                 updateLocalState(user);
+
+                 const targetId = realRefId || fallbackId;
+
+                 if (targetId && targetId !== user.id) {
+                     user.referrerId = targetId;
+                     user.referralDebug = `Mock: Bound to ${realRefId ? 'Real' : 'Legacy'} ID ${targetId}`;
+                     
+                     // If we found a real user file, increment their "Level 1" count immediately
+                     if (realRefId) {
+                         const refKey = `mock_user_${realRefId}`;
+                         const refData = JSON.parse(localStorage.getItem(refKey)!);
+                         refData.referralStats.level1 += 1;
+                         localStorage.setItem(refKey, JSON.stringify(refData));
+                     }
+                     
+                     updateLocalState(user);
+                 } else {
+                     user.referralDebug = `Mock: Code '${startParam}' not found`;
+                 }
              }
              return user;
         }
@@ -134,6 +198,7 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
             const { type, amount, currency } = payload;
             const isStars = currency === 'STARS';
 
+             // Update Balance
              if (type === 'nft') {
                  user.nftBalance.total += amount; 
                  if (isStars) {
@@ -151,6 +216,17 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                      user.diceBalance.starsAttempts += amount;
                  }
              }
+             
+             updateLocalState(user);
+
+             // DISTRIBUTE REWARDS
+             if (user.referrerId) {
+                 const priceMap = type === 'nft' ? NFT_PRICES : DICE_ATTEMPT_PRICES;
+                 const pricePerUnit = priceMap[currency as Currency] || 0;
+                 const totalSpent = pricePerUnit * amount;
+                 
+                 distributeMockRewards(user.referrerId, totalSpent, currency as Currency);
+             }
 
              addLocalHistory(userId, { 
                 id: `m_pay_${Date.now()}`, 
@@ -163,7 +239,6 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                 isLocked: isStars && type === 'nft'
             });
 
-             updateLocalState(user);
              return { ok: true }; 
         }
         if (endpoint === '/withdraw') {
@@ -212,15 +287,11 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
     }
 
     if (response.status === 500) {
-        // If 500 and empty text, it's likely a proxy error (ECONNREFUSED)
         const errMsg = responseJson?.error || responseText || "Connection Refused (Proxy Error)";
         throw new Error(`SERVER ERROR (500): ${errMsg}`);
     }
 
-    if (response.status === 502 || response.status === 504) {
-        throw new Error("Gateway Timeout / Bad Gateway");
-    }
-
+    if (response.status === 502 || response.status === 504) throw new Error("Gateway Timeout / Bad Gateway");
     if (response.status === 503) throw new Error("Server is initializing (DB)...");
     if (response.status === 404) throw new Error("MOCK_FALLBACK"); 
     

@@ -101,10 +101,9 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
             return;
         }
 
-        // Updated Link Format: Standard Telegram Bot Deep Link
-        // Format: https://t.me/BOTNAME?start=ref_CODE
-        // This opens the bot with the start parameter. The bot then serves the MiniApp with this parameter.
-        const inviteLink = `https://t.me/${BOT_USERNAME}?start=${refCode}`;
+        // Updated Link Format: Direct Mini App Link using 'start' alias
+        // Format: https://t.me/BOTNAME/start?startapp=ref_CODE
+        const inviteLink = `https://t.me/${BOT_USERNAME}/start?startapp=${refCode}`;
         
         const shareText = t('share_text', { amount: user.nftBalance.total });
         const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(shareText)}`;

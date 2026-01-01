@@ -29,7 +29,8 @@ app.use(cors());
 // --- CONFIG ---
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const WEBAPP_URL = "https://t.me/nahuy_NFT_bot/app"; 
+// Update alias to 'start' as requested. Note: for prod, this should be the HTTPS URL.
+const WEBAPP_URL = "https://t.me/nahuy_NFT_bot/start"; 
 let isDbReady = false;
 let dbInitError = null; 
 
