@@ -198,51 +198,57 @@ if (BOT_TOKEN) {
 
 // --- LOGIC ---
 
-// Generate 8-char random hex code (Privacy safe)
 function generateRefCode() {
     return crypto.randomBytes(4).toString('hex');
 }
 
 async function bindReferrer(client, userId, potentialRefCode) {
-    console.log(`🔗 Binding Referrer: User=${userId}, Code=${potentialRefCode}`);
-    if (!potentialRefCode || potentialRefCode === "none") {
-        console.log("   -> Code is empty or 'none'. Skipping.");
-        return null;
+    console.log(`🔗 Binding check: User=${userId}, Param=${potentialRefCode}`);
+    
+    if (!potentialRefCode || potentialRefCode === "none" || potentialRefCode === "undefined") {
+        return { boundId: null, reason: "No code provided" };
     }
 
+    // Clean input
+    const cleanCode = potentialRefCode.trim();
     let referrerId = null;
+    let method = "";
     
-    // 1. Look up by Unique Code
-    const resByCode = await client.query('SELECT id FROM users WHERE referral_code = $1', [potentialRefCode]);
+    // 1. Look up by Unique Code (Case Insensitive)
+    const resByCode = await client.query('SELECT id FROM users WHERE lower(referral_code) = lower($1)', [cleanCode]);
     if (resByCode.rows.length > 0) {
         referrerId = resByCode.rows[0].id;
-        console.log(`   -> Found Referrer ID: ${referrerId} by code.`);
-    } else {
-        console.log(`   -> Code '${potentialRefCode}' not found in DB.`);
+        method = "code";
     }
 
-    // 2. Fallback: Check if it's the old 'ref_ID' format (Legacy Support)
-    if (!referrerId && potentialRefCode.startsWith('ref_')) {
-        const rawId = potentialRefCode.replace('ref_', '');
+    // 2. Legacy Fallback (ref_ID)
+    if (!referrerId && cleanCode.startsWith('ref_')) {
+        const rawId = cleanCode.replace('ref_', '');
         if (/^\d+$/.test(rawId)) {
              const resById = await client.query('SELECT id FROM users WHERE id = $1', [rawId]);
              if (resById.rows.length > 0) {
                 referrerId = resById.rows[0].id;
-                console.log(`   -> Found Referrer ID: ${referrerId} by legacy ref_ID format.`);
+                method = "legacy_id";
              }
         }
     }
 
-    // 3. Update if valid and not self
-    if (referrerId && String(referrerId) !== String(userId)) {
-        await client.query('UPDATE users SET referrer_id = $1 WHERE id = $2', [referrerId, userId]);
-        console.log(`   -> SUCCESS: Bound User ${userId} to Referrer ${referrerId}`);
-        return referrerId;
-    } else if (String(referrerId) === String(userId)) {
-        console.log("   -> Self-referral attempt detected. Ignored.");
+    // 3. Validation
+    if (!referrerId) {
+        console.log(`   -> ❌ Code '${cleanCode}' not found.`);
+        return { boundId: null, reason: `Code '${cleanCode}' not found in DB` };
     }
+
+    if (String(referrerId) === String(userId)) {
+        console.log("   -> ❌ Self-referral attempt.");
+        return { boundId: null, reason: "Self-referral" };
+    }
+
+    // 4. Update DB
+    await client.query('UPDATE users SET referrer_id = $1 WHERE id = $2', [referrerId, userId]);
+    console.log(`   -> ✅ SUCCESS: Bound to ${referrerId} via ${method}`);
     
-    return null;
+    return { boundId: referrerId, reason: "Success" };
 }
 
 async function distributeRewards(client, buyerId, amount, currency) {
@@ -334,8 +340,9 @@ app.get('/api/health', (req, res) => {
 });
 
 app.post('/api/auth', async (req, res) => {
-    // console.log("➡️ /api/auth request received:", req.body);
     let client;
+    let debugInfo = "None";
+
     try {
         const { id, username, startParam } = req.body;
         if (!id) throw new Error("No ID provided in body");
@@ -352,22 +359,31 @@ app.post('/api/auth', async (req, res) => {
         if (!user) {
             console.log(`Creating new user: ${id}`);
             isNew = true;
-            const code = generateRefCode(); // RANDOM CODE
+            const code = generateRefCode(); 
             await client.query('INSERT INTO users (id, username, referral_code) VALUES ($1, $2, $3)', [id, username, code]);
             
+            // Re-fetch to get clean object
             resUser = await client.query('SELECT * FROM users WHERE id = $1', [id]);
             user = resUser.rows[0];
         }
 
-        // 3. Bind Referrer
-        // Attempt to bind if: user has no referrer AND startParam is present AND startParam is not self
-        if (!user.referrer_id && startParam && startParam !== "none" && startParam !== user.referral_code) {
+        // 3. Bind Referrer logic
+        // Only attempt if not already bound
+        if (!user.referrer_id && startParam && startParam !== "none") {
             try {
-                const boundId = await bindReferrer(client, id, startParam);
-                if (boundId) user.referrer_id = boundId;
+                const result = await bindReferrer(client, id, startParam);
+                if (result.boundId) {
+                    user.referrer_id = result.boundId; // Update local object for response
+                    debugInfo = `Bound to ${result.boundId}`;
+                } else {
+                    debugInfo = `Failed: ${result.reason}`;
+                }
             } catch (err) {
-                console.error("Bind Referrer Error:", err);
+                console.error("Bind Error:", err);
+                debugInfo = `Error: ${err.message}`;
             }
+        } else if (user.referrer_id) {
+            debugInfo = `Already bound to ${user.referrer_id}`;
         }
 
         await client.query('COMMIT');
@@ -384,6 +400,7 @@ app.post('/api/auth', async (req, res) => {
             username: user.username,
             referralCode: user.referral_code,
             referrerId: user.referrer_id ? String(user.referrer_id) : null,
+            referralDebug: debugInfo, // Pass debug info to frontend
             isNewUser: isNew,
             nftBalance: {
                 total: user.nft_total || 0,
@@ -410,14 +427,13 @@ app.post('/api/auth', async (req, res) => {
     } catch (e) {
         if(client) await client.query('ROLLBACK');
         console.error("❌ Auth CRASH Stack:", e.stack);
-        // Force Error message to be a string
         res.status(500).json({ error: String(e.message || e) });
     } finally {
         if(client) client.release();
     }
 });
 
-// Reuse existing Payment/Roll routes
+// Reuse existing Payment/Roll routes (No changes needed for binding logic)
 app.post('/api/roll', async (req, res) => {
     let client;
     try {

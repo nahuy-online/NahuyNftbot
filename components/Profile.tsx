@@ -122,6 +122,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   const handleDebugReset = async () => {
       if(confirm("⚠️ DEBUG: ARE YOU SURE? THIS WILL WIPE ALL DATA.")) {
           await debugResetDb();
+          // Clear Local Storage for Mock Data cleanup
+          localStorage.clear();
           alert("Database Cleared. Reloading...");
           window.location.reload();
       }
@@ -361,9 +363,14 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
               <div className="text-gray-500">My Ref Code:</div>
               <div className="text-green-400">{user.referralCode || "loading..."}</div>
               
-              <div className="text-gray-500">Referred By ID:</div>
+              <div className="text-gray-500">Referred By:</div>
               <div className={`font-bold ${user.referrerId ? "text-green-400" : "text-red-500"}`}>
                   {user.referrerId ? user.referrerId : "none"}
+              </div>
+
+              <div className="text-gray-500 col-span-2 mt-1">Status:</div>
+              <div className="col-span-2 bg-black/30 p-1.5 rounded text-yellow-300 break-words">
+                  {user.referralDebug || "No debug info"}
               </div>
           </div>
 
