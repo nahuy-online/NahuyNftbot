@@ -103,27 +103,32 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
     
     clearTimeout(id);
 
-    if (response.status === 500) {
-        // Try parsing JSON error first
-        let errorMsg = "Unknown Server Error";
-        try {
-            const errorJson = await response.json();
-            errorMsg = errorJson.error || JSON.stringify(errorJson);
-        } catch {
-            errorMsg = await response.text();
+    // CRITICAL FIX: Read body ONCE as text to prevent "stream locked" error
+    const responseText = await response.text();
+    let responseJson: any = null;
+    
+    try {
+        if (responseText) {
+            responseJson = JSON.parse(responseText);
         }
-        throw new Error(errorMsg || "Empty 500 Error from Backend");
+    } catch (e) {
+        // Not JSON, ignore
+    }
+
+    if (response.status === 500) {
+        // Prefer JSON error message, fallback to raw text
+        const errMsg = responseJson?.error || responseText || "Unknown 500 Error";
+        throw new Error(`SERVER ERROR (500): ${errMsg}`);
     }
 
     if (response.status === 503) throw new Error("Server is initializing (DB)...");
-    if (response.status === 404) throw new Error("MOCK_FALLBACK"); // Local dev
+    if (response.status === 404) throw new Error("MOCK_FALLBACK"); 
     
     if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`Backend error: ${text}`);
+        throw new Error(`Backend error: ${responseJson?.error || responseText}`);
     }
     
-    return await response.json();
+    return responseJson || {};
   } catch (error: any) {
     const isNetworkError = error.message === "MOCK_FALLBACK" || 
                            error.name === 'AbortError' || 
@@ -135,7 +140,7 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
         console.warn(`⚠️ Backend Unreachable (${endpoint}). Using Local Mock Data.`);
         return runMock();
     }
-    // If it's a real server error (500), throw it so user sees the message
+    // Throw real server errors to the UI
     throw error;
   }
 };
