@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import TelegramBot from 'node-telegram-bot-api';
-// CRITICAL FIX: Robust import for 'pg' in ES Modules
 import pkg from 'pg';
 const { Pool } = pkg;
 import path from 'path';
@@ -11,7 +10,6 @@ import { fileURLToPath } from 'url';
 // --- GLOBAL ERROR HANDLERS (PREVENT CRASH) ---
 process.on('uncaughtException', (err) => {
     console.error('💥 UNCAUGHT EXCEPTION:', err);
-    // Keep process alive if possible, but log severe error
 });
 process.on('unhandledRejection', (reason, promise) => {
     console.error('💥 UNHANDLED REJECTION:', reason);
@@ -20,7 +18,6 @@ process.on('unhandledRejection', (reason, promise) => {
 // --- ENV SETUP ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// Try loading .env from parent (for local dev) and current (for docker)
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config(); 
 
@@ -70,7 +67,7 @@ const initDB = async () => {
             try {
                 await client.query('BEGIN');
                 
-                // 1. Create Users Table FIRST (Critical for Foreign Keys)
+                // 1. Create Users
                 await client.query(`
                     CREATE TABLE IF NOT EXISTS users (
                         id BIGINT PRIMARY KEY,
@@ -89,7 +86,7 @@ const initDB = async () => {
                     );
                 `);
                 
-                // 2. Create Transactions Table (Depends on users)
+                // 2. Create Transactions
                 await client.query(`
                     CREATE TABLE IF NOT EXISTS transactions (
                         id SERIAL PRIMARY KEY,
@@ -105,7 +102,7 @@ const initDB = async () => {
                     );
                 `);
                 
-                // 3. Create Locked NFTs Table
+                // 3. Create Locked NFTs
                 await client.query(`
                     CREATE TABLE IF NOT EXISTS locked_nfts (
                         id SERIAL PRIMARY KEY,
@@ -115,7 +112,7 @@ const initDB = async () => {
                     );
                 `);
 
-                // 4. Run Migrations (Safe column additions)
+                // 4. Run Migrations
                 const alterQueries = [
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer_id BIGINT",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code TEXT UNIQUE",
@@ -142,7 +139,6 @@ const initDB = async () => {
                 client.release();
                 console.error("⚠️ Migration Error:", dbErr.message);
                 dbInitError = dbErr.message;
-                // Don't throw here, allow retry loop to continue if it's a connection flake
                 throw dbErr;
             }
         } catch (err) {
@@ -158,12 +154,11 @@ const initDB = async () => {
 app.use((req, res, next) => {
     if (req.path === '/api/health') return next();
 
-    // If DB is failing but server is running, communicate that
     if (dbInitError) {
         return res.status(500).json({ error: `DB Init Failed: ${dbInitError}` });
     }
     if (!isDbReady && req.path.startsWith('/api')) {
-        return res.status(503).json({ error: 'Server initializing, please wait...' });
+        return res.status(503).json({ error: 'Server initializing (DB connecting), please wait...' });
     }
     next();
 });
@@ -179,28 +174,18 @@ app.listen(PORT, '0.0.0.0', () => {
 if (BOT_TOKEN) {
     try {
         const bot = new TelegramBot(BOT_TOKEN, { polling: true });
-        
-        bot.on('polling_error', (error) => {
-           console.error(`[Bot Polling Error] ${error.code || error.message}`);
-        });
-
+        bot.on('polling_error', (error) => { console.error(`[Bot Polling Error] ${error.code || error.message}`); });
         bot.onText(/\/start(.*)/, (msg, match) => {
             const chatId = msg.chat.id;
             const rawParam = match[1] ? match[1].trim() : "";
             const startParam = rawParam.replace('/', '');
-            
             const opts = {
                 reply_markup: {
-                    inline_keyboard: [[{ 
-                        text: "🚀 Open NFT App", 
-                        web_app: { url: `${WEBAPP_URL}?startapp=${startParam}` } 
-                    }]]
+                    inline_keyboard: [[{ text: "🚀 Open NFT App", web_app: { url: `${WEBAPP_URL}?startapp=${startParam}` } }]]
                 }
             };
             bot.sendMessage(chatId, "Welcome! Tap below to enter.", opts).catch(e => console.error("SendMsg Error", e));
         });
-        
-        // Expose bot to app
         app.locals.bot = bot;
         console.log("✅ Telegram Bot Initialized");
     } catch (e) {
@@ -220,22 +205,17 @@ async function bindReferrer(client, userId, potentialRefCode) {
     if (!potentialRefCode || potentialRefCode === "none") return null;
 
     let referrerId = null;
-    
-    // Check if code exists
     const resByCode = await client.query('SELECT id FROM users WHERE referral_code = $1', [potentialRefCode]);
     if (resByCode.rows.length > 0) referrerId = resByCode.rows[0].id;
 
-    // Check by direct ID
     if (!referrerId && potentialRefCode.startsWith('ref_')) {
         const rawId = potentialRefCode.replace('ref_', '');
-        // Validate regex to prevent SQL injection or type errors
         if (/^\d+$/.test(rawId)) {
              const resById = await client.query('SELECT id FROM users WHERE id = $1', [rawId]);
              if (resById.rows.length > 0) referrerId = resById.rows[0].id;
         }
     }
 
-    // Validation: Don't refer yourself, and referrer must exist
     if (referrerId && String(referrerId) !== String(userId)) {
         await client.query('UPDATE users SET referrer_id = $1 WHERE id = $2', [referrerId, userId]);
         return referrerId;
@@ -243,7 +223,6 @@ async function bindReferrer(client, userId, potentialRefCode) {
     return null;
 }
 
-// ... rewards logic same as before ...
 async function distributeRewards(client, buyerId, amount, currency) {
     const u1 = await client.query('SELECT referrer_id FROM users WHERE id = $1', [buyerId]);
     const r1 = u1.rows[0]?.referrer_id;
@@ -268,7 +247,6 @@ async function payReward(client, recipientId, totalPurchaseAmount, currency, lev
 
     let colName = 'ref_rewards_ton';
     let isInt = false;
-    
     if (currency === 'STARS') { colName = 'ref_rewards_stars'; isInt = true; }
     else if (currency === 'USDT') { colName = 'ref_rewards_usdt'; }
 
@@ -334,10 +312,11 @@ app.get('/api/health', (req, res) => {
 });
 
 app.post('/api/auth', async (req, res) => {
+    console.log("➡️ /api/auth request received:", req.body);
     let client;
     try {
         const { id, username, startParam } = req.body;
-        if (!id) return res.status(400).json({ error: "No ID provided" });
+        if (!id) throw new Error("No ID provided in body");
 
         client = await pool.connect();
         await client.query('BEGIN');
@@ -349,22 +328,22 @@ app.post('/api/auth', async (req, res) => {
 
         // 2. Create user if not exists
         if (!user) {
+            console.log(`Creating new user: ${id}`);
             isNew = true;
             const code = generateRefCode(id);
             await client.query('INSERT INTO users (id, username, referral_code) VALUES ($1, $2, $3)', [id, username, code]);
             
-            // Re-fetch to get clean state
             resUser = await client.query('SELECT * FROM users WHERE id = $1', [id]);
             user = resUser.rows[0];
         }
 
-        // 3. Bind Referrer (Only if not already set)
+        // 3. Bind Referrer
         if (!user.referrer_id && startParam && startParam !== "none" && startParam !== user.referral_code) {
             try {
                 const boundId = await bindReferrer(client, id, startParam);
                 if (boundId) user.referrer_id = boundId;
             } catch (err) {
-                console.error("Bind Referrer Error (Non-fatal):", err);
+                console.error("Bind Referrer Error:", err);
             }
         }
 
@@ -407,14 +386,15 @@ app.post('/api/auth', async (req, res) => {
 
     } catch (e) {
         if(client) await client.query('ROLLBACK');
-        console.error("Auth CRASH:", e);
-        res.status(500).json({ error: `Auth Logic Error: ${e.message}` });
+        console.error("❌ Auth CRASH Stack:", e.stack);
+        // Force Error message to be a string
+        res.status(500).json({ error: String(e.message || e) });
     } finally {
         if(client) client.release();
     }
 });
 
-// Reuse existing Payment/Roll routes, but ensure Try/Catch wraps logic
+// Reuse existing Payment/Roll routes
 app.post('/api/roll', async (req, res) => {
     let client;
     try {
@@ -428,9 +408,8 @@ app.post('/api/roll', async (req, res) => {
 
         const isStars = u.rows[0].dice_stars_attempts > 0;
         const roll = Math.floor(Math.random() * 6) + 1;
-        const win = roll; // 1:1 payout based on roll value
+        const win = roll; 
 
-        // Deduct attempt
         await client.query('UPDATE users SET dice_available=dice_available-1 WHERE id=$1', [id]);
         if (isStars) await client.query('UPDATE users SET dice_stars_attempts=dice_stars_attempts-1 WHERE id=$1', [id]);
 
@@ -455,7 +434,6 @@ app.post('/api/roll', async (req, res) => {
     }
 });
 
-// ... Keep other routes (payment, withdraw, history, debug) as is ...
 app.post('/api/payment/create', async (req, res) => {
     try {
         const { type, amount, currency } = req.body;
@@ -465,7 +443,6 @@ app.post('/api/payment/create', async (req, res) => {
         if (currency === 'STARS') {
             try {
                 if (!app.locals.bot) throw new Error("Bot not initialized");
-                
                 const link = await app.locals.bot.createInvoiceLink(
                     type === 'nft' ? "NFT Pack" : "Dice Attempts", 
                     `Qty: ${amount}`, 
@@ -475,7 +452,6 @@ app.post('/api/payment/create', async (req, res) => {
                 );
                 res.json({ ok: true, invoiceLink: link });
             } catch(e) { 
-                // Return dummy link if bot fails (for local testing)
                 console.warn("Bot Invoice Failed (Fallback):", e.message);
                 res.json({ ok: true, invoiceLink: "https://t.me/$" });
             }
@@ -498,8 +474,6 @@ app.post('/api/payment/create', async (req, res) => {
 app.post('/api/payment/verify', async (req, res) => {
     try {
         const { id, type, amount, currency } = req.body;
-        // In real app, this should be called by Bot Webhook, not Frontend
-        // But for demo/testing, we allow frontend trigger with simple check
         await handlePurchaseSuccess(id, type, amount, currency, `manual_${Date.now()}_${Math.random()}`);
         res.json({ ok: true });
     } catch(e) {

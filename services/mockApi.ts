@@ -104,10 +104,18 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
     clearTimeout(id);
 
     if (response.status === 500) {
-        const errText = await response.text();
-        throw new Error(`SERVER ERROR (500): ${errText}`);
+        // Try parsing JSON error first
+        let errorMsg = "Unknown Server Error";
+        try {
+            const errorJson = await response.json();
+            errorMsg = errorJson.error || JSON.stringify(errorJson);
+        } catch {
+            errorMsg = await response.text();
+        }
+        throw new Error(errorMsg || "Empty 500 Error from Backend");
     }
-    if (response.status === 503) throw new Error("Server is initializing...");
+
+    if (response.status === 503) throw new Error("Server is initializing (DB)...");
     if (response.status === 404) throw new Error("MOCK_FALLBACK"); // Local dev
     
     if (!response.ok) {
@@ -120,12 +128,14 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
     const isNetworkError = error.message === "MOCK_FALLBACK" || 
                            error.name === 'AbortError' || 
                            error.message.includes("Failed to fetch") ||
-                           error.message.includes("NetworkError");
+                           error.message.includes("NetworkError") ||
+                           error.message.includes("ECONNREFUSED");
 
     if (isNetworkError) {
         console.warn(`⚠️ Backend Unreachable (${endpoint}). Using Local Mock Data.`);
         return runMock();
     }
+    // If it's a real server error (500), throw it so user sees the message
     throw error;
   }
 };
