@@ -53,6 +53,19 @@ const App: React.FC = () => {
     loadData();
   }, [tonConnectUI]);
 
+  // --- MOCK SYNC: Listen for LocalStorage changes in other tabs ---
+  useEffect(() => {
+      const handleStorageChange = (e: StorageEvent) => {
+          // If any mock_user data changed, reload to reflect rewards/referrals instantly
+          if (e.key && e.key.startsWith('mock_user_')) {
+              console.log("♻️ Mock DB Sync: Data changed in another tab, reloading...");
+              loadData();
+          }
+      };
+      window.addEventListener('storage', handleStorageChange);
+      return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   // --- RENDERING ---
 
   if (error) {

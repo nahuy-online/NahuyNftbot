@@ -171,16 +171,25 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   return (
     <div className="p-5 pb-24 space-y-6 animate-fade-in relative">
       {/* User Header */}
-      <div className="flex items-center space-x-4 pb-2 border-b border-gray-800">
-        <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 flex items-center justify-center text-2xl font-bold shadow-lg ring-2 ring-white/10">
-            {user.username ? user.username.charAt(0).toUpperCase() : 'U'}
-        </div>
-        <div>
-            <h2 className="text-xl font-bold text-white">@{user.username || 'User'}</h2>
-            <div className="flex gap-2 items-center">
-                <p className="text-xs text-gray-400 font-mono">ID: {user.id}</p>
+      <div className="flex items-center space-x-4 pb-2 border-b border-gray-800 justify-between">
+        <div className="flex items-center space-x-4">
+            <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 flex items-center justify-center text-2xl font-bold shadow-lg ring-2 ring-white/10">
+                {user.username ? user.username.charAt(0).toUpperCase() : 'U'}
+            </div>
+            <div>
+                <h2 className="text-xl font-bold text-white">@{user.username || 'User'}</h2>
+                <div className="flex gap-2 items-center">
+                    <p className="text-xs text-gray-400 font-mono">ID: {user.id}</p>
+                </div>
             </div>
         </div>
+        {/* Manual Refresh Button */}
+        <button 
+            onClick={() => onUpdate()} 
+            className="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
+        </button>
       </div>
 
       {/* Settings & Wallet Row */}
@@ -339,10 +348,10 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                ))}
           </div>
 
-          <div className="bg-gradient-to-r from-gray-800 to-gray-900 p-4 rounded-xl border border-white/5 flex justify-between items-center">
+          <div className="bg-gradient-to-r from-gray-800 to-gray-900 p-4 rounded-xl border border-white/5 flex justify-between items-center transition-all duration-300 hover:border-white/20">
              <div className="text-xs text-gray-400">{t('total_rewards')}</div>
              <div className="flex gap-3 text-xs font-mono font-bold">
-                  <span className="text-yellow-500">{user.referralStats.earnings.STARS} ★</span>
+                  <span className={`text-yellow-500 ${user.referralStats.earnings.STARS > 0 ? 'animate-pulse' : ''}`}>{user.referralStats.earnings.STARS} ★</span>
                   <span className="text-blue-400">{user.referralStats.earnings.TON} T</span>
                   <span className="text-green-400">{user.referralStats.earnings.USDT} $</span>
              </div>
