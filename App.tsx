@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { Shop } from './components/Shop';
 import { DiceGame } from './components/DiceGame';
@@ -24,13 +25,14 @@ const Icons = {
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('shop');
   const [user, setUser] = useState<UserProfile | null>(null);
-  // Separate state to track if we are in the "onboarding" phase
+  const [error, setError] = useState<string | null>(null);
   const [isOnboarding, setIsOnboarding] = useState(false);
   const { t } = useTranslation();
   const [tonConnectUI] = useTonConnectUI();
 
   const loadData = async (manualRefCode?: string) => {
     try {
+      setError(null);
       // 1. Get Param from Telegram or Manual Override
       const startParam = manualRefCode || window.Telegram?.WebApp?.initDataUnsafe?.start_param;
       
@@ -39,16 +41,15 @@ const App: React.FC = () => {
       const data = await fetchUserProfile(startParam);
       setUser(data);
 
-      // 2. Logic: If Backend says "isNewUser", we MUST show Onboarding
-      // UNLESS we just came from Onboarding (which passes manualRefCode).
       if (data.isNewUser && !manualRefCode) {
           setIsOnboarding(true);
       } else {
           setIsOnboarding(false);
       }
 
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to load user", e);
+      setError(e.message || "Connection Failed");
     }
   };
 
@@ -59,12 +60,26 @@ const App: React.FC = () => {
         window.Telegram.WebApp.expand();
         window.Telegram.WebApp.enableClosingConfirmation();
     }
-    
-    // Wallet session management is now handled by initSession() in index.tsx
     loadData();
   }, [tonConnectUI]);
 
   // --- RENDERING ---
+
+  if (error) {
+    return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white p-6 text-center space-y-4">
+            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center text-3xl">⚠️</div>
+            <h2 className="text-xl font-bold text-red-400">Connection Error</h2>
+            <p className="text-sm text-gray-400 max-w-xs">{error}</p>
+            <button 
+                onClick={() => loadData()}
+                className="px-6 py-2 bg-gray-800 border border-gray-700 rounded-lg hover:bg-gray-700 transition-colors text-sm font-bold"
+            >
+                Retry Connection
+            </button>
+        </div>
+    );
+  }
 
   if (!user) {
     return (
@@ -83,9 +98,7 @@ const App: React.FC = () => {
           <Welcome 
             initialRefParam={window.Telegram?.WebApp?.initDataUnsafe?.start_param}
             onComplete={(code) => {
-                // When they click "Start", we reload data WITH the code they entered (or confirmed)
-                // This will hit backend again, perform Late Binding, and set isNewUser=false (or we just ignore it in UI)
-                loadData(code || "none"); // Send "none" string if empty to force backend update if needed, or just let it handle logic
+                loadData(code || "none"); 
             }} 
           />
       );

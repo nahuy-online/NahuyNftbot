@@ -20,7 +20,7 @@ app.use(cors());
 // --- CONFIG ---
 const PORT = process.env.PORT || 8080;
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const WEBAPP_URL = "https://t.me/nahuy_NFT_bot/app"; // Your MiniApp Direct Link
+const WEBAPP_URL = "https://t.me/nahuy_NFT_bot/app"; 
 
 // Prices & Settings
 const PRICES = {
@@ -41,55 +41,81 @@ const pool = new pg.Pool({
 
 // --- DB INITIALIZATION ---
 const initDB = async () => {
-    const client = await pool.connect();
-    try {
-        await client.query(`
-            CREATE TABLE IF NOT EXISTS users (
-                id BIGINT PRIMARY KEY,
-                username TEXT,
-                referral_code TEXT UNIQUE,
-                referrer_id BIGINT,
+    let retries = 5;
+    while (retries > 0) {
+        try {
+            const client = await pool.connect();
+            try {
+                await client.query('BEGIN');
                 
-                -- Balances
-                nft_total INT DEFAULT 0,
-                nft_available INT DEFAULT 0,
-                nft_locked INT DEFAULT 0,
-                dice_available INT DEFAULT 0,
-                dice_stars_attempts INT DEFAULT 0,
-                
-                -- Referral Earnings
-                ref_rewards_stars INT DEFAULT 0,
-                ref_rewards_ton NUMERIC(18, 9) DEFAULT 0,
-                ref_rewards_usdt NUMERIC(18, 2) DEFAULT 0,
-                
-                created_at TIMESTAMP DEFAULT NOW()
-            );
+                // 1. Create Tables
+                await client.query(`
+                    CREATE TABLE IF NOT EXISTS users (
+                        id BIGINT PRIMARY KEY,
+                        username TEXT,
+                        referral_code TEXT UNIQUE,
+                        referrer_id BIGINT,
+                        nft_total INT DEFAULT 0,
+                        nft_available INT DEFAULT 0,
+                        nft_locked INT DEFAULT 0,
+                        dice_available INT DEFAULT 0,
+                        dice_stars_attempts INT DEFAULT 0,
+                        ref_rewards_stars INT DEFAULT 0,
+                        ref_rewards_ton NUMERIC(18, 9) DEFAULT 0,
+                        ref_rewards_usdt NUMERIC(18, 2) DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT NOW()
+                    );
+                    CREATE TABLE IF NOT EXISTS transactions (
+                        id SERIAL PRIMARY KEY,
+                        user_id BIGINT,
+                        type TEXT,
+                        asset_type TEXT,
+                        amount NUMERIC(18, 9),
+                        currency TEXT,
+                        description TEXT,
+                        is_locked BOOLEAN DEFAULT FALSE,
+                        tx_hash TEXT UNIQUE,
+                        created_at TIMESTAMP DEFAULT NOW()
+                    );
+                    CREATE TABLE IF NOT EXISTS locked_nfts (
+                        id SERIAL PRIMARY KEY,
+                        user_id BIGINT,
+                        amount INT,
+                        unlock_date BIGINT
+                    );
+                `);
 
-            CREATE TABLE IF NOT EXISTS transactions (
-                id SERIAL PRIMARY KEY,
-                user_id BIGINT,
-                type TEXT, -- 'purchase', 'win', 'withdraw', 'referral_reward'
-                asset_type TEXT,
-                amount NUMERIC(18, 9),
-                currency TEXT,
-                description TEXT,
-                is_locked BOOLEAN DEFAULT FALSE,
-                tx_hash TEXT UNIQUE,
-                created_at TIMESTAMP DEFAULT NOW()
-            );
+                // 2. Run Migrations (Safe ADD COLUMN)
+                // This ensures old DBs get the new columns required for the logic to work
+                const columns = [
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer_id BIGINT",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code TEXT UNIQUE",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS ref_rewards_stars INT DEFAULT 0",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS ref_rewards_ton NUMERIC(18, 9) DEFAULT 0",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS ref_rewards_usdt NUMERIC(18, 2) DEFAULT 0",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS dice_stars_attempts INT DEFAULT 0",
+                    "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT FALSE",
+                    "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS tx_hash TEXT UNIQUE"
+                ];
 
-            CREATE TABLE IF NOT EXISTS locked_nfts (
-                id SERIAL PRIMARY KEY,
-                user_id BIGINT,
-                amount INT,
-                unlock_date BIGINT
-            );
-        `);
-        console.log("✅ Database Schema Synced");
-    } catch (e) {
-        console.error("❌ DB Init Failed:", e);
-    } finally {
-        client.release();
+                for (const query of columns) {
+                    await client.query(query);
+                }
+
+                await client.query('COMMIT');
+                console.log("✅ Database Initialized & Migrated");
+                break;
+            } catch (err) {
+                await client.query('ROLLBACK');
+                throw err;
+            } finally {
+                client.release();
+            }
+        } catch (err) {
+            console.error(`❌ DB Init Error (Retrying in 3s...):`, err.message);
+            retries--;
+            await new Promise(res => setTimeout(res, 3000));
+        }
     }
 };
 initDB();
@@ -98,14 +124,10 @@ initDB();
 if (BOT_TOKEN) {
     const bot = new TelegramBot(BOT_TOKEN, { polling: true });
     
-    // Handle /start command (Entry point 1)
+    // Handle /start command
     bot.onText(/\/start(.*)/, (msg, match) => {
         const chatId = msg.chat.id;
-        // If user follows t.me/bot?start=123, match[1] will be " 123"
         const startParam = match[1] ? match[1].trim() : "";
-        
-        // We construct the Web App URL passing the startapp param explicitly
-        // This ensures the Mini App receives the referral code in initDataUnsafe.start_param
         const opts = {
             reply_markup: {
                 inline_keyboard: [[{ 
@@ -127,6 +149,7 @@ if (BOT_TOKEN) {
             try {
                 const payload = JSON.parse(msg.successful_payment.invoice_payload);
                 await handlePurchaseSuccess(userId, payload.type, payload.amount, 'STARS', msg.successful_payment.telegram_payment_charge_id);
+                // Optional: Send receipt message
             } catch (e) {
                 console.error("Payment Error:", e);
             }
@@ -137,31 +160,26 @@ if (BOT_TOKEN) {
 
 // --- REFERRAL LOGIC ---
 
-// 1. Generate unique code if not exists
 function generateRefCode(userId) {
-    // Simple: "ref_" + ID (Robust and collision-free)
     return `ref_${userId}`;
 }
 
-// 2. Bind Referrer
 async function bindReferrer(client, userId, potentialRefCode) {
     if (!potentialRefCode || potentialRefCode === "none") return null;
 
-    // Remove "ref_" prefix if present to find ID, or handle custom codes
     let referrerId = null;
     
     // Strategy A: Check by full code
     const resByCode = await client.query('SELECT id FROM users WHERE referral_code = $1', [potentialRefCode]);
     if (resByCode.rows.length > 0) referrerId = resByCode.rows[0].id;
 
-    // Strategy B: Fallback, maybe code is just the ID (Legacy)
+    // Strategy B: Fallback
     if (!referrerId && /^\d+$/.test(potentialRefCode.replace('ref_', ''))) {
         const rawId = potentialRefCode.replace('ref_', '');
         const resById = await client.query('SELECT id FROM users WHERE id = $1', [rawId]);
         if (resById.rows.length > 0) referrerId = resById.rows[0].id;
     }
 
-    // Validation: Cannot refer self, Circular dependency check (Level 1 only for speed)
     if (referrerId && String(referrerId) !== String(userId)) {
         await client.query('UPDATE users SET referrer_id = $1 WHERE id = $2', [referrerId, userId]);
         return referrerId;
@@ -169,24 +187,20 @@ async function bindReferrer(client, userId, potentialRefCode) {
     return null;
 }
 
-// 3. Distribute Rewards (Recursive 3 Levels)
 async function distributeRewards(client, buyerId, amount, currency) {
     console.log(`💸 Distributing Rewards for purchase of ${amount} ${currency} by ${buyerId}`);
     
-    // Get Buyer's Referrer (Level 1)
     const u1 = await client.query('SELECT referrer_id FROM users WHERE id = $1', [buyerId]);
-    if (!u1.rows[0]?.referrer_id) return; // No referrer, stop.
+    if (!u1.rows[0]?.referrer_id) return;
 
     const level1_ID = u1.rows[0].referrer_id;
     await payReward(client, level1_ID, amount, currency, 0, buyerId);
 
-    // Get Level 2
     const u2 = await client.query('SELECT referrer_id FROM users WHERE id = $1', [level1_ID]);
     if (u2.rows[0]?.referrer_id) {
         const level2_ID = u2.rows[0].referrer_id;
         await payReward(client, level2_ID, amount, currency, 1, buyerId);
 
-        // Get Level 3
         const u3 = await client.query('SELECT referrer_id FROM users WHERE id = $1', [level2_ID]);
         if (u3.rows[0]?.referrer_id) {
             const level3_ID = u3.rows[0].referrer_id;
@@ -196,35 +210,29 @@ async function distributeRewards(client, buyerId, amount, currency) {
 }
 
 async function payReward(client, recipientId, totalPurchaseAmount, currency, levelIdx, sourceUserId) {
-    const percent = REF_LEVELS[levelIdx]; // 0.07, 0.05, 0.03
+    const percent = REF_LEVELS[levelIdx];
     const reward = totalPurchaseAmount * percent;
     
     if (reward <= 0) return;
 
-    // Update Balance
     let colName = 'ref_rewards_ton';
     if (currency === 'STARS') colName = 'ref_rewards_stars';
     if (currency === 'USDT') colName = 'ref_rewards_usdt';
 
-    // Round DOWN for integers (Stars), keep float for crypto
     const finalAmount = currency === 'STARS' ? Math.floor(reward) : reward;
     
     if (finalAmount <= 0) return;
 
     await client.query(`UPDATE users SET ${colName} = ${colName} + $1 WHERE id = $2`, [finalAmount, recipientId]);
     
-    // Log Transaction
     await client.query(`
         INSERT INTO transactions (user_id, type, asset_type, amount, currency, description)
         VALUES ($1, 'referral_reward', 'currency', $2, $3, $4)
     `, [recipientId, finalAmount, currency, `Lvl ${levelIdx + 1} Reward from user ${sourceUserId}`]);
-
-    console.log(`   -> Paid ${finalAmount} ${currency} to ${recipientId} (Lvl ${levelIdx+1})`);
 }
 
 // --- API ROUTES ---
 
-// 1. AUTH & BINDING (The most important endpoint)
 app.post('/api/auth', async (req, res) => {
     const { id, username, startParam } = req.body;
     const client = await pool.connect();
@@ -232,7 +240,6 @@ app.post('/api/auth', async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        // Upsert User
         let userRes = await client.query('SELECT * FROM users WHERE id = $1', [id]);
         let user = userRes.rows[0];
         let isNew = false;
@@ -240,35 +247,30 @@ app.post('/api/auth', async (req, res) => {
         if (!user) {
             isNew = true;
             const myRefCode = generateRefCode(id);
-            // Insert basic user
             await client.query(
                 'INSERT INTO users (id, username, referral_code) VALUES ($1, $2, $3)', 
                 [id, username, myRefCode]
             );
             user = { id, username, referral_code: myRefCode, referrer_id: null };
+            
+            // Re-fetch to get defaults
+            userRes = await client.query('SELECT * FROM users WHERE id = $1', [id]);
+            user = userRes.rows[0];
         }
 
-        // Handle Referral Binding
-        // Conditions: 
-        // 1. User has no referrer yet.
-        // 2. Incoming startParam exists.
-        // 3. startParam is not self.
+        // Binding Logic
         if (!user.referrer_id && startParam && startParam !== "none" && startParam !== user.referral_code) {
             console.log(`🔗 Binding User ${id} to referrer code: ${startParam}`);
             const boundId = await bindReferrer(client, id, startParam);
-            if (boundId) user.referrer_id = boundId;
+            if (boundId) {
+                user.referrer_id = boundId;
+                // Update local object for response
+            }
         }
 
         await client.query('COMMIT');
 
-        // Fetch Stats for UI
-        const rewards = {
-            STARS: user.ref_rewards_stars || 0,
-            TON: user.ref_rewards_ton || 0,
-            USDT: user.ref_rewards_usdt || 0
-        };
-        
-        // Count Network
+        // Stats
         const lvl1 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id = $1', [id]);
         const lvl2 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id = $1)', [id]);
         const lvl3 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id = $1))', [id]);
@@ -282,35 +284,38 @@ app.post('/api/auth', async (req, res) => {
             referrerId: user.referrer_id ? parseInt(user.referrer_id) : null,
             isNewUser: isNew,
             nftBalance: {
-                total: user.nft_total,
-                available: user.nft_available,
-                locked: user.nft_locked,
+                total: user.nft_total || 0,
+                available: user.nft_available || 0,
+                locked: user.nft_locked || 0,
                 lockedDetails: lockedRes.rows.map(r => ({ amount: r.amount, unlockDate: parseInt(r.unlock_date) }))
             },
             diceBalance: {
-                available: user.dice_available,
-                starsAttempts: user.dice_stars_attempts
+                available: user.dice_available || 0,
+                starsAttempts: user.dice_stars_attempts || 0
             },
             referralStats: {
                 level1: parseInt(lvl1.rows[0].count),
                 level2: parseInt(lvl2.rows[0].count),
                 level3: parseInt(lvl3.rows[0].count),
-                earnings: rewards
+                earnings: {
+                    STARS: user.ref_rewards_stars || 0,
+                    TON: user.ref_rewards_ton || 0,
+                    USDT: user.ref_rewards_usdt || 0
+                }
             }
         });
 
     } catch (e) {
         await client.query('ROLLBACK');
         console.error("Auth Error:", e);
-        res.status(500).json({ error: "Auth failed" });
+        res.status(500).json({ error: "Auth failed: " + e.message });
     } finally {
         client.release();
     }
 });
 
-// 2. CREATE PAYMENT
 app.post('/api/payment/create', async (req, res) => {
-    const { id, type, amount, currency } = req.body; // amount = quantity
+    const { id, type, amount, currency } = req.body;
     const priceMap = type === 'nft' ? PRICES.nft : PRICES.dice;
     const unitPrice = priceMap[currency];
     const totalPrice = unitPrice * amount;
@@ -320,18 +325,18 @@ app.post('/api/payment/create', async (req, res) => {
             const link = await app.locals.bot.createInvoiceLink(
                 type === 'nft' ? "NFT Pack" : "Dice Attempts", 
                 `Qty: ${amount}`, 
-                JSON.stringify({ type, amount }), // Payload
+                JSON.stringify({ type, amount }),
                 "", "XTR", 
                 [{ label: `${amount} items`, amount: totalPrice }]
             );
             res.json({ ok: true, invoiceLink: link });
-        } catch(e) { res.status(500).json({error: "Bot Error"}); }
+        } catch(e) { 
+            console.error("Invoice Error:", e);
+            res.status(500).json({error: "Bot Error"}); 
+        }
     } else {
-        // TON
         const nanoTons = Math.round(totalPrice * 1e9).toString();
-        // Use a fixed wallet for testnet
         const TARGET_WALLET = "0QBycgJ7cxTLe4Y84HG6tOGQgf-284Es4zJzVJM8R2h1U_av"; 
-        
         res.json({ 
             ok: true, 
             transaction: {
@@ -342,7 +347,6 @@ app.post('/api/payment/create', async (req, res) => {
     }
 });
 
-// 3. VERIFY PAYMENT (AND DISTRIBUTE REWARDS)
 app.post('/api/payment/verify', async (req, res) => {
     const { id, type, amount, currency } = req.body;
     await handlePurchaseSuccess(id, type, amount, currency, `manual_${Date.now()}`);
@@ -353,14 +357,11 @@ async function handlePurchaseSuccess(userId, type, qty, currency, txHash) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        
-        // Check duplicate
         const dup = await client.query('SELECT id FROM transactions WHERE tx_hash = $1', [txHash]);
         if (dup.rows.length > 0) { await client.query('ROLLBACK'); return; }
 
         const isStars = currency === 'STARS';
         
-        // Give Items
         if (type === 'nft') {
             if (isStars) {
                  const unlock = Date.now() + (21 * 86400000);
@@ -370,23 +371,18 @@ async function handlePurchaseSuccess(userId, type, qty, currency, txHash) {
                  await client.query('UPDATE users SET nft_total=nft_total+$1, nft_available=nft_available+$1 WHERE id=$2', [qty, userId]);
             }
         } else {
-            // Dice
             await client.query('UPDATE users SET dice_available=dice_available+$1 WHERE id=$2', [qty, userId]);
             if (isStars) await client.query('UPDATE users SET dice_stars_attempts=dice_stars_attempts+$1 WHERE id=$2', [qty, userId]);
         }
 
-        // Record Tx
         await client.query(`
             INSERT INTO transactions (user_id, type, asset_type, amount, currency, description, is_locked, tx_hash)
             VALUES ($1, 'purchase', $2, $3, $4, $5, $6, $7)
         `, [userId, type, qty, currency, `Purchase ${qty} ${type}`, (isStars && type==='nft'), txHash]);
 
         // DISTRIBUTE REWARDS
-        // Calculate Total Price paid
         const priceMap = type === 'nft' ? PRICES.nft : PRICES.dice;
         const totalPaid = priceMap[currency] * qty;
-        
-        // IMPORTANT: Must happen before commit
         await distributeRewards(client, userId, totalPaid, currency);
 
         await client.query('COMMIT');
@@ -400,7 +396,6 @@ async function handlePurchaseSuccess(userId, type, qty, currency, txHash) {
     }
 }
 
-// 4. ROLL DICE
 app.post('/api/roll', async (req, res) => {
     const { id } = req.body;
     const client = await pool.connect();
@@ -413,7 +408,7 @@ app.post('/api/roll', async (req, res) => {
         if (u.rows[0].dice_stars_attempts > 0) isStars = true;
 
         const roll = Math.floor(Math.random() * 6) + 1;
-        const win = roll; // 1 to 6 NFT
+        const win = roll; 
 
         await client.query('UPDATE users SET dice_available=dice_available-1 WHERE id=$1', [id]);
         if (isStars) await client.query('UPDATE users SET dice_stars_attempts=dice_stars_attempts-1 WHERE id=$1', [id]);
@@ -438,18 +433,18 @@ app.post('/api/roll', async (req, res) => {
     }
 });
 
-// 5. HISTORY & MISC
 app.get('/api/history', async (req, res) => {
     const { id } = req.query;
-    const r = await pool.query('SELECT * FROM transactions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 20', [id]);
-    res.json(r.rows.map(x => ({
-        id: x.id, type: x.type, amount: x.amount, description: x.description, 
-        timestamp: new Date(x.created_at).getTime(), currency: x.currency, isLocked: x.is_locked, assetType: x.asset_type
-    })));
+    try {
+        const r = await pool.query('SELECT * FROM transactions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 20', [id]);
+        res.json(r.rows.map(x => ({
+            id: x.id, type: x.type, amount: x.amount, description: x.description, 
+            timestamp: new Date(x.created_at).getTime(), currency: x.currency, isLocked: x.is_locked, assetType: x.asset_type
+        })));
+    } catch(e) { res.json([]); }
 });
 
 app.post('/api/withdraw', async (req, res) => {
-    // Mock withdraw
     const { id, address } = req.body;
     const client = await pool.connect();
     try {
