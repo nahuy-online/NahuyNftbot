@@ -9,14 +9,16 @@ const getLocalState = (userId: number, username: string) => {
     const stored = localStorage.getItem(key);
     if (stored) return JSON.parse(stored) as UserProfile;
 
-    // Generate random mock code
-    const randomCode = Math.random().toString(36).substring(2, 10);
+    // Generate random mock code with ref_ prefix
+    const randomHex = Math.floor(Math.random() * 0xffffff).toString(16).padEnd(6, '0');
+    const randomCode = `ref_${randomHex}`;
 
     const newUser: UserProfile = {
         id: userId,
         username: username,
         referralCode: randomCode, 
         referrerId: null,
+        referralDebug: "Mock: User Created",
         nftBalance: { total: 0, available: 0, locked: 0, lockedDetails: [] },
         diceBalance: { available: 2, starsAttempts: 0, used: 0 },
         referralStats: { level1: 0, level2: 0, level3: 0, earnings: { STARS: 0, TON: 0, USDT: 0 } }
@@ -66,28 +68,121 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
   // --- CHECK MOCK TRIGGER ---
   const runMock = async () => {
         const user = getLocalState(userId, username);
-        if (endpoint === '/auth') return user;
+        
+        if (endpoint === '/auth') {
+             // Simulate Referral Binding in Mock
+             const { startParam } = payload;
+             if (!user.referrerId && startParam && startParam !== "none" && startParam !== user.referralCode) {
+                 // In mock, we just pretend we found a user with ID 77777 or parse the ref code if it has an ID style
+                 let mockRefId = 77777;
+                 // If start param looks like ref_123, use 123
+                 if (startParam.startsWith('ref_') && /^\d+$/.test(startParam.replace('ref_',''))) {
+                     mockRefId = parseInt(startParam.replace('ref_',''));
+                 }
+                 user.referrerId = mockRefId;
+                 user.referralDebug = `Mock: Bound to ${mockRefId} via param`;
+                 user.referralStats.level1 = 1; // Fake a stat increment for visual feedback
+                 updateLocalState(user);
+             }
+             return user;
+        }
+
         if (endpoint === '/roll') {
             if (user.diceBalance.available <= 0) throw new Error("No dice attempts left (Mock)");
+            
+            // Locking logic for roll
+            const isStarsRun = user.diceBalance.starsAttempts > 0;
+            
             const roll = Math.floor(Math.random() * 6) + 1;
             user.diceBalance.available -= 1;
-            if (roll > 0) { user.nftBalance.total += roll; user.nftBalance.available += roll; }
+            if (isStarsRun) {
+                user.diceBalance.starsAttempts -= 1;
+            }
+
+            if (roll > 0) { 
+                user.nftBalance.total += roll; 
+                
+                if (isStarsRun) {
+                    user.nftBalance.locked += roll;
+                    user.nftBalance.lockedDetails.push({
+                        amount: roll,
+                        unlockDate: Date.now() + (21 * 86400000)
+                    });
+                } else {
+                    user.nftBalance.available += roll; 
+                }
+            }
             
-            addLocalHistory(userId, { id: `m_${Date.now()}`, type: 'win', assetType: 'nft', amount: roll, description: `Rolled ${roll}`, timestamp: Date.now() });
+            addLocalHistory(userId, { 
+                id: `m_${Date.now()}`, 
+                type: 'win', 
+                assetType: 'nft', 
+                amount: roll, 
+                description: `Rolled ${roll}`, 
+                timestamp: Date.now(),
+                isLocked: isStarsRun
+            });
             
             updateLocalState(user);
             return { roll };
         }
+
         if (endpoint === '/history') return getLocalHistory(userId);
         if (endpoint === '/payment/create') return { ok: true, invoiceLink: "https://t.me/$" };
+        
         if (endpoint === '/payment/verify') { 
             const { type, amount, currency } = payload;
-             if (type === 'nft') user.nftBalance.total += amount; 
-             else user.diceBalance.available += amount;
+            const isStars = currency === 'STARS';
+
+             if (type === 'nft') {
+                 user.nftBalance.total += amount; 
+                 if (isStars) {
+                     user.nftBalance.locked += amount;
+                     user.nftBalance.lockedDetails.push({
+                         amount: amount,
+                         unlockDate: Date.now() + (21 * 86400000)
+                     });
+                 } else {
+                     user.nftBalance.available += amount;
+                 }
+             } else {
+                 user.diceBalance.available += amount;
+                 if (isStars) {
+                     user.diceBalance.starsAttempts += amount;
+                 }
+             }
+
+             addLocalHistory(userId, { 
+                id: `m_pay_${Date.now()}`, 
+                type: 'purchase', 
+                assetType: type, 
+                amount: amount, 
+                currency: currency,
+                description: `Purchase ${amount} ${type}`, 
+                timestamp: Date.now(),
+                isLocked: isStars && type === 'nft'
+            });
+
              updateLocalState(user);
              return { ok: true }; 
         }
-        if (endpoint === '/withdraw') return { ok: true };
+        if (endpoint === '/withdraw') {
+             const amt = user.nftBalance.available;
+             if (amt <= 0) throw new Error("No funds");
+             user.nftBalance.available = 0;
+             user.nftBalance.total -= amt;
+             
+             addLocalHistory(userId, { 
+                id: `m_wd_${Date.now()}`, 
+                type: 'withdraw', 
+                assetType: 'nft', 
+                amount: amt, 
+                description: `Withdraw to ${payload.address}`, 
+                timestamp: Date.now()
+            });
+            updateLocalState(user);
+            return { ok: true };
+        }
         if (endpoint === '/debug/reset') { localStorage.clear(); return {ok:true}; }
   };
 
