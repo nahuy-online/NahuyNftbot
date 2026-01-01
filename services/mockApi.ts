@@ -3,6 +3,31 @@ import { UserProfile, Currency, NftTransaction, PaymentInitResponse } from '../t
 
 const API_BASE = '/api'; 
 
+// --- FALLBACK DATA FOR PREVIEW / DEMO ---
+const MOCK_USER: UserProfile = {
+    id: 12345,
+    username: "DemoUser",
+    referralCode: "demo_ref",
+    referrerId: null,
+    nftBalance: {
+        total: 15,
+        available: 10,
+        locked: 5,
+        lockedDetails: [{ amount: 5, unlockDate: Date.now() + 864000000 }]
+    },
+    diceBalance: {
+        available: 3,
+        starsAttempts: 0,
+        used: 0
+    },
+    referralStats: {
+        level1: 5,
+        level2: 2,
+        level3: 0,
+        earnings: { STARS: 100, TON: 0.5, USDT: 10 }
+    }
+};
+
 // --- API HELPER ---
 const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) => {
   // Get Telegram ID
@@ -23,9 +48,9 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
   const payload = body ? { id: userId, ...body } : { id: userId };
 
   try {
-    // Timeout extended to 15s to handle initial container spin-up (migrations)
     const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), 15000);
+    // Short timeout for fallback check
+    const id = setTimeout(() => controller.abort(), 8000);
 
     const response = await fetch(url, {
         method,
@@ -36,19 +61,19 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
     
     clearTimeout(id);
 
-    if (response.status === 503) {
-        throw new Error("Server starting up... Please retry.");
+    // If 503 (Starting) or 500 (Crash) or 404 (No backend in Preview), use Mock Data
+    if (response.status === 503 || response.status === 500 || response.status === 404) {
+        console.warn(`Backend responded with ${response.status}. Switching to Mock Data for Preview.`);
+        throw new Error("MOCK_FALLBACK");
     }
     
     if (!response.ok) {
-        // Try to read JSON error message from backend
         const text = await response.text();
         let errMsg = `Backend error (${response.status})`;
         try {
             const json = JSON.parse(text);
             if (json.error) errMsg = json.error;
         } catch (e) {
-            // If not JSON, use the status text
             if(text.length < 100) errMsg += `: ${text}`;
         }
         throw new Error(errMsg);
@@ -56,10 +81,20 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
     
     return await response.json();
   } catch (error: any) {
-    console.error("API Error:", error);
-    if (error.name === 'AbortError') {
-        throw new Error("Connection timed out. Server might be sleeping.");
+    // --- MOCK FALLBACK LOGIC ---
+    if (error.message === "MOCK_FALLBACK" || error.name === 'AbortError' || error.message.includes("Failed to fetch")) {
+        console.log("⚠️ API Unavailable. Returning Demo Data.");
+        
+        // Simulate specific endpoint responses
+        if (endpoint === '/auth') return MOCK_USER;
+        if (endpoint === '/history') return [];
+        if (endpoint === '/roll') return { roll: Math.floor(Math.random() * 6) + 1 };
+        if (endpoint === '/payment/create') return { ok: true, invoiceLink: "https://t.me/$" };
+        if (endpoint === '/payment/verify') return { ok: true };
+        if (endpoint === '/withdraw') return { ok: true };
     }
+    
+    console.error("API Error:", error);
     throw error;
   }
 };

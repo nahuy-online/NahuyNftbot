@@ -2,12 +2,12 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import TelegramBot from 'node-telegram-bot-api';
-import pkg from 'pg'; 
+import pg from 'pg'; // Standard import
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// FIX: Destructure Pool from the default export package
-const { Pool } = pkg;
+// Extract Pool from pg (works for both default and named exports usually)
+const { Pool } = pg;
 
 // --- ENV SETUP ---
 const __filename = fileURLToPath(import.meta.url);
@@ -50,9 +50,11 @@ pool.on('error', (err) => console.error('🔴 Unexpected DB Client Error', err))
 app.use((req, res, next) => {
     if (req.path === '/api/health') return next();
 
+    // If DB init fatally failed, report it
     if (dbInitError) {
         return res.status(500).json({ error: `DB Init Failed: ${dbInitError}` });
     }
+    // If DB is still starting, tell frontend to wait (handled by frontend retry)
     if (!isDbReady && req.path.startsWith('/api')) {
         return res.status(503).json({ error: 'Server initializing, please wait...' });
     }
@@ -66,8 +68,9 @@ BigInt.prototype.toJSON = function() { return this.toString(); };
 const initDB = async () => {
     let retries = 30; // Increased retries for Docker cold starts
     while (retries > 0) {
+        let client;
         try {
-            const client = await pool.connect();
+            client = await pool.connect();
             console.log("✅ Connected to Database");
             
             try {
@@ -93,7 +96,6 @@ const initDB = async () => {
                     );
                 `);
                 
-                // Added FOREIGN KEY constraints for integrity
                 await client.query(`
                     CREATE TABLE IF NOT EXISTS transactions (
                         id SERIAL PRIMARY KEY,
@@ -164,10 +166,8 @@ app.listen(PORT, () => {
 
 // --- TELEGRAM BOT ---
 if (BOT_TOKEN) {
-    // Add cancellation cleanup to prevent "terminated by other getUpdates" in dev
     const bot = new TelegramBot(BOT_TOKEN, { polling: true });
     
-    // Prevent crash on polling error (common in Docker without internet or bad DNS)
     bot.on('polling_error', (error) => {
         console.error(`[Telegram Bot] Polling Error: ${error.code} - ${error.message}`);
     });
@@ -230,7 +230,6 @@ async function bindReferrer(client, userId, potentialRefCode) {
         }
     }
 
-    // Prevent self-referral and ensure referrer exists
     if (referrerId && String(referrerId) !== String(userId)) {
         await client.query('UPDATE users SET referrer_id = $1 WHERE id = $2', [referrerId, userId]);
         return referrerId;
@@ -239,29 +238,20 @@ async function bindReferrer(client, userId, potentialRefCode) {
 }
 
 async function distributeRewards(client, buyerId, amount, currency) {
-    // Fetch user with referrer
     const u1 = await client.query('SELECT referrer_id FROM users WHERE id = $1', [buyerId]);
     const r1 = u1.rows[0]?.referrer_id;
-    
     if (!r1) return;
     
-    // Level 1
     await payReward(client, r1, amount, currency, 0, buyerId);
 
-    // Fetch Level 2
     const u2 = await client.query('SELECT referrer_id FROM users WHERE id = $1', [r1]);
     const r2 = u2.rows[0]?.referrer_id;
-    
     if (r2) {
-        // Level 2
         await payReward(client, r2, amount, currency, 1, buyerId);
         
-        // Fetch Level 3
         const u3 = await client.query('SELECT referrer_id FROM users WHERE id = $1', [r2]);
         const r3 = u3.rows[0]?.referrer_id;
-        
         if (r3) {
-            // Level 3
             await payReward(client, r3, amount, currency, 2, buyerId);
         }
     }
@@ -270,7 +260,6 @@ async function distributeRewards(client, buyerId, amount, currency) {
 async function payReward(client, recipientId, totalPurchaseAmount, currency, levelIdx, sourceUserId) {
     const percent = REF_LEVELS[levelIdx];
     let reward = totalPurchaseAmount * percent;
-    
     if (reward <= 0) return;
 
     let colName = 'ref_rewards_ton';
@@ -280,10 +269,8 @@ async function payReward(client, recipientId, totalPurchaseAmount, currency, lev
     else if (currency === 'USDT') { colName = 'ref_rewards_usdt'; }
 
     if (isInt) reward = Math.floor(reward);
-
     if (reward <= 0) return;
 
-    // Atomic Update
     await client.query(`UPDATE users SET ${colName} = ${colName} + $1 WHERE id = $2`, [reward, recipientId]);
     await client.query(`
         INSERT INTO transactions (user_id, type, asset_type, amount, currency, description)
@@ -293,8 +280,9 @@ async function payReward(client, recipientId, totalPurchaseAmount, currency, lev
 
 async function handlePurchaseSuccess(userId, type, qty, currency, txHash) {
     if (!isDbReady) return false;
-    const client = await pool.connect();
+    let client;
     try {
+        client = await pool.connect();
         await client.query('BEGIN');
         const dup = await client.query('SELECT id FROM transactions WHERE tx_hash = $1', [txHash]);
         if (dup.rows.length > 0) { await client.query('ROLLBACK'); return false; }
@@ -326,11 +314,11 @@ async function handlePurchaseSuccess(userId, type, qty, currency, txHash) {
         await client.query('COMMIT');
         return true;
     } catch (e) {
-        await client.query('ROLLBACK');
+        if(client) await client.query('ROLLBACK');
         console.error("Purchase Error:", e);
         return false;
     } finally {
-        client.release();
+        if(client) client.release();
     }
 }
 
@@ -341,11 +329,12 @@ app.get('/api/health', (req, res) => {
 });
 
 app.post('/api/auth', async (req, res) => {
-    const { id, username, startParam } = req.body;
-    if (!id) return res.status(400).json({ error: "No ID provided" });
-
-    const client = await pool.connect();
+    let client;
     try {
+        const { id, username, startParam } = req.body;
+        if (!id) return res.status(400).json({ error: "No ID provided" });
+
+        client = await pool.connect();
         await client.query('BEGIN');
 
         let resUser = await client.query('SELECT * FROM users WHERE id = $1', [id]);
@@ -403,56 +392,66 @@ app.post('/api/auth', async (req, res) => {
         });
 
     } catch (e) {
-        await client.query('ROLLBACK');
+        if(client) await client.query('ROLLBACK');
         console.error("Auth Error:", e);
+        // Ensure error is JSON
         res.status(500).json({ error: e.message || "Unknown DB Error" });
     } finally {
-        client.release();
+        if(client) client.release();
     }
 });
 
 app.post('/api/payment/create', async (req, res) => {
-    const { type, amount, currency } = req.body;
-    const priceMap = type === 'nft' ? PRICES.nft : PRICES.dice;
-    const total = priceMap[currency] * amount;
+    try {
+        const { type, amount, currency } = req.body;
+        const priceMap = type === 'nft' ? PRICES.nft : PRICES.dice;
+        const total = priceMap[currency] * amount;
 
-    if (currency === 'STARS') {
-        try {
-            const link = await app.locals.bot.createInvoiceLink(
-                type === 'nft' ? "NFT Pack" : "Dice Attempts", 
-                `Qty: ${amount}`, 
-                JSON.stringify({ type, amount }),
-                "", "XTR", 
-                [{ label: `${amount} items`, amount: total }]
-            );
-            res.json({ ok: true, invoiceLink: link });
-        } catch(e) { 
-            console.error(e);
-            res.status(500).json({ error: "Bot Error: " + e.message }); 
-        }
-    } else {
-        const nano = Math.round(total * 1e9).toString();
-        const TARGET = "0QBycgJ7cxTLe4Y84HG6tOGQgf-284Es4zJzVJM8R2h1U_av"; 
-        res.json({ 
-            ok: true, 
-            transaction: {
-                validUntil: Math.floor(Date.now() / 1000) + 600,
-                messages: [{ address: TARGET, amount: nano }]
+        if (currency === 'STARS') {
+            try {
+                const link = await app.locals.bot.createInvoiceLink(
+                    type === 'nft' ? "NFT Pack" : "Dice Attempts", 
+                    `Qty: ${amount}`, 
+                    JSON.stringify({ type, amount }),
+                    "", "XTR", 
+                    [{ label: `${amount} items`, amount: total }]
+                );
+                res.json({ ok: true, invoiceLink: link });
+            } catch(e) { 
+                console.error(e);
+                res.status(500).json({ error: "Bot Error: " + e.message }); 
             }
-        });
+        } else {
+            const nano = Math.round(total * 1e9).toString();
+            const TARGET = "0QBycgJ7cxTLe4Y84HG6tOGQgf-284Es4zJzVJM8R2h1U_av"; 
+            res.json({ 
+                ok: true, 
+                transaction: {
+                    validUntil: Math.floor(Date.now() / 1000) + 600,
+                    messages: [{ address: TARGET, amount: nano }]
+                }
+            });
+        }
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 
 app.post('/api/payment/verify', async (req, res) => {
-    const { id, type, amount, currency } = req.body;
-    await handlePurchaseSuccess(id, type, amount, currency, `manual_${Date.now()}_${Math.random()}`);
-    res.json({ ok: true });
+    try {
+        const { id, type, amount, currency } = req.body;
+        await handlePurchaseSuccess(id, type, amount, currency, `manual_${Date.now()}_${Math.random()}`);
+        res.json({ ok: true });
+    } catch(e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.post('/api/roll', async (req, res) => {
-    const { id } = req.body;
-    const client = await pool.connect();
+    let client;
     try {
+        const { id } = req.body;
+        client = await pool.connect();
         await client.query('BEGIN');
         const u = await client.query('SELECT * FROM users WHERE id=$1 FOR UPDATE', [id]);
         if (!u.rows[0] || u.rows[0].dice_available <= 0) throw new Error("No dice");
@@ -477,16 +476,16 @@ app.post('/api/roll', async (req, res) => {
         await client.query('COMMIT');
         res.json({ roll });
     } catch (e) {
-        await client.query('ROLLBACK');
+        if(client) await client.query('ROLLBACK');
         res.status(500).json({ error: e.message });
     } finally {
-        client.release();
+        if(client) client.release();
     }
 });
 
 app.get('/api/history', async (req, res) => {
-    const { id } = req.query;
     try {
+        const { id } = req.query;
         const r = await pool.query('SELECT * FROM transactions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 20', [id]);
         res.json(r.rows.map(x => ({
             id: x.id, type: x.type, amount: x.amount, description: x.description, 
@@ -496,9 +495,10 @@ app.get('/api/history', async (req, res) => {
 });
 
 app.post('/api/withdraw', async (req, res) => {
-    const { id, address } = req.body;
-    const client = await pool.connect();
+    let client;
     try {
+        const { id, address } = req.body;
+        client = await pool.connect();
         await client.query('BEGIN');
         const u = await client.query('SELECT nft_available FROM users WHERE id=$1 FOR UPDATE', [id]);
         if (u.rows[0].nft_available <= 0) throw new Error("No funds");
@@ -509,19 +509,22 @@ app.post('/api/withdraw', async (req, res) => {
         await client.query('COMMIT');
         res.json({ ok: true });
     } catch (e) {
-        await client.query('ROLLBACK');
+        if(client) await client.query('ROLLBACK');
         res.status(500).json({ error: e.message });
     } finally {
-        client.release();
+        if(client) client.release();
     }
 });
 
 app.post('/api/debug/reset', async (req, res) => {
-    const client = await pool.connect();
+    let client;
     try {
+        client = await pool.connect();
         await client.query('TRUNCATE users, transactions, locked_nfts RESTART IDENTITY CASCADE');
         res.json({ ok: true });
+    } catch(e) {
+        res.status(500).json({error: e.message});
     } finally {
-        client.release();
+        if(client) client.release();
     }
 });
