@@ -3,54 +3,43 @@ import { UserProfile, Currency, NftTransaction, PaymentInitResponse } from '../t
 
 const API_BASE = '/api'; 
 
-// --- FALLBACK DATA FOR PREVIEW / DEMO ---
-const MOCK_USER: UserProfile = {
-    id: 12345,
-    username: "DemoUser",
-    referralCode: "demo_ref",
-    referrerId: null,
-    nftBalance: {
-        total: 15,
-        available: 10,
-        locked: 5,
-        lockedDetails: [{ amount: 5, unlockDate: Date.now() + 864000000 }]
-    },
-    diceBalance: {
-        available: 3,
-        starsAttempts: 0,
-        used: 0
-    },
-    referralStats: {
-        level1: 5,
-        level2: 2,
-        level3: 0,
-        earnings: { STARS: 100, TON: 0.5, USDT: 10 }
-    }
+// --- STATEFUL MOCK ENGINE (LOCAL STORAGE) ---
+const getLocalState = (userId: number, username: string) => {
+    const key = `mock_user_${userId}`;
+    const stored = localStorage.getItem(key);
+    if (stored) return JSON.parse(stored) as UserProfile;
+
+    const newUser: UserProfile = {
+        id: userId,
+        username: username,
+        referralCode: `ref_${userId}`,
+        referrerId: null,
+        nftBalance: { total: 0, available: 0, locked: 0, lockedDetails: [] },
+        diceBalance: { available: 2, starsAttempts: 0, used: 0 },
+        referralStats: { level1: 0, level2: 0, level3: 0, earnings: { STARS: 0, TON: 0, USDT: 0 } }
+    };
+    localStorage.setItem(key, JSON.stringify(newUser));
+    return newUser;
 };
 
 // --- API HELPER ---
 const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) => {
-  // Get Telegram ID
   const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
-  const userId = tgUser?.id || 12345; // Fallback for browser
+  const userId = tgUser?.id || 99999; 
+  const username = tgUser?.username || "Guest";
   
-  const headers: HeadersInit = { 
-      'Content-Type': 'application/json'
-  };
+  const headers: HeadersInit = { 'Content-Type': 'application/json' };
   
-  // Some endpoints need ID in query for GET
   let url = `${API_BASE}${endpoint}`;
   if (method === 'GET' && !url.includes('?')) {
       url += `?id=${userId}`;
   }
 
-  // Include ID in body for POST automatically if not present
   const payload = body ? { id: userId, ...body } : { id: userId };
 
   try {
     const controller = new AbortController();
-    // Short timeout for fallback check
-    const id = setTimeout(() => controller.abort(), 8000);
+    const id = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
     const response = await fetch(url, {
         method,
@@ -61,80 +50,65 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
     
     clearTimeout(id);
 
-    // If 503 (Starting) or 500 (Crash) or 404 (No backend in Preview), use Mock Data
-    if (response.status === 503 || response.status === 500 || response.status === 404) {
-        console.warn(`Backend responded with ${response.status}. Switching to Mock Data for Preview.`);
+    // CRITICAL FIX: If 500 (Server Error), THROW IT so we see the real backend bug.
+    // Only fallback to mock if 404 (Not Found/No Proxy) or Network Error.
+    if (response.status === 500) {
+        const errText = await response.text();
+        throw new Error(`SERVER ERROR (500): ${errText}`);
+    }
+
+    if (response.status === 503) {
+        throw new Error("Server is initializing...");
+    }
+    
+    // Fallback trigger for 404 (Running locally without docker backend)
+    if (response.status === 404) {
         throw new Error("MOCK_FALLBACK");
     }
     
     if (!response.ok) {
         const text = await response.text();
-        let errMsg = `Backend error (${response.status})`;
-        try {
-            const json = JSON.parse(text);
-            if (json.error) errMsg = json.error;
-        } catch (e) {
-            if(text.length < 100) errMsg += `: ${text}`;
-        }
-        throw new Error(errMsg);
+        throw new Error(`Backend error: ${text}`);
     }
     
     return await response.json();
   } catch (error: any) {
-    // --- MOCK FALLBACK LOGIC ---
-    if (error.message === "MOCK_FALLBACK" || error.name === 'AbortError' || error.message.includes("Failed to fetch")) {
-        console.log("⚠️ API Unavailable. Returning Demo Data.");
+    // Only use Mock if we CANNOT reach the server or if explicitly 404 (Preview mode)
+    // If the server replies 500, we want to see it!
+    const isNetworkError = error.message === "MOCK_FALLBACK" || 
+                           error.name === 'AbortError' || 
+                           error.message.includes("Failed to fetch") ||
+                           error.message.includes("NetworkError");
+
+    if (isNetworkError) {
+        console.warn(`⚠️ Backend Unreachable (${endpoint}). Using Local Mock Data.`);
         
-        // Simulate specific endpoint responses
-        if (endpoint === '/auth') return MOCK_USER;
+        // --- MOCK LOGIC (Simplified for brevity, same as before) ---
+        const user = getLocalState(userId, username);
+        if (endpoint === '/auth') return user;
+        if (endpoint === '/roll') {
+            if (user.diceBalance.available <= 0) throw new Error("No dice attempts left (Mock)");
+            const roll = Math.floor(Math.random() * 6) + 1;
+            user.diceBalance.available -= 1;
+            if (roll > 0) { user.nftBalance.total += roll; user.nftBalance.available += roll; }
+            localStorage.setItem(`mock_user_${userId}`, JSON.stringify(user));
+            return { roll };
+        }
         if (endpoint === '/history') return [];
-        if (endpoint === '/roll') return { roll: Math.floor(Math.random() * 6) + 1 };
         if (endpoint === '/payment/create') return { ok: true, invoiceLink: "https://t.me/$" };
-        if (endpoint === '/payment/verify') return { ok: true };
+        if (endpoint === '/payment/verify') { return { ok: true }; }
         if (endpoint === '/withdraw') return { ok: true };
     }
     
-    console.error("API Error:", error);
+    // Throw real errors (like 500) to the UI
     throw error;
   }
 };
 
-// --- EXPORTED FUNCTIONS ---
-
-export const fetchUserProfile = async (startParam?: string): Promise<UserProfile> => {
-    const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
-    const username = tgUser?.username || "Guest";
-    const id = tgUser?.id || 12345;
-
-    // Call the unified Auth endpoint
-    return await apiRequest('/auth', 'POST', { 
-        id, 
-        username, 
-        startParam: startParam || "none" 
-    });
-};
-
-export const fetchNftHistory = async (): Promise<NftTransaction[]> => {
-    return await apiRequest('/history');
-};
-
-export const createPayment = async (type: 'nft' | 'dice', amount: number, currency: Currency): Promise<PaymentInitResponse> => {
-    return await apiRequest('/payment/create', 'POST', { type, amount, currency });
-};
-
-export const verifyPayment = async (type: 'nft' | 'dice', amount: number, currency: Currency): Promise<boolean> => {
-    return await apiRequest('/payment/verify', 'POST', { type, amount, currency });
-};
-
-export const rollDice = async (): Promise<number> => {
-    const data = await apiRequest('/roll', 'POST');
-    return data.roll;
-};
-
-export const withdrawNFTWithAddress = async (address: string): Promise<void> => {
-    await apiRequest('/withdraw', 'POST', { address });
-};
-
-export const debugResetDb = async (): Promise<void> => {
-    await apiRequest('/debug/reset', 'POST');
-};
+export const fetchUserProfile = async (startParam?: string) => apiRequest('/auth', 'POST', { startParam });
+export const fetchNftHistory = async () => apiRequest('/history');
+export const createPayment = async (type: 'nft' | 'dice', amount: number, currency: Currency) => apiRequest('/payment/create', 'POST', { type, amount, currency });
+export const verifyPayment = async (type: 'nft' | 'dice', amount: number, currency: Currency) => apiRequest('/payment/verify', 'POST', { type, amount, currency });
+export const rollDice = async () => { const data = await apiRequest('/roll', 'POST'); return data.roll; };
+export const withdrawNFTWithAddress = async (address: string) => apiRequest('/withdraw', 'POST', { address });
+export const debugResetDb = async () => apiRequest('/debug/reset', 'POST');
