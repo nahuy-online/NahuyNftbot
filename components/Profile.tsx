@@ -95,7 +95,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   const handleInvite = () => {
     try {
         // Updated Link Format: Direct Mini App Link with Privacy-Safe Code
-        // Format: https://t.me/BOTNAME/app?startapp=RANDOMCODE
+        // Format: https://t.me/BOTNAME/app?startapp=ref_CODE
         const refCode = user.referralCode;
         
         if (!refCode) {
@@ -103,6 +103,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
             return;
         }
 
+        // Use 'startapp' query param which Telegram maps to 'start_param' in initData
         const inviteLink = `https://t.me/${BOT_USERNAME}/app?startapp=${refCode}`;
         
         const shareText = t('share_text', { amount: user.nftBalance.total });

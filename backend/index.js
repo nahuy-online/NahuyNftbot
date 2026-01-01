@@ -179,7 +179,7 @@ if (BOT_TOKEN) {
         bot.onText(/\/start(.*)/, (msg, match) => {
             const chatId = msg.chat.id;
             const rawParam = match[1] ? match[1].trim() : "";
-            const startParam = rawParam.replace('/', '');
+            const startParam = rawParam.replace('/', ''); // Clean it
             const opts = {
                 reply_markup: {
                     inline_keyboard: [[{ text: "🚀 Open NFT App", web_app: { url: `${WEBAPP_URL}?startapp=${startParam}` } }]]
@@ -199,7 +199,8 @@ if (BOT_TOKEN) {
 // --- LOGIC ---
 
 function generateRefCode() {
-    return crypto.randomBytes(4).toString('hex');
+    // Generate code WITH 'ref_' prefix to avoid confusion
+    return 'ref_' + crypto.randomBytes(4).toString('hex');
 }
 
 async function bindReferrer(client, userId, potentialRefCode) {
@@ -209,34 +210,37 @@ async function bindReferrer(client, userId, potentialRefCode) {
         return { boundId: null, reason: "No code provided" };
     }
 
-    // Clean input
     const cleanCode = potentialRefCode.trim();
     let referrerId = null;
     let method = "";
     
-    // 1. Look up by Unique Code (Case Insensitive)
+    // 1. Exact Match (Case Insensitive)
     const resByCode = await client.query('SELECT id FROM users WHERE lower(referral_code) = lower($1)', [cleanCode]);
     if (resByCode.rows.length > 0) {
         referrerId = resByCode.rows[0].id;
         method = "code";
     }
 
-    // 2. Legacy Fallback (ref_ID)
-    if (!referrerId && cleanCode.startsWith('ref_')) {
-        const rawId = cleanCode.replace('ref_', '');
-        if (/^\d+$/.test(rawId)) {
+    // 2. Fallback: If code is just "ref_ID" but stored as "ref_HEX", this won't match.
+    // But if the user passed just "ID" or "ref_ID" and we want to support old style:
+    if (!referrerId) {
+         let rawId = cleanCode;
+         if (cleanCode.startsWith('ref_')) rawId = cleanCode.replace('ref_', '');
+         
+         // Only try to parse if it looks like a numeric ID
+         if (/^\d+$/.test(rawId)) {
              const resById = await client.query('SELECT id FROM users WHERE id = $1', [rawId]);
              if (resById.rows.length > 0) {
                 referrerId = resById.rows[0].id;
                 method = "legacy_id";
              }
-        }
+         }
     }
 
     // 3. Validation
     if (!referrerId) {
         console.log(`   -> ❌ Code '${cleanCode}' not found.`);
-        return { boundId: null, reason: `Code '${cleanCode}' not found in DB` };
+        return { boundId: null, reason: `Code '${cleanCode}' not found` };
     }
 
     if (String(referrerId) === String(userId)) {
@@ -248,7 +252,7 @@ async function bindReferrer(client, userId, potentialRefCode) {
     await client.query('UPDATE users SET referrer_id = $1 WHERE id = $2', [referrerId, userId]);
     console.log(`   -> ✅ SUCCESS: Bound to ${referrerId} via ${method}`);
     
-    return { boundId: referrerId, reason: "Success" };
+    return { boundId: referrerId, reason: `Success (${method})` };
 }
 
 async function distributeRewards(client, buyerId, amount, currency) {
@@ -297,25 +301,33 @@ async function handlePurchaseSuccess(userId, type, qty, currency, txHash) {
         const dup = await client.query('SELECT id FROM transactions WHERE tx_hash = $1', [txHash]);
         if (dup.rows.length > 0) { await client.query('ROLLBACK'); return false; }
 
-        const isStars = currency === 'STARS';
-        
+        // --- LOCKING LOGIC ---
+        const isStars = (currency === 'STARS');
+        const isLocked = isStars; // Explicit boolean for DB
+
+        console.log(`[Purchase] User=${userId}, Type=${type}, Qty=${qty}, Currency=${currency}, Stars=${isStars}, Locked=${isLocked}`);
+
         if (type === 'nft') {
             if (isStars) {
-                 const unlock = Date.now() + (21 * 86400000);
+                 const unlock = Date.now() + (21 * 86400000); // 21 days
+                 // Increment TOTAL and LOCKED, do NOT increment AVAILABLE
                  await client.query('UPDATE users SET nft_total=nft_total+$1, nft_locked=nft_locked+$1 WHERE id=$2', [qty, userId]);
                  await client.query('INSERT INTO locked_nfts (user_id, amount, unlock_date) VALUES ($1, $2, $3)', [userId, qty, unlock]);
             } else {
                  await client.query('UPDATE users SET nft_total=nft_total+$1, nft_available=nft_available+$1 WHERE id=$2', [qty, userId]);
             }
         } else {
+            // Dice Attempts
             await client.query('UPDATE users SET dice_available=dice_available+$1 WHERE id=$2', [qty, userId]);
-            if (isStars) await client.query('UPDATE users SET dice_stars_attempts=dice_stars_attempts+$1 WHERE id=$2', [qty, userId]);
+            if (isStars) {
+                 await client.query('UPDATE users SET dice_stars_attempts=dice_stars_attempts+$1 WHERE id=$2', [qty, userId]);
+            }
         }
 
         await client.query(`
             INSERT INTO transactions (user_id, type, asset_type, amount, currency, description, is_locked, tx_hash)
             VALUES ($1, 'purchase', $2, $3, $4, $5, $6, $7)
-        `, [userId, type, qty, currency, `Purchase ${qty} ${type}`, (isStars && type==='nft'), txHash]);
+        `, [userId, type, qty, currency, `Purchase ${qty} ${type}`, isLocked, txHash]);
 
         const priceMap = type === 'nft' ? PRICES.nft : PRICES.dice;
         const totalPaid = priceMap[currency] * qty;
@@ -341,7 +353,7 @@ app.get('/api/health', (req, res) => {
 
 app.post('/api/auth', async (req, res) => {
     let client;
-    let debugInfo = "None";
+    let debugInfo = "Init"; // Default value to ensure it's never undefined in response
 
     try {
         const { id, username, startParam } = req.body;
@@ -362,28 +374,29 @@ app.post('/api/auth', async (req, res) => {
             const code = generateRefCode(); 
             await client.query('INSERT INTO users (id, username, referral_code) VALUES ($1, $2, $3)', [id, username, code]);
             
-            // Re-fetch to get clean object
             resUser = await client.query('SELECT * FROM users WHERE id = $1', [id]);
             user = resUser.rows[0];
+            debugInfo = "User Created";
+        } else {
+            debugInfo = "User Exists";
         }
 
         // 3. Bind Referrer logic
-        // Only attempt if not already bound
         if (!user.referrer_id && startParam && startParam !== "none") {
             try {
                 const result = await bindReferrer(client, id, startParam);
                 if (result.boundId) {
-                    user.referrer_id = result.boundId; // Update local object for response
+                    user.referrer_id = result.boundId; 
                     debugInfo = `Bound to ${result.boundId}`;
                 } else {
-                    debugInfo = `Failed: ${result.reason}`;
+                    debugInfo = `Bind Failed: ${result.reason}`;
                 }
             } catch (err) {
                 console.error("Bind Error:", err);
-                debugInfo = `Error: ${err.message}`;
+                debugInfo = `Bind Error: ${err.message}`;
             }
         } else if (user.referrer_id) {
-            debugInfo = `Already bound to ${user.referrer_id}`;
+            debugInfo = `Already has referrer: ${user.referrer_id}`;
         }
 
         await client.query('COMMIT');
@@ -400,7 +413,7 @@ app.post('/api/auth', async (req, res) => {
             username: user.username,
             referralCode: user.referral_code,
             referrerId: user.referrer_id ? String(user.referrer_id) : null,
-            referralDebug: debugInfo, // Pass debug info to frontend
+            referralDebug: debugInfo, // Explicitly sending debug info
             isNewUser: isNew,
             nftBalance: {
                 total: user.nft_total || 0,
@@ -433,7 +446,6 @@ app.post('/api/auth', async (req, res) => {
     }
 });
 
-// Reuse existing Payment/Roll routes (No changes needed for binding logic)
 app.post('/api/roll', async (req, res) => {
     let client;
     try {
@@ -445,22 +457,36 @@ app.post('/api/roll', async (req, res) => {
         if (!u.rows[0]) throw new Error("User not found");
         if (u.rows[0].dice_available <= 0) throw new Error("No dice");
 
-        const isStars = u.rows[0].dice_stars_attempts > 0;
+        // --- LOCKING LOGIC FOR ROLL ---
+        // Check if user has 'stars' attempts
+        const starsAttempts = u.rows[0].dice_stars_attempts || 0;
+        const isStars = starsAttempts > 0;
+        
         const roll = Math.floor(Math.random() * 6) + 1;
         const win = roll; 
 
+        // Decrement attempts
         await client.query('UPDATE users SET dice_available=dice_available-1 WHERE id=$1', [id]);
-        if (isStars) await client.query('UPDATE users SET dice_stars_attempts=dice_stars_attempts-1 WHERE id=$1', [id]);
+        if (isStars) {
+            await client.query('UPDATE users SET dice_stars_attempts=dice_stars_attempts-1 WHERE id=$1', [id]);
+        }
 
         if (win > 0) {
             if (isStars) {
                 const unlock = Date.now() + (21 * 86400000);
+                // Lock the win
                 await client.query('UPDATE users SET nft_total=nft_total+$1, nft_locked=nft_locked+$1 WHERE id=$2', [win, id]);
                 await client.query('INSERT INTO locked_nfts (user_id, amount, unlock_date) VALUES ($1, $2, $3)', [id, win, unlock]);
             } else {
+                // Available
                 await client.query('UPDATE users SET nft_total=nft_total+$1, nft_available=nft_available+$1 WHERE id=$2', [win, id]);
             }
-            await client.query("INSERT INTO transactions (user_id, type, asset_type, amount, description, is_locked) VALUES ($1, 'win', 'nft', $2, $3, $4)", [id, win, `Rolled ${roll}`, isStars]);
+            
+            // Log transaction with lock status
+            await client.query(
+                "INSERT INTO transactions (user_id, type, asset_type, amount, description, is_locked) VALUES ($1, 'win', 'nft', $2, $3, $4)", 
+                [id, win, `Rolled ${roll}`, isStars]
+            );
         }
         await client.query('COMMIT');
         res.json({ roll });
