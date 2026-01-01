@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { UserProfile, NftTransaction, Currency } from '../types';
 import { withdrawNFTWithAddress, fetchNftHistory, debugResetDb } from '../services/mockApi';
@@ -155,6 +156,13 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       }
   };
 
+  // Referral Visuals Config
+  const REF_DISPLAY = [
+      { lvl: 1, percent: '7%' },
+      { lvl: 2, percent: '5%' },
+      { lvl: 3, percent: '3%' },
+  ];
+
   return (
     <div className="p-5 pb-24 space-y-6 animate-fade-in relative">
       {/* User Header */}
@@ -310,12 +318,17 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           </div>
           
           <div className="grid grid-cols-3 gap-2 mb-4">
-               {/* Using integer array to use the variable and avoid TS6133 */}
-               {[1, 2, 3].map((level) => (
-                   <div key={level} className="bg-gray-800 p-2 rounded-lg text-center border border-white/5">
-                       <div className="text-[10px] text-gray-500 uppercase">{t('level')} {level}</div>
-                       <div className="font-bold text-lg">
-                           {(user.referralStats as any)[`level${level}`]}
+               {REF_DISPLAY.map((item) => (
+                   <div key={item.lvl} className="bg-gray-800 p-2 rounded-lg text-center border border-white/5 relative overflow-hidden group">
+                       <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-transparent via-blue-500 to-transparent opacity-50"></div>
+                       <div className="flex flex-col items-center">
+                            <div className="text-[10px] text-gray-500 uppercase flex items-center gap-1">
+                                {t('level')} {item.lvl} 
+                                <span className="text-blue-400 font-bold bg-blue-500/10 px-1 rounded">{item.percent}</span>
+                            </div>
+                            <div className="font-bold text-lg">
+                                {(user.referralStats as any)[`level${item.lvl}`]}
+                            </div>
                        </div>
                    </div>
                ))}

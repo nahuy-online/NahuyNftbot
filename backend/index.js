@@ -35,7 +35,8 @@ const PRICES = {
 };
 
 // Referral Percentages (Level 1, Level 2, Level 3)
-const REF_LEVELS = [0.05, 0.03, 0.01]; 
+// UPDATED: 7% / 5% / 3%
+const REF_LEVELS = [0.07, 0.05, 0.03]; 
 
 // --- DATABASE CONFIGURATION ---
 const dbConfig = {
@@ -330,15 +331,18 @@ async function processPurchase(userId, type, packSize, currency, txId) {
             console.log(`💰 Processing Referral Rewards for Referrer: ${referrerId} from Buyer: ${userId}`);
             const purchaseAmount = (type === 'nft' ? PRICES.nft[currency] : PRICES.dice[currency]) * packSize;
             
-            await distributeReward(client, referrerId, currency, purchaseAmount, 0); // Lvl 1
+            // Level 1: Direct Referrer
+            await distributeReward(client, referrerId, currency, purchaseAmount, 0); 
 
+            // Level 2: Grandparent
             const r2Res = await client.query('SELECT referrer_id FROM users WHERE id = $1', [referrerId]);
             if (r2Res.rows[0]?.referrer_id) {
-                await distributeReward(client, r2Res.rows[0].referrer_id, currency, purchaseAmount, 1); // Lvl 2
+                await distributeReward(client, r2Res.rows[0].referrer_id, currency, purchaseAmount, 1); 
 
+                // Level 3: Great-Grandparent
                 const r3Res = await client.query('SELECT referrer_id FROM users WHERE id = $1', [r2Res.rows[0].referrer_id]);
                 if (r3Res.rows[0]?.referrer_id) {
-                    await distributeReward(client, r3Res.rows[0].referrer_id, currency, purchaseAmount, 2); // Lvl 3
+                    await distributeReward(client, r3Res.rows[0].referrer_id, currency, purchaseAmount, 2); 
                 }
             }
         } else {
@@ -357,11 +361,14 @@ async function processPurchase(userId, type, packSize, currency, txId) {
 }
 
 async function distributeReward(client, referrerId, currency, totalAmount, levelIndex) {
+    // Uses REF_LEVELS: 0=7%, 1=5%, 2=3%
     const percentage = REF_LEVELS[levelIndex];
+    if (!percentage) return; 
+
     const reward = totalAmount * percentage;
     if (reward <= 0) return;
 
-    console.log(`   -> Reward Lvl ${levelIndex+1}: User ${referrerId} gets ${reward} ${currency}`);
+    console.log(`   -> Reward Lvl ${levelIndex+1} (${percentage*100}%): User ${referrerId} gets ${reward} ${currency}`);
 
     if (currency === 'STARS') {
         const starsReward = Math.floor(reward);
