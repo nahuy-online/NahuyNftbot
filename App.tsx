@@ -4,11 +4,10 @@ import { Shop } from './components/Shop';
 import { DiceGame } from './components/DiceGame';
 import { Profile } from './components/Profile';
 import { UserProfile, Tab } from './types';
-import { fetchUserProfile } from './services/mockApi';
+import { fetchUserProfile, enableMockMode } from './services/mockApi';
 import { useTranslation } from './i18n/LanguageContext';
 import { useTonConnectUI } from '@tonconnect/ui-react';
 
-// Simple SVG Icons for Navigation
 const Icons = {
   Shop: () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
@@ -25,31 +24,27 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('shop');
   const [user, setUser] = useState<UserProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // REMOVED: isOnboarding state
   const { t } = useTranslation();
   const [tonConnectUI] = useTonConnectUI();
 
   const loadData = async () => {
     try {
       setError(null);
-      // 1. Get Param from Telegram automatically
-      // We no longer support manual entry via Welcome screen
       const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
-      
-      console.log("Loading data with param:", startParam);
-      
-      // The backend handles creation and binding automatically based on this param
       const data = await fetchUserProfile(startParam);
       setUser(data);
-
     } catch (e: any) {
       console.error("Failed to load user", e);
       setError(e.message || "Connection Failed");
     }
   };
 
+  const switchToDemo = () => {
+      enableMockMode();
+      loadData();
+  };
+
   useEffect(() => {
-    // Notify Telegram WebApp we are ready
     if (window.Telegram?.WebApp) {
         window.Telegram.WebApp.ready();
         window.Telegram.WebApp.expand();
@@ -62,16 +57,32 @@ const App: React.FC = () => {
 
   if (error) {
     return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white p-6 text-center space-y-4">
-            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center text-3xl">⚠️</div>
-            <h2 className="text-xl font-bold text-red-400">Connection Error</h2>
-            <p className="text-sm text-gray-400 max-w-xs">{error}</p>
-            <button 
-                onClick={() => loadData()}
-                className="px-6 py-2 bg-gray-800 border border-gray-700 rounded-lg hover:bg-gray-700 transition-colors text-sm font-bold"
-            >
-                Retry Connection
-            </button>
+        <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white p-6 text-center space-y-6">
+            <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center text-4xl animate-pulse">⚠️</div>
+            <div>
+                <h2 className="text-xl font-bold text-red-400">Connection Error</h2>
+                <p className="text-sm text-gray-400 max-w-xs mt-2 font-mono break-words bg-black/30 p-2 rounded border border-white/5">{error}</p>
+            </div>
+            
+            <div className="flex flex-col gap-3 w-full max-w-xs">
+                <button 
+                    onClick={() => loadData()}
+                    className="w-full px-6 py-3 bg-white text-black rounded-xl hover:bg-gray-200 transition-colors text-sm font-bold shadow-lg"
+                >
+                    Retry Connection
+                </button>
+                <div className="flex items-center gap-2 px-2 opacity-50">
+                    <div className="h-px bg-white/30 flex-1"></div>
+                    <span className="text-[10px] uppercase">OR</span>
+                    <div className="h-px bg-white/30 flex-1"></div>
+                </div>
+                <button 
+                    onClick={switchToDemo}
+                    className="w-full px-6 py-3 bg-gray-800 border border-gray-700 rounded-xl hover:bg-gray-700 transition-colors text-sm font-bold text-gray-300"
+                >
+                    Enter Demo Mode
+                </button>
+            </div>
         </div>
     );
   }
@@ -86,8 +97,6 @@ const App: React.FC = () => {
       </div>
     );
   }
-
-  // REMOVED: Welcome screen conditional return
 
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans selection:bg-blue-500/30">
