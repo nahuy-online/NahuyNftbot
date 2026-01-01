@@ -23,25 +23,49 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
   const payload = body ? { id: userId, ...body } : { id: userId };
 
   try {
+    // Timeout extended to 15s to handle initial container spin-up (migrations)
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 15000);
+
     const response = await fetch(url, {
         method,
         headers,
-        body: method !== 'GET' ? JSON.stringify(payload) : undefined
+        body: method !== 'GET' ? JSON.stringify(payload) : undefined,
+        signal: controller.signal
     });
-    if (!response.ok) throw new Error("Backend error");
+    
+    clearTimeout(id);
+
+    if (response.status === 503) {
+        throw new Error("Server starting up... Please retry.");
+    }
+    
+    if (!response.ok) {
+        // Try to read JSON error message from backend
+        const text = await response.text();
+        let errMsg = `Backend error (${response.status})`;
+        try {
+            const json = JSON.parse(text);
+            if (json.error) errMsg = json.error;
+        } catch (e) {
+            // If not JSON, use the status text
+            if(text.length < 100) errMsg += `: ${text}`;
+        }
+        throw new Error(errMsg);
+    }
+    
     return await response.json();
-  } catch (error) {
+  } catch (error: any) {
     console.error("API Error:", error);
-    // In a real app, you might want a local fallback here, 
-    // but for this refactor, we rely on the backend being up.
+    if (error.name === 'AbortError') {
+        throw new Error("Connection timed out. Server might be sleeping.");
+    }
     throw error;
   }
 };
 
 // --- EXPORTED FUNCTIONS ---
 
-// 1. AUTH & LOAD PROFILE
-// This is the new "Super Endpoint" that handles registration + referral binding
 export const fetchUserProfile = async (startParam?: string): Promise<UserProfile> => {
     const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
     const username = tgUser?.username || "Guest";

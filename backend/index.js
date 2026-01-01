@@ -2,10 +2,12 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import TelegramBot from 'node-telegram-bot-api';
-import pg from 'pg';
+import pkg from 'pg'; 
 import path from 'path';
-import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+
+// FIX: Destructure Pool from the default export package
+const { Pool } = pkg;
 
 // --- ENV SETUP ---
 const __filename = fileURLToPath(import.meta.url);
@@ -21,34 +23,58 @@ app.use(cors());
 const PORT = process.env.PORT || 8080;
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const WEBAPP_URL = "https://t.me/nahuy_NFT_bot/app"; 
+let isDbReady = false;
+let dbInitError = null; 
 
-// Prices & Settings
+// Prices
 const PRICES = {
     nft: { STARS: 2000, TON: 0.011, USDT: 36.6 },
     dice: { STARS: 6666, TON: 0.036, USDT: 121 }
 };
-const REF_LEVELS = [0.07, 0.05, 0.03]; // 7%, 5%, 3%
+const REF_LEVELS = [0.07, 0.05, 0.03]; 
 
-// --- DATABASE POOL ---
-const pool = new pg.Pool({
+// --- DATABASE CONFIG ---
+const pool = new Pool({
     user: process.env.DB_USER || 'user',
     password: process.env.DB_PASSWORD || 'pass',
     database: process.env.DB_NAME || 'nft_db',
-    host: process.env.DB_HOST || 'postgres',
+    host: process.env.DB_HOST || 'localhost', 
     port: parseInt(process.env.DB_PORT || '5432'),
     ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+    connectionTimeoutMillis: 5000, // Fail fast if DB down
 });
 
-// --- DB INITIALIZATION ---
+pool.on('error', (err) => console.error('🔴 Unexpected DB Client Error', err));
+
+// --- MIDDLEWARE ---
+app.use((req, res, next) => {
+    if (req.path === '/api/health') return next();
+
+    if (dbInitError) {
+        return res.status(500).json({ error: `DB Init Failed: ${dbInitError}` });
+    }
+    if (!isDbReady && req.path.startsWith('/api')) {
+        return res.status(503).json({ error: 'Server initializing, please wait...' });
+    }
+    next();
+});
+
+// --- HELPER: BigInt Serialization ---
+BigInt.prototype.toJSON = function() { return this.toString(); };
+
+// --- DB MIGRATION ---
 const initDB = async () => {
-    let retries = 5;
+    let retries = 30; // Increased retries for Docker cold starts
     while (retries > 0) {
         try {
             const client = await pool.connect();
+            console.log("✅ Connected to Database");
+            
             try {
+                await client.query("SET lock_timeout = '10s'");
                 await client.query('BEGIN');
                 
-                // 1. Create Tables
+                // 1. Create Base Tables
                 await client.query(`
                     CREATE TABLE IF NOT EXISTS users (
                         id BIGINT PRIMARY KEY,
@@ -65,9 +91,13 @@ const initDB = async () => {
                         ref_rewards_usdt NUMERIC(18, 2) DEFAULT 0,
                         created_at TIMESTAMP DEFAULT NOW()
                     );
+                `);
+                
+                // Added FOREIGN KEY constraints for integrity
+                await client.query(`
                     CREATE TABLE IF NOT EXISTS transactions (
                         id SERIAL PRIMARY KEY,
-                        user_id BIGINT,
+                        user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
                         type TEXT,
                         asset_type TEXT,
                         amount NUMERIC(18, 9),
@@ -77,17 +107,19 @@ const initDB = async () => {
                         tx_hash TEXT UNIQUE,
                         created_at TIMESTAMP DEFAULT NOW()
                     );
+                `);
+                
+                await client.query(`
                     CREATE TABLE IF NOT EXISTS locked_nfts (
                         id SERIAL PRIMARY KEY,
-                        user_id BIGINT,
+                        user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
                         amount INT,
                         unlock_date BIGINT
                     );
                 `);
 
-                // 2. Run Migrations (Safe ADD COLUMN)
-                // This ensures old DBs get the new columns required for the logic to work
-                const columns = [
+                // 2. Safe Column Migrations
+                const alterQueries = [
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer_id BIGINT",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code TEXT UNIQUE",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS ref_rewards_stars INT DEFAULT 0",
@@ -98,36 +130,53 @@ const initDB = async () => {
                     "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS tx_hash TEXT UNIQUE"
                 ];
 
-                for (const query of columns) {
-                    await client.query(query);
+                for (const q of alterQueries) {
+                    await client.query(q);
                 }
 
                 await client.query('COMMIT');
-                console.log("✅ Database Initialized & Migrated");
-                break;
-            } catch (err) {
-                await client.query('ROLLBACK');
-                throw err;
-            } finally {
+                console.log("✅ Database Schema Synced & Ready");
+                isDbReady = true;
                 client.release();
+                return;
+
+            } catch (dbErr) {
+                await client.query('ROLLBACK');
+                client.release();
+                console.error("⚠️ Migration Error:", dbErr.message);
+                dbInitError = dbErr.message;
+                throw dbErr; 
             }
         } catch (err) {
-            console.error(`❌ DB Init Error (Retrying in 3s...):`, err.message);
+            console.error(`⚠️ DB Init Failed (Retries left: ${retries}):`, err.message);
             retries--;
-            await new Promise(res => setTimeout(res, 3000));
+            if (retries === 0) dbInitError = err.message;
+            await new Promise(res => setTimeout(res, 2000));
         }
     }
 };
-initDB();
+
+app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    initDB();
+});
+
 
 // --- TELEGRAM BOT ---
 if (BOT_TOKEN) {
+    // Add cancellation cleanup to prevent "terminated by other getUpdates" in dev
     const bot = new TelegramBot(BOT_TOKEN, { polling: true });
     
-    // Handle /start command
+    // Prevent crash on polling error (common in Docker without internet or bad DNS)
+    bot.on('polling_error', (error) => {
+        console.error(`[Telegram Bot] Polling Error: ${error.code} - ${error.message}`);
+    });
+
     bot.onText(/\/start(.*)/, (msg, match) => {
         const chatId = msg.chat.id;
-        const startParam = match[1] ? match[1].trim() : "";
+        const rawParam = match[1] ? match[1].trim() : "";
+        const startParam = rawParam.replace('/', '');
+        
         const opts = {
             reply_markup: {
                 inline_keyboard: [[{ 
@@ -136,7 +185,7 @@ if (BOT_TOKEN) {
                 }]]
             }
         };
-        bot.sendMessage(chatId, "Welcome to the NFT Ecosystem! Tap below to start.", opts);
+        bot.sendMessage(chatId, "Welcome! Tap below to enter.", opts);
     });
 
     bot.on('pre_checkout_query', (query) => {
@@ -149,7 +198,6 @@ if (BOT_TOKEN) {
             try {
                 const payload = JSON.parse(msg.successful_payment.invoice_payload);
                 await handlePurchaseSuccess(userId, payload.type, payload.amount, 'STARS', msg.successful_payment.telegram_payment_charge_id);
-                // Optional: Send receipt message
             } catch (e) {
                 console.error("Payment Error:", e);
             }
@@ -158,7 +206,7 @@ if (BOT_TOKEN) {
     app.locals.bot = bot;
 }
 
-// --- REFERRAL LOGIC ---
+// --- LOGIC ---
 
 function generateRefCode(userId) {
     return `ref_${userId}`;
@@ -169,17 +217,20 @@ async function bindReferrer(client, userId, potentialRefCode) {
 
     let referrerId = null;
     
-    // Strategy A: Check by full code
+    // Check by Code
     const resByCode = await client.query('SELECT id FROM users WHERE referral_code = $1', [potentialRefCode]);
     if (resByCode.rows.length > 0) referrerId = resByCode.rows[0].id;
 
-    // Strategy B: Fallback
-    if (!referrerId && /^\d+$/.test(potentialRefCode.replace('ref_', ''))) {
+    // Check by ID (Legacy)
+    if (!referrerId && potentialRefCode.startsWith('ref_')) {
         const rawId = potentialRefCode.replace('ref_', '');
-        const resById = await client.query('SELECT id FROM users WHERE id = $1', [rawId]);
-        if (resById.rows.length > 0) referrerId = resById.rows[0].id;
+        if (/^\d+$/.test(rawId)) {
+             const resById = await client.query('SELECT id FROM users WHERE id = $1', [rawId]);
+             if (resById.rows.length > 0) referrerId = resById.rows[0].id;
+        }
     }
 
+    // Prevent self-referral and ensure referrer exists
     if (referrerId && String(referrerId) !== String(userId)) {
         await client.query('UPDATE users SET referrer_id = $1 WHERE id = $2', [referrerId, userId]);
         return referrerId;
@@ -188,177 +239,65 @@ async function bindReferrer(client, userId, potentialRefCode) {
 }
 
 async function distributeRewards(client, buyerId, amount, currency) {
-    console.log(`💸 Distributing Rewards for purchase of ${amount} ${currency} by ${buyerId}`);
-    
+    // Fetch user with referrer
     const u1 = await client.query('SELECT referrer_id FROM users WHERE id = $1', [buyerId]);
-    if (!u1.rows[0]?.referrer_id) return;
+    const r1 = u1.rows[0]?.referrer_id;
+    
+    if (!r1) return;
+    
+    // Level 1
+    await payReward(client, r1, amount, currency, 0, buyerId);
 
-    const level1_ID = u1.rows[0].referrer_id;
-    await payReward(client, level1_ID, amount, currency, 0, buyerId);
-
-    const u2 = await client.query('SELECT referrer_id FROM users WHERE id = $1', [level1_ID]);
-    if (u2.rows[0]?.referrer_id) {
-        const level2_ID = u2.rows[0].referrer_id;
-        await payReward(client, level2_ID, amount, currency, 1, buyerId);
-
-        const u3 = await client.query('SELECT referrer_id FROM users WHERE id = $1', [level2_ID]);
-        if (u3.rows[0]?.referrer_id) {
-            const level3_ID = u3.rows[0].referrer_id;
-            await payReward(client, level3_ID, amount, currency, 2, buyerId);
+    // Fetch Level 2
+    const u2 = await client.query('SELECT referrer_id FROM users WHERE id = $1', [r1]);
+    const r2 = u2.rows[0]?.referrer_id;
+    
+    if (r2) {
+        // Level 2
+        await payReward(client, r2, amount, currency, 1, buyerId);
+        
+        // Fetch Level 3
+        const u3 = await client.query('SELECT referrer_id FROM users WHERE id = $1', [r2]);
+        const r3 = u3.rows[0]?.referrer_id;
+        
+        if (r3) {
+            // Level 3
+            await payReward(client, r3, amount, currency, 2, buyerId);
         }
     }
 }
 
 async function payReward(client, recipientId, totalPurchaseAmount, currency, levelIdx, sourceUserId) {
     const percent = REF_LEVELS[levelIdx];
-    const reward = totalPurchaseAmount * percent;
+    let reward = totalPurchaseAmount * percent;
     
     if (reward <= 0) return;
 
     let colName = 'ref_rewards_ton';
-    if (currency === 'STARS') colName = 'ref_rewards_stars';
-    if (currency === 'USDT') colName = 'ref_rewards_usdt';
-
-    const finalAmount = currency === 'STARS' ? Math.floor(reward) : reward;
+    let isInt = false;
     
-    if (finalAmount <= 0) return;
+    if (currency === 'STARS') { colName = 'ref_rewards_stars'; isInt = true; }
+    else if (currency === 'USDT') { colName = 'ref_rewards_usdt'; }
 
-    await client.query(`UPDATE users SET ${colName} = ${colName} + $1 WHERE id = $2`, [finalAmount, recipientId]);
-    
+    if (isInt) reward = Math.floor(reward);
+
+    if (reward <= 0) return;
+
+    // Atomic Update
+    await client.query(`UPDATE users SET ${colName} = ${colName} + $1 WHERE id = $2`, [reward, recipientId]);
     await client.query(`
         INSERT INTO transactions (user_id, type, asset_type, amount, currency, description)
         VALUES ($1, 'referral_reward', 'currency', $2, $3, $4)
-    `, [recipientId, finalAmount, currency, `Lvl ${levelIdx + 1} Reward from user ${sourceUserId}`]);
+    `, [recipientId, reward, currency, `Lvl ${levelIdx + 1} Reward`]);
 }
 
-// --- API ROUTES ---
-
-app.post('/api/auth', async (req, res) => {
-    const { id, username, startParam } = req.body;
-    const client = await pool.connect();
-    
-    try {
-        await client.query('BEGIN');
-
-        let userRes = await client.query('SELECT * FROM users WHERE id = $1', [id]);
-        let user = userRes.rows[0];
-        let isNew = false;
-
-        if (!user) {
-            isNew = true;
-            const myRefCode = generateRefCode(id);
-            await client.query(
-                'INSERT INTO users (id, username, referral_code) VALUES ($1, $2, $3)', 
-                [id, username, myRefCode]
-            );
-            user = { id, username, referral_code: myRefCode, referrer_id: null };
-            
-            // Re-fetch to get defaults
-            userRes = await client.query('SELECT * FROM users WHERE id = $1', [id]);
-            user = userRes.rows[0];
-        }
-
-        // Binding Logic
-        if (!user.referrer_id && startParam && startParam !== "none" && startParam !== user.referral_code) {
-            console.log(`🔗 Binding User ${id} to referrer code: ${startParam}`);
-            const boundId = await bindReferrer(client, id, startParam);
-            if (boundId) {
-                user.referrer_id = boundId;
-                // Update local object for response
-            }
-        }
-
-        await client.query('COMMIT');
-
-        // Stats
-        const lvl1 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id = $1', [id]);
-        const lvl2 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id = $1)', [id]);
-        const lvl3 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id = $1))', [id]);
-
-        const lockedRes = await client.query('SELECT amount, unlock_date FROM locked_nfts WHERE user_id = $1', [id]);
-
-        res.json({
-            id: parseInt(user.id),
-            username: user.username,
-            referralCode: user.referral_code,
-            referrerId: user.referrer_id ? parseInt(user.referrer_id) : null,
-            isNewUser: isNew,
-            nftBalance: {
-                total: user.nft_total || 0,
-                available: user.nft_available || 0,
-                locked: user.nft_locked || 0,
-                lockedDetails: lockedRes.rows.map(r => ({ amount: r.amount, unlockDate: parseInt(r.unlock_date) }))
-            },
-            diceBalance: {
-                available: user.dice_available || 0,
-                starsAttempts: user.dice_stars_attempts || 0
-            },
-            referralStats: {
-                level1: parseInt(lvl1.rows[0].count),
-                level2: parseInt(lvl2.rows[0].count),
-                level3: parseInt(lvl3.rows[0].count),
-                earnings: {
-                    STARS: user.ref_rewards_stars || 0,
-                    TON: user.ref_rewards_ton || 0,
-                    USDT: user.ref_rewards_usdt || 0
-                }
-            }
-        });
-
-    } catch (e) {
-        await client.query('ROLLBACK');
-        console.error("Auth Error:", e);
-        res.status(500).json({ error: "Auth failed: " + e.message });
-    } finally {
-        client.release();
-    }
-});
-
-app.post('/api/payment/create', async (req, res) => {
-    const { id, type, amount, currency } = req.body;
-    const priceMap = type === 'nft' ? PRICES.nft : PRICES.dice;
-    const unitPrice = priceMap[currency];
-    const totalPrice = unitPrice * amount;
-
-    if (currency === 'STARS') {
-        try {
-            const link = await app.locals.bot.createInvoiceLink(
-                type === 'nft' ? "NFT Pack" : "Dice Attempts", 
-                `Qty: ${amount}`, 
-                JSON.stringify({ type, amount }),
-                "", "XTR", 
-                [{ label: `${amount} items`, amount: totalPrice }]
-            );
-            res.json({ ok: true, invoiceLink: link });
-        } catch(e) { 
-            console.error("Invoice Error:", e);
-            res.status(500).json({error: "Bot Error"}); 
-        }
-    } else {
-        const nanoTons = Math.round(totalPrice * 1e9).toString();
-        const TARGET_WALLET = "0QBycgJ7cxTLe4Y84HG6tOGQgf-284Es4zJzVJM8R2h1U_av"; 
-        res.json({ 
-            ok: true, 
-            transaction: {
-                validUntil: Math.floor(Date.now() / 1000) + 600,
-                messages: [{ address: TARGET_WALLET, amount: nanoTons }]
-            }
-        });
-    }
-});
-
-app.post('/api/payment/verify', async (req, res) => {
-    const { id, type, amount, currency } = req.body;
-    await handlePurchaseSuccess(id, type, amount, currency, `manual_${Date.now()}`);
-    res.json({ ok: true });
-});
-
 async function handlePurchaseSuccess(userId, type, qty, currency, txHash) {
+    if (!isDbReady) return false;
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         const dup = await client.query('SELECT id FROM transactions WHERE tx_hash = $1', [txHash]);
-        if (dup.rows.length > 0) { await client.query('ROLLBACK'); return; }
+        if (dup.rows.length > 0) { await client.query('ROLLBACK'); return false; }
 
         const isStars = currency === 'STARS';
         
@@ -380,7 +319,6 @@ async function handlePurchaseSuccess(userId, type, qty, currency, txHash) {
             VALUES ($1, 'purchase', $2, $3, $4, $5, $6, $7)
         `, [userId, type, qty, currency, `Purchase ${qty} ${type}`, (isStars && type==='nft'), txHash]);
 
-        // DISTRIBUTE REWARDS
         const priceMap = type === 'nft' ? PRICES.nft : PRICES.dice;
         const totalPaid = priceMap[currency] * qty;
         await distributeRewards(client, userId, totalPaid, currency);
@@ -389,12 +327,127 @@ async function handlePurchaseSuccess(userId, type, qty, currency, txHash) {
         return true;
     } catch (e) {
         await client.query('ROLLBACK');
-        console.error("Purchase Handler Error:", e);
+        console.error("Purchase Error:", e);
         return false;
     } finally {
         client.release();
     }
 }
+
+// --- ROUTES ---
+
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', dbReady: isDbReady, dbError: dbInitError });
+});
+
+app.post('/api/auth', async (req, res) => {
+    const { id, username, startParam } = req.body;
+    if (!id) return res.status(400).json({ error: "No ID provided" });
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        let resUser = await client.query('SELECT * FROM users WHERE id = $1', [id]);
+        let user = resUser.rows[0];
+        let isNew = false;
+
+        if (!user) {
+            isNew = true;
+            const code = generateRefCode(id);
+            await client.query('INSERT INTO users (id, username, referral_code) VALUES ($1, $2, $3)', [id, username, code]);
+            user = { id, username, referral_code: code, referrer_id: null };
+            resUser = await client.query('SELECT * FROM users WHERE id = $1', [id]);
+            user = resUser.rows[0];
+        }
+
+        if (!user.referrer_id && startParam && startParam !== "none" && startParam !== user.referral_code) {
+            const boundId = await bindReferrer(client, id, startParam);
+            if (boundId) user.referrer_id = boundId;
+        }
+
+        await client.query('COMMIT');
+
+        const l1 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id = $1', [id]);
+        const l2 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id = $1)', [id]);
+        const l3 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id = $1))', [id]);
+        
+        const locks = await client.query('SELECT amount, unlock_date FROM locked_nfts WHERE user_id = $1', [id]);
+
+        res.json({
+            id: String(user.id),
+            username: user.username,
+            referralCode: user.referral_code,
+            referrerId: user.referrer_id ? String(user.referrer_id) : null,
+            isNewUser: isNew,
+            nftBalance: {
+                total: user.nft_total || 0,
+                available: user.nft_available || 0,
+                locked: user.nft_locked || 0,
+                lockedDetails: locks.rows.map(r => ({ amount: r.amount, unlockDate: parseInt(r.unlock_date) }))
+            },
+            diceBalance: {
+                available: user.dice_available || 0,
+                starsAttempts: user.dice_stars_attempts || 0
+            },
+            referralStats: {
+                level1: parseInt(l1.rows[0].count),
+                level2: parseInt(l2.rows[0].count),
+                level3: parseInt(l3.rows[0].count),
+                earnings: {
+                    STARS: user.ref_rewards_stars || 0,
+                    TON: user.ref_rewards_ton || 0,
+                    USDT: user.ref_rewards_usdt || 0
+                }
+            }
+        });
+
+    } catch (e) {
+        await client.query('ROLLBACK');
+        console.error("Auth Error:", e);
+        res.status(500).json({ error: e.message || "Unknown DB Error" });
+    } finally {
+        client.release();
+    }
+});
+
+app.post('/api/payment/create', async (req, res) => {
+    const { type, amount, currency } = req.body;
+    const priceMap = type === 'nft' ? PRICES.nft : PRICES.dice;
+    const total = priceMap[currency] * amount;
+
+    if (currency === 'STARS') {
+        try {
+            const link = await app.locals.bot.createInvoiceLink(
+                type === 'nft' ? "NFT Pack" : "Dice Attempts", 
+                `Qty: ${amount}`, 
+                JSON.stringify({ type, amount }),
+                "", "XTR", 
+                [{ label: `${amount} items`, amount: total }]
+            );
+            res.json({ ok: true, invoiceLink: link });
+        } catch(e) { 
+            console.error(e);
+            res.status(500).json({ error: "Bot Error: " + e.message }); 
+        }
+    } else {
+        const nano = Math.round(total * 1e9).toString();
+        const TARGET = "0QBycgJ7cxTLe4Y84HG6tOGQgf-284Es4zJzVJM8R2h1U_av"; 
+        res.json({ 
+            ok: true, 
+            transaction: {
+                validUntil: Math.floor(Date.now() / 1000) + 600,
+                messages: [{ address: TARGET, amount: nano }]
+            }
+        });
+    }
+});
+
+app.post('/api/payment/verify', async (req, res) => {
+    const { id, type, amount, currency } = req.body;
+    await handlePurchaseSuccess(id, type, amount, currency, `manual_${Date.now()}_${Math.random()}`);
+    res.json({ ok: true });
+});
 
 app.post('/api/roll', async (req, res) => {
     const { id } = req.body;
@@ -404,11 +457,9 @@ app.post('/api/roll', async (req, res) => {
         const u = await client.query('SELECT * FROM users WHERE id=$1 FOR UPDATE', [id]);
         if (!u.rows[0] || u.rows[0].dice_available <= 0) throw new Error("No dice");
 
-        let isStars = false;
-        if (u.rows[0].dice_stars_attempts > 0) isStars = true;
-
+        const isStars = u.rows[0].dice_stars_attempts > 0;
         const roll = Math.floor(Math.random() * 6) + 1;
-        const win = roll; 
+        const win = roll;
 
         await client.query('UPDATE users SET dice_available=dice_available-1 WHERE id=$1', [id]);
         if (isStars) await client.query('UPDATE users SET dice_stars_attempts=dice_stars_attempts-1 WHERE id=$1', [id]);
@@ -427,7 +478,7 @@ app.post('/api/roll', async (req, res) => {
         res.json({ roll });
     } catch (e) {
         await client.query('ROLLBACK');
-        res.status(500).json({error: e.message});
+        res.status(500).json({ error: e.message });
     } finally {
         client.release();
     }
@@ -441,7 +492,7 @@ app.get('/api/history', async (req, res) => {
             id: x.id, type: x.type, amount: x.amount, description: x.description, 
             timestamp: new Date(x.created_at).getTime(), currency: x.currency, isLocked: x.is_locked, assetType: x.asset_type
         })));
-    } catch(e) { res.json([]); }
+    } catch (e) { res.json([]); }
 });
 
 app.post('/api/withdraw', async (req, res) => {
@@ -450,25 +501,27 @@ app.post('/api/withdraw', async (req, res) => {
     try {
         await client.query('BEGIN');
         const u = await client.query('SELECT nft_available FROM users WHERE id=$1 FOR UPDATE', [id]);
-        const avail = u.rows[0].nft_available;
-        if (avail <= 0) throw new Error("No balance");
-
-        await client.query('UPDATE users SET nft_available=0, nft_total=nft_total-$1 WHERE id=$2', [avail, id]);
-        await client.query("INSERT INTO transactions (user_id, type, asset_type, amount, description) VALUES ($1, 'withdraw', 'nft', $2, $3)", [id, avail, `Withdraw to ${address}`]);
+        if (u.rows[0].nft_available <= 0) throw new Error("No funds");
+        
+        await client.query('UPDATE users SET nft_available=0, nft_total=nft_total-$1 WHERE id=$2', [u.rows[0].nft_available, id]);
+        await client.query("INSERT INTO transactions (user_id, type, asset_type, amount, description) VALUES ($1, 'withdraw', 'nft', $2, $3)", [id, u.rows[0].nft_available, `Withdraw to ${address}`]);
         
         await client.query('COMMIT');
-        res.json({ok: true});
-    } catch(e) {
+        res.json({ ok: true });
+    } catch (e) {
         await client.query('ROLLBACK');
-        res.status(500).json({error: e.message});
+        res.status(500).json({ error: e.message });
     } finally {
         client.release();
     }
 });
 
 app.post('/api/debug/reset', async (req, res) => {
-    await pool.query('TRUNCATE users, transactions, locked_nfts RESTART IDENTITY CASCADE');
-    res.json({ok:true});
+    const client = await pool.connect();
+    try {
+        await client.query('TRUNCATE users, transactions, locked_nfts RESTART IDENTITY CASCADE');
+        res.json({ ok: true });
+    } finally {
+        client.release();
+    }
 });
-
-app.listen(PORT, () => console.log(`Backend Active on ${PORT}`));

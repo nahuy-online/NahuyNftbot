@@ -3,7 +3,6 @@ import React, { useEffect, useState } from 'react';
 import { Shop } from './components/Shop';
 import { DiceGame } from './components/DiceGame';
 import { Profile } from './components/Profile';
-import { Welcome } from './components/Welcome';
 import { UserProfile, Tab } from './types';
 import { fetchUserProfile } from './services/mockApi';
 import { useTranslation } from './i18n/LanguageContext';
@@ -26,26 +25,22 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('shop');
   const [user, setUser] = useState<UserProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isOnboarding, setIsOnboarding] = useState(false);
+  // REMOVED: isOnboarding state
   const { t } = useTranslation();
   const [tonConnectUI] = useTonConnectUI();
 
-  const loadData = async (manualRefCode?: string) => {
+  const loadData = async () => {
     try {
       setError(null);
-      // 1. Get Param from Telegram or Manual Override
-      const startParam = manualRefCode || window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+      // 1. Get Param from Telegram automatically
+      // We no longer support manual entry via Welcome screen
+      const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
       
       console.log("Loading data with param:", startParam);
       
+      // The backend handles creation and binding automatically based on this param
       const data = await fetchUserProfile(startParam);
       setUser(data);
-
-      if (data.isNewUser && !manualRefCode) {
-          setIsOnboarding(true);
-      } else {
-          setIsOnboarding(false);
-      }
 
     } catch (e: any) {
       console.error("Failed to load user", e);
@@ -92,17 +87,7 @@ const App: React.FC = () => {
     );
   }
 
-  // SHOW ONBOARDING IF NEW USER
-  if (isOnboarding) {
-      return (
-          <Welcome 
-            initialRefParam={window.Telegram?.WebApp?.initDataUnsafe?.start_param}
-            onComplete={(code) => {
-                loadData(code || "none"); 
-            }} 
-          />
-      );
-  }
+  // REMOVED: Welcome screen conditional return
 
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans selection:bg-blue-500/30">

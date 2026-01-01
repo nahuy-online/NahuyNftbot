@@ -9,7 +9,9 @@ services:
     container_name: nft_bot_container
     restart: always
     ports:
-      - "80:80" # Map host 80 to container 80 (Vite Preview)
+      - "80:80" # Maps container port 80 (Vite Preview) to host port 80
+    environment:
+      - VITE_API_TARGET=http://backend:8080
     depends_on:
       - backend
 
@@ -30,7 +32,25 @@ services:
       - DB_SSL=false
 
       # --- APP SETTINGS ---
-      # Pass these from the Host Environment (do not hardcode here if using secrets)
-      - BOT_TOKEN
-      - RECEIVER_TON_ADDRESS_TESTNET
-      - TONAPI_KEY
+      # Ensure these are set in your .env file or deployment secrets
+      - BOT_TOKEN=${BOT_TOKEN}
+      - PORT=8080
+      # - RECEIVER_TON_ADDRESS_TESTNET (Optional)
+      # - TONAPI_KEY (Optional)
+    depends_on:
+      - postgres
+
+  # DATABASE
+  postgres:
+    image: postgres:15-alpine
+    container_name: nft_db
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: nft_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
