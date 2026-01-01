@@ -6,6 +6,7 @@ import pkg from 'pg';
 const { Pool } = pkg;
 import path from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 
 // --- GLOBAL ERROR HANDLERS (PREVENT CRASH) ---
 process.on('uncaughtException', (err) => {
@@ -197,29 +198,50 @@ if (BOT_TOKEN) {
 
 // --- LOGIC ---
 
-function generateRefCode(userId) {
-    return `ref_${userId}`;
+// Generate 8-char random hex code (Privacy safe)
+function generateRefCode() {
+    return crypto.randomBytes(4).toString('hex');
 }
 
 async function bindReferrer(client, userId, potentialRefCode) {
-    if (!potentialRefCode || potentialRefCode === "none") return null;
+    console.log(`🔗 Binding Referrer: User=${userId}, Code=${potentialRefCode}`);
+    if (!potentialRefCode || potentialRefCode === "none") {
+        console.log("   -> Code is empty or 'none'. Skipping.");
+        return null;
+    }
 
     let referrerId = null;
+    
+    // 1. Look up by Unique Code
     const resByCode = await client.query('SELECT id FROM users WHERE referral_code = $1', [potentialRefCode]);
-    if (resByCode.rows.length > 0) referrerId = resByCode.rows[0].id;
+    if (resByCode.rows.length > 0) {
+        referrerId = resByCode.rows[0].id;
+        console.log(`   -> Found Referrer ID: ${referrerId} by code.`);
+    } else {
+        console.log(`   -> Code '${potentialRefCode}' not found in DB.`);
+    }
 
+    // 2. Fallback: Check if it's the old 'ref_ID' format (Legacy Support)
     if (!referrerId && potentialRefCode.startsWith('ref_')) {
         const rawId = potentialRefCode.replace('ref_', '');
         if (/^\d+$/.test(rawId)) {
              const resById = await client.query('SELECT id FROM users WHERE id = $1', [rawId]);
-             if (resById.rows.length > 0) referrerId = resById.rows[0].id;
+             if (resById.rows.length > 0) {
+                referrerId = resById.rows[0].id;
+                console.log(`   -> Found Referrer ID: ${referrerId} by legacy ref_ID format.`);
+             }
         }
     }
 
+    // 3. Update if valid and not self
     if (referrerId && String(referrerId) !== String(userId)) {
         await client.query('UPDATE users SET referrer_id = $1 WHERE id = $2', [referrerId, userId]);
+        console.log(`   -> SUCCESS: Bound User ${userId} to Referrer ${referrerId}`);
         return referrerId;
+    } else if (String(referrerId) === String(userId)) {
+        console.log("   -> Self-referral attempt detected. Ignored.");
     }
+    
     return null;
 }
 
@@ -312,7 +334,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.post('/api/auth', async (req, res) => {
-    console.log("➡️ /api/auth request received:", req.body);
+    // console.log("➡️ /api/auth request received:", req.body);
     let client;
     try {
         const { id, username, startParam } = req.body;
@@ -330,7 +352,7 @@ app.post('/api/auth', async (req, res) => {
         if (!user) {
             console.log(`Creating new user: ${id}`);
             isNew = true;
-            const code = generateRefCode(id);
+            const code = generateRefCode(); // RANDOM CODE
             await client.query('INSERT INTO users (id, username, referral_code) VALUES ($1, $2, $3)', [id, username, code]);
             
             resUser = await client.query('SELECT * FROM users WHERE id = $1', [id]);
@@ -338,6 +360,7 @@ app.post('/api/auth', async (req, res) => {
         }
 
         // 3. Bind Referrer
+        // Attempt to bind if: user has no referrer AND startParam is present AND startParam is not self
         if (!user.referrer_id && startParam && startParam !== "none" && startParam !== user.referral_code) {
             try {
                 const boundId = await bindReferrer(client, id, startParam);

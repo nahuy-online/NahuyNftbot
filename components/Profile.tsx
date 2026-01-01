@@ -94,11 +94,15 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
 
   const handleInvite = () => {
     try {
-        // Updated Link Format: Direct Mini App Link
-        // Format: https://t.me/BOTNAME/app?startapp=REFCODE
-        const refCode = user.referralCode || `ref_${user.id}`;
+        // Updated Link Format: Direct Mini App Link with Privacy-Safe Code
+        // Format: https://t.me/BOTNAME/app?startapp=RANDOMCODE
+        const refCode = user.referralCode;
         
-        // This is the cleanest way to open a Mini App with params
+        if (!refCode) {
+            alert("Referral code not loaded yet.");
+            return;
+        }
+
         const inviteLink = `https://t.me/${BOT_USERNAME}/app?startapp=${refCode}`;
         
         const shareText = t('share_text', { amount: user.nftBalance.total });
@@ -142,7 +146,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       switch(type) {
           case 'purchase': return '🛍️';
           case 'win': return '🎲';
-          case 'referral_reward': return '💰'; // New icon for rewards
+          case 'referral_reward': return '💰'; 
           case 'withdraw': return '📤';
           default: return '📄';
       }

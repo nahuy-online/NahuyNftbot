@@ -9,10 +9,13 @@ const getLocalState = (userId: number, username: string) => {
     const stored = localStorage.getItem(key);
     if (stored) return JSON.parse(stored) as UserProfile;
 
+    // Generate random mock code
+    const randomCode = Math.random().toString(36).substring(2, 10);
+
     const newUser: UserProfile = {
         id: userId,
         username: username,
-        referralCode: `ref_${userId}`,
+        referralCode: randomCode, 
         referrerId: null,
         nftBalance: { total: 0, available: 0, locked: 0, lockedDetails: [] },
         diceBalance: { available: 2, starsAttempts: 0, used: 0 },
