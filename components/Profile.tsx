@@ -25,13 +25,11 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   // Debug State
   const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param || "none";
 
-  // Update timer every minute
   useEffect(() => {
       const interval = setInterval(() => setNow(Date.now()), 60000);
       return () => clearInterval(interval);
   }, []);
   
-  // Lock body scroll when modal is open
   useEffect(() => {
       if (showHistory) {
           document.body.style.overflow = 'hidden';
@@ -96,18 +94,19 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
 
   const handleInvite = () => {
     try {
-        // Use privacy-safe Referral Code if available, fallback to ID only if code is missing (shouldn't happen)
-        const refParam = user.referralCode || `ref_${user.id}`;
-        const inviteLink = `https://t.me/${BOT_USERNAME}?start=${refParam}`;
+        // Updated Link Format: Direct Mini App Link
+        // Format: https://t.me/BOTNAME/app?startapp=REFCODE
+        const refCode = user.referralCode || `ref_${user.id}`;
+        
+        // This is the cleanest way to open a Mini App with params
+        const inviteLink = `https://t.me/${BOT_USERNAME}/app?startapp=${refCode}`;
+        
         const shareText = t('share_text', { amount: user.nftBalance.total });
         const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(shareText)}`;
 
-        // Attempt 1: Native Telegram WebApp Method for t.me links
         if (window.Telegram?.WebApp?.openTelegramLink) {
             window.Telegram.WebApp.openTelegramLink(shareUrl);
-        } 
-        // Attempt 2: Standard Window Open (often intercepted by Telegram)
-        else {
+        } else {
             window.open(shareUrl, '_blank');
         }
     } catch (e) {
@@ -143,7 +142,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       switch(type) {
           case 'purchase': return '🛍️';
           case 'win': return '🎲';
-          case 'referral': return '👥';
+          case 'referral_reward': return '💰'; // New icon for rewards
           case 'withdraw': return '📤';
           default: return '📄';
       }
@@ -362,15 +361,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
               <div className={`font-bold ${user.referrerId ? "text-green-400" : "text-red-500"}`}>
                   {user.referrerId ? user.referrerId : "none"}
               </div>
-
-              {user.referralDebug && (
-                <>
-                    <div className="text-gray-500 col-span-2 mt-2">Backend Log:</div>
-                    <div className="col-span-2 bg-black/30 p-2 rounded border border-white/10 text-gray-400 whitespace-pre-wrap">
-                        {user.referralDebug}
-                    </div>
-                </>
-              )}
           </div>
 
           <button 
