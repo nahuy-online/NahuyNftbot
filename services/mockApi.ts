@@ -103,22 +103,24 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
     
     clearTimeout(id);
 
-    // CRITICAL FIX: Read body ONCE as text to prevent "stream locked" error
+    // FIX: Read text first to safely handle non-JSON or empty bodies
     const responseText = await response.text();
     let responseJson: any = null;
     
     try {
-        if (responseText) {
-            responseJson = JSON.parse(responseText);
-        }
+        if (responseText) responseJson = JSON.parse(responseText);
     } catch (e) {
-        // Not JSON, ignore
+        // Not JSON
     }
 
     if (response.status === 500) {
-        // Prefer JSON error message, fallback to raw text
-        const errMsg = responseJson?.error || responseText || "Unknown 500 Error";
+        // If 500 and empty text, it's likely a proxy error (ECONNREFUSED)
+        const errMsg = responseJson?.error || responseText || "Connection Refused (Proxy Error)";
         throw new Error(`SERVER ERROR (500): ${errMsg}`);
+    }
+
+    if (response.status === 502 || response.status === 504) {
+        throw new Error("Gateway Timeout / Bad Gateway");
     }
 
     if (response.status === 503) throw new Error("Server is initializing (DB)...");
@@ -134,13 +136,13 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                            error.name === 'AbortError' || 
                            error.message.includes("Failed to fetch") ||
                            error.message.includes("NetworkError") ||
-                           error.message.includes("ECONNREFUSED");
+                           error.message.includes("ECONNREFUSED") ||
+                           error.message.includes("Connection Refused");
 
     if (isNetworkError) {
         console.warn(`⚠️ Backend Unreachable (${endpoint}). Using Local Mock Data.`);
         return runMock();
     }
-    // Throw real server errors to the UI
     throw error;
   }
 };
