@@ -338,7 +338,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
                         )}
                       </span>
-                      {historyFilter === 'bonus' ? t('referral_bonus') : t('tx_history')}
+                      {historyFilter === 'bonus' ? t('bonus_balance') : t('tx_history')}
                   </h2>
                   <button onClick={() => setShowHistory(false)} className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-700 active:scale-95 transition-all border border-white/10">
                       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
