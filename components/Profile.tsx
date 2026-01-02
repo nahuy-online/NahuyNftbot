@@ -320,11 +320,12 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       
       {/* --- REFACTORED MODAL --- */}
       {showHistory && (
-          // Fixed full viewport overlay with strict Z-index
-          <div className="fixed inset-0 z-[100] h-[100dvh] bg-gray-900 flex flex-col animate-fade-in safe-area-bottom">
+          // Use z-[9999] to ensure it's on top of everything. 
+          // h-full ensures it covers the screen.
+          <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] bg-gray-900 flex flex-col animate-fade-in">
               
-              {/* Fixed Header */}
-              <div className="flex-none flex items-center justify-between px-5 py-4 pt-14 bg-gray-900 border-b border-gray-800 z-20">
+              {/* Header with EXTREME top padding for safety on all devices */}
+              <div className="flex-none flex items-center justify-between px-5 pb-4 pt-20 bg-gray-900 border-b border-gray-800 z-50 shadow-xl">
                   <h2 className="text-xl font-bold flex items-center gap-3">
                       <span className={`p-2 rounded-xl flex items-center justify-center ${historyFilter === 'rewards' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
                         {historyFilter === 'rewards' ? (
@@ -335,13 +336,13 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                       </span>
                       {historyFilter === 'rewards' ? t('referral_earnings') : t('tx_history')}
                   </h2>
-                  <button onClick={() => setShowHistory(false)} className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-700 active:scale-95 transition-all">
+                  <button onClick={() => setShowHistory(false)} className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-700 active:scale-95 transition-all border border-white/10">
                       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                   </button>
               </div>
               
               {/* Scrollable Content */}
-              <div className="flex-1 overflow-y-auto overflow-x-hidden pb-32">
+              <div className="flex-1 overflow-y-auto overflow-x-hidden pb-safe">
                   
                   {/* Rewards Summary Dashboard - Only for Rewards Mode */}
                   {historyFilter === 'rewards' && (
@@ -370,7 +371,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                   )}
 
                   {/* List Container */}
-                  <div className="p-4 space-y-3">
+                  <div className="p-4 space-y-3 pb-32">
                     {loadingHistory ? (
                         <div className="flex justify-center pt-10"><div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"></div></div>
                     ) : filteredHistory.length === 0 ? (
@@ -404,10 +405,11 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                                         tx.type === 'withdraw' ? 'text-red-400' : 'text-green-400'
                                     }`}>
                                         {tx.type === 'withdraw' ? '-' : '+'}{tx.amount}
+                                        {/* USDT BADGE FIX: Explicitly handle USDT currency check */}
                                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
                                             tx.currency === Currency.STARS ? 'bg-yellow-500/10 text-yellow-500' : 
                                             tx.currency === Currency.TON ? 'bg-blue-500/10 text-blue-400' :
-                                            tx.currency === Currency.USDT ? 'bg-green-500/10 text-green-400' : 
+                                            (tx.currency === Currency.USDT || tx.currency === 'USDT') ? 'bg-green-500/10 text-green-400' : 
                                             tx.assetType === 'nft' ? 'bg-white/10 text-white' : ''
                                         }`}>
                                             {tx.currency || (tx.assetType === 'nft' ? 'NFT' : '')}
@@ -417,8 +419,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                             </div>
                         ))
                     )}
-                    {/* Spacer for bottom safe area */}
-                    <div className="h-8"></div>
                   </div>
               </div>
           </div>
