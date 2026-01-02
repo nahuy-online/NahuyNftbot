@@ -19,7 +19,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   
   // History Modal State
   const [showHistory, setShowHistory] = useState(false);
-  const [historyFilter, setHistoryFilter] = useState<'assets' | 'bonus'>('assets');
+  // Added 'locked' to filter types
+  const [historyFilter, setHistoryFilter] = useState<'assets' | 'bonus' | 'locked'>('assets');
   const [history, setHistory] = useState<NftTransaction[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
@@ -34,12 +35,15 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   useEffect(() => {
       if (showHistory) {
           document.body.style.overflow = 'hidden';
-          loadHistoryData();
+          // Only load history from API if we are looking at transactions (assets/bonus), not vesting schedule
+          if (historyFilter !== 'locked') {
+            loadHistoryData();
+          }
       } else {
           document.body.style.overflow = '';
       }
       return () => { document.body.style.overflow = ''; };
-  }, [showHistory]);
+  }, [showHistory, historyFilter]);
 
   const loadHistoryData = async () => {
       setLoadingHistory(true);
@@ -229,9 +233,15 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                 <div className="w-full h-1 bg-gray-700 rounded-full overflow-hidden"><div className="h-full bg-blue-500 w-full"></div></div>
             </div>
             
-            <div className="bg-gray-800 p-4 rounded-2xl border border-yellow-500/20 flex flex-col justify-between h-28 relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-16 h-16 bg-yellow-500/10 rounded-bl-full -mr-8 -mt-8"></div>
-                <div className="text-yellow-500/80 text-xs font-bold uppercase z-10">{t('locked')}</div>
+            <div onClick={() => { setHistoryFilter('locked'); setShowHistory(true); }}
+                className="bg-gray-800 p-4 rounded-2xl border border-yellow-500/20 flex flex-col justify-between h-28 relative overflow-hidden cursor-pointer hover:bg-gray-750 active:scale-95 transition-all group">
+                <div className="absolute top-0 right-0 w-16 h-16 bg-yellow-500/10 rounded-bl-full -mr-8 -mt-8 group-hover:bg-yellow-500/20 transition-colors"></div>
+                <div className="text-yellow-500/80 text-xs font-bold uppercase z-10 flex justify-between items-center">
+                    {t('locked')}
+                    <div className="bg-yellow-500/10 p-1 rounded-full opacity-50 group-hover:opacity-100 transition-opacity text-yellow-500">
+                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                    </div>
+                </div>
                 <div className="text-3xl font-black text-yellow-500 z-10">{user.nftBalance.locked} <span className="text-sm font-medium text-yellow-500/50">NFT</span></div>
                 <div className="text-[10px] text-gray-500 font-medium z-10">{t('unlocks_gradually')}</div>
             </div>
@@ -262,22 +272,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           </button>
       </div>
 
-      {user.nftBalance.lockedDetails && user.nftBalance.lockedDetails.length > 0 && (
-          <div className="space-y-2">
-              <h4 className="text-xs font-bold text-gray-500 uppercase ml-1">{t('vesting_schedule')}</h4>
-              <div className="bg-gray-900 rounded-xl overflow-hidden border border-white/5 divide-y divide-white/5">
-                  {user.nftBalance.lockedDetails.sort((a,b) => a.unlockDate - b.unlockDate).map((item, idx) => (
-                      <div key={idx} className="flex justify-between items-center p-3 hover:bg-white/5 transition-colors">
-                          <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded bg-gray-800 flex items-center justify-center text-xs font-bold text-gray-300">#{idx+1}</div>
-                              <span className="font-bold text-white">{item.amount} NFT</span>
-                          </div>
-                          <span className="text-yellow-500 font-mono text-xs bg-yellow-500/10 px-2 py-1 rounded">{formatTimeLeft(item.unlockDate)}</span>
-                      </div>
-                  ))}
-              </div>
-          </div>
-      )}
+      {/* Removed Inline Vesting Schedule - Moved to Modal */}
 
       {/* Referral Program */}
       <div className="pt-4 border-t border-gray-800 pb-safe">
@@ -337,15 +332,22 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] bg-gray-900 flex flex-col animate-fade-in">
               
               <div className="flex-none flex items-center justify-between px-5 pb-4 pt-20 bg-gray-900 border-b border-gray-800 z-50 shadow-xl">
+                  {/* Dynamic Header */}
                   <h2 className="text-xl font-bold flex items-center gap-3">
-                      <span className={`p-2 rounded-xl flex items-center justify-center ${historyFilter === 'bonus' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                      <span className={`p-2 rounded-xl flex items-center justify-center ${
+                          historyFilter === 'bonus' ? 'bg-purple-500/20 text-purple-400' : 
+                          historyFilter === 'locked' ? 'bg-yellow-500/20 text-yellow-500' :
+                          'bg-blue-500/20 text-blue-400'
+                      }`}>
                         {historyFilter === 'bonus' ? (
                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
+                        ) : historyFilter === 'locked' ? (
+                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                         ) : (
                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
                         )}
                       </span>
-                      {historyFilter === 'bonus' ? t('bonus_balance') : t('tx_history')}
+                      {historyFilter === 'bonus' ? t('bonus_balance') : historyFilter === 'locked' ? t('vesting_schedule') : t('tx_history')}
                   </h2>
                   <button onClick={() => setShowHistory(false)} className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-700 active:scale-95 transition-all border border-white/10">
                       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -354,7 +356,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
               
               <div className="flex-1 overflow-y-auto overflow-x-hidden pb-safe">
                   
-                  {/* Bonus Balance Dashboard - Only for Bonus Mode */}
+                  {/* === CONTENT: BONUS === */}
                   {historyFilter === 'bonus' && (
                       <div className="p-5 pb-0 grid grid-cols-1 gap-3 animate-fade-in">
                           <div className="p-4 rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 border border-white/5 flex items-center justify-between shadow-lg">
@@ -380,61 +382,91 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                       </div>
                   )}
 
-                  {/* List Container */}
-                  <div className="p-4 space-y-3 pb-32">
-                    {loadingHistory ? (
-                        <div className="flex justify-center pt-10"><div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"></div></div>
-                    ) : filteredHistory.length === 0 ? (
-                        <div className="text-center text-gray-500 pt-10 flex flex-col items-center">
-                            <div className="w-20 h-20 bg-gray-800/50 rounded-full flex items-center justify-center mb-4 text-4xl opacity-50 grayscale">
-                                {historyFilter === 'bonus' ? '💸' : '📂'}
-                            </div>
-                            <p className="font-medium">{t('no_tx')}</p>
-                            {historyFilter === 'bonus' && <p className="text-xs mt-2 opacity-50 max-w-[200px]">Invite friends to start earning bonus!</p>}
-                        </div>
-                    ) : (
-                        filteredHistory.map((tx) => (
-                            <div key={tx.id} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex items-center justify-between active:scale-[0.99] transition-transform">
-                                <div className="flex items-center gap-3">
-                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shadow-inner ${
-                                        tx.type.includes('referral') 
-                                            ? 'bg-purple-900/30 text-purple-400 border border-purple-500/20' 
-                                            : 'bg-gray-700/30 text-gray-300'
-                                    }`}>
-                                        {getTxIcon(tx.type, tx.assetType)}
-                                    </div>
-                                    <div>
-                                        <div className="font-bold text-sm text-white flex flex-col">
-                                            <span>{tx.description}</span>
+                  {/* === CONTENT: VESTING SCHEDULE === */}
+                  {historyFilter === 'locked' && (
+                      <div className="p-4 space-y-3 animate-fade-in">
+                        {user.nftBalance.lockedDetails && user.nftBalance.lockedDetails.length > 0 ? (
+                            user.nftBalance.lockedDetails.sort((a,b) => a.unlockDate - b.unlockDate).map((item, idx) => (
+                                <div key={idx} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex items-center justify-between active:scale-[0.99] transition-transform">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl bg-yellow-500/20 flex items-center justify-center text-sm font-bold text-yellow-500">#{idx+1}</div>
+                                        <div>
+                                            <span className="font-bold text-white block">{t('locked')} NFT</span>
+                                            <span className="text-xs text-gray-500 font-mono">{formatDate(item.unlockDate)}</span>
                                         </div>
-                                        <div className="text-[10px] text-gray-500 font-mono mt-0.5">{formatDate(tx.timestamp)}</div>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="font-bold text-white text-lg">{item.amount} <span className="text-xs text-gray-400">NFT</span></div>
+                                        <span className="text-yellow-500 font-mono text-[10px] bg-yellow-500/10 px-2 py-0.5 rounded">{formatTimeLeft(item.unlockDate)}</span>
                                     </div>
                                 </div>
-                                <div className="text-right">
-                                    <div className={`font-mono font-bold text-base flex items-center justify-end gap-1 ${
-                                        tx.type === 'withdraw' || (tx.type === 'purchase' && tx.assetType === 'currency') 
-                                            ? 'text-red-400' 
-                                            : 'text-green-400'
-                                    }`}>
-                                        {tx.type === 'withdraw' || (tx.type === 'purchase' && tx.assetType === 'currency') ? '-' : '+'}{tx.amount}
-                                        
-                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-                                            tx.currency === Currency.STARS ? 'bg-yellow-500/10 text-yellow-500' : 
-                                            tx.currency === Currency.TON ? 'bg-blue-500/10 text-blue-400' :
-                                            (tx.currency === Currency.USDT || tx.currency === 'USDT') ? 'bg-green-500/10 text-green-400' : 
-                                            tx.assetType === 'nft' ? 'bg-white/10 text-white' : ''
-                                        }`}>
-                                            {tx.currency || (tx.assetType === 'nft' ? 'NFT' : '')}
-                                        </span>
-                                        
-                                        {/* RE-ENABLE ASTERISK FOR LOCKED ITEMS */}
-                                        {tx.isLocked && <span className="text-yellow-500 text-sm ml-1">*</span>}
-                                    </div>
-                                </div>
+                            ))
+                        ) : (
+                            <div className="text-center text-gray-500 pt-10 flex flex-col items-center">
+                                <div className="w-20 h-20 bg-gray-800/50 rounded-full flex items-center justify-center mb-4 text-4xl opacity-50 grayscale">🔓</div>
+                                <p className="font-medium">No locked NFTs</p>
                             </div>
-                        ))
-                    )}
-                  </div>
+                        )}
+                      </div>
+                  )}
+
+                  {/* === CONTENT: HISTORY LIST === */}
+                  {historyFilter !== 'locked' && (
+                      <div className="p-4 space-y-3 pb-32">
+                        {loadingHistory ? (
+                            <div className="flex justify-center pt-10"><div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"></div></div>
+                        ) : filteredHistory.length === 0 ? (
+                            <div className="text-center text-gray-500 pt-10 flex flex-col items-center">
+                                <div className="w-20 h-20 bg-gray-800/50 rounded-full flex items-center justify-center mb-4 text-4xl opacity-50 grayscale">
+                                    {historyFilter === 'bonus' ? '💸' : '📂'}
+                                </div>
+                                <p className="font-medium">{t('no_tx')}</p>
+                                {historyFilter === 'bonus' && <p className="text-xs mt-2 opacity-50 max-w-[200px]">Invite friends to start earning bonus!</p>}
+                            </div>
+                        ) : (
+                            filteredHistory.map((tx) => (
+                                <div key={tx.id} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex items-center justify-between active:scale-[0.99] transition-transform">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shadow-inner ${
+                                            tx.type.includes('referral') 
+                                                ? 'bg-purple-900/30 text-purple-400 border border-purple-500/20' 
+                                                : 'bg-gray-700/30 text-gray-300'
+                                        }`}>
+                                            {getTxIcon(tx.type, tx.assetType)}
+                                        </div>
+                                        <div>
+                                            <div className="font-bold text-sm text-white flex flex-col">
+                                                <span>{tx.description}</span>
+                                            </div>
+                                            <div className="text-[10px] text-gray-500 font-mono mt-0.5">{formatDate(tx.timestamp)}</div>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className={`font-mono font-bold text-base flex items-center justify-end gap-1 ${
+                                            tx.type === 'withdraw' || (tx.type === 'purchase' && tx.assetType === 'currency') 
+                                                ? 'text-red-400' 
+                                                : 'text-green-400'
+                                        }`}>
+                                            {tx.type === 'withdraw' || (tx.type === 'purchase' && tx.assetType === 'currency') ? '-' : '+'}{tx.amount}
+                                            
+                                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                                                tx.currency === Currency.STARS ? 'bg-yellow-500/10 text-yellow-500' : 
+                                                tx.currency === Currency.TON ? 'bg-blue-500/10 text-blue-400' :
+                                                (tx.currency === Currency.USDT || tx.currency === 'USDT') ? 'bg-green-500/10 text-green-400' : 
+                                                tx.assetType === 'nft' ? 'bg-white/10 text-white' : ''
+                                            }`}>
+                                                {tx.currency || (tx.assetType === 'nft' ? 'NFT' : '')}
+                                            </span>
+                                            
+                                            {/* RE-ENABLE ASTERISK FOR LOCKED ITEMS */}
+                                            {tx.isLocked && <span className="text-yellow-500 text-sm ml-1">*</span>}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                      </div>
+                  )}
               </div>
           </div>
       )}
