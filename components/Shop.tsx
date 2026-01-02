@@ -19,6 +19,9 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
   const { t } = useTranslation();
   const [tonConnectUI] = useTonConnectUI();
 
+  // Safety fallback
+  const safeBalance = userBalance || { STARS: 0, TON: 0, USDT: 0 };
+
   const handleBuy = async () => {
     setLoading(true);
     try {
@@ -84,7 +87,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
   const pricePerUnit = NFT_PRICES[selectedCurrency];
   const totalPrice = parseFloat((pricePerUnit * selectedPack).toFixed(selectedCurrency === Currency.STARS ? 0 : 4));
   
-  const currentBalance = userBalance[selectedCurrency];
+  const currentBalance = safeBalance[selectedCurrency];
   const hasSomeBalance = currentBalance > 0;
   
   const discount = useRewardBalance ? Math.min(totalPrice, currentBalance) : 0;

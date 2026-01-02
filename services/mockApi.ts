@@ -41,7 +41,28 @@ const safeStorage = {
 const getLocalState = (userId: number, username: string) => {
     const key = `mock_user_${userId}`;
     const stored = safeStorage.getItem(key);
-    if (stored) return JSON.parse(stored) as UserProfile;
+    
+    if (stored) {
+        const parsed = JSON.parse(stored);
+        
+        // --- DATA MIGRATION: Fix crash for existing users ---
+        if (parsed.referralStats) {
+            // If 'bonusBalance' is missing but old 'earnings' exists, migrate it
+            if (!parsed.referralStats.bonusBalance && (parsed.referralStats as any).earnings) {
+                parsed.referralStats.bonusBalance = (parsed.referralStats as any).earnings;
+            }
+            // If 'bonusBalance' is still missing (very old data), init it
+            if (!parsed.referralStats.bonusBalance) {
+                parsed.referralStats.bonusBalance = { STARS: 0, TON: 0, USDT: 0 };
+            }
+        } else {
+             // Fallback if referralStats is completely missing
+             parsed.referralStats = { level1: 0, level2: 0, level3: 0, bonusBalance: { STARS: 0, TON: 0, USDT: 0 } };
+        }
+        // ----------------------------------------------------
+
+        return parsed as UserProfile;
+    }
 
     // Generate random mock code
     const randomHex = Math.floor(Math.random() * 0xffffff).toString(16).padEnd(6, '0');
@@ -55,7 +76,6 @@ const getLocalState = (userId: number, username: string) => {
         referralDebug: "Mock: User Created",
         nftBalance: { total: 0, available: 0, locked: 0, lockedDetails: [] },
         diceBalance: { available: 2, starsAttempts: 0, used: 0 },
-        // Updated to use bonusBalance
         referralStats: { level1: 0, level2: 0, level3: 0, bonusBalance: { STARS: 0, TON: 0, USDT: 0 } }
     };
     safeStorage.setItem(key, JSON.stringify(newUser));
@@ -106,8 +126,15 @@ const distributeMockRewards = (referrerId: number, totalAmount: number, currency
     if (!stored) return;
 
     try {
-        const referrer = JSON.parse(stored) as UserProfile;
+        const referrer = JSON.parse(stored); // Don't strict cast here to allow partial updates
         
+        // Ensure structure exists before writing
+        if (!referrer.referralStats) referrer.referralStats = {};
+        if (!referrer.referralStats.bonusBalance) {
+             if (referrer.referralStats.earnings) referrer.referralStats.bonusBalance = referrer.referralStats.earnings;
+             else referrer.referralStats.bonusBalance = { STARS: 0, TON: 0, USDT: 0 };
+        }
+
         const reward = currency === Currency.STARS 
             ? Math.floor(totalAmount * 0.07) 
             : parseFloat((totalAmount * 0.07).toFixed(4));
