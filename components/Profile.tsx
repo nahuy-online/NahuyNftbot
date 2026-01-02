@@ -33,12 +33,13 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   
   useEffect(() => {
       if (showHistory) {
+          // Prevent background scrolling on the body
           document.body.style.overflow = 'hidden';
           loadHistoryData();
       } else {
-          document.body.style.overflow = 'auto';
+          document.body.style.overflow = '';
       }
-      return () => { document.body.style.overflow = 'auto'; };
+      return () => { document.body.style.overflow = ''; };
   }, [showHistory]);
 
   const loadHistoryData = async () => {
@@ -156,16 +157,14 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   ];
   
   // Filter logic: 
-  // 'rewards' -> Referral Rewards (Include both new 'referral_reward' and legacy 'referral' types)
-  // 'assets' -> Everything else (Purchase, Win, Withdraw)
+  // 'rewards' -> Referral Rewards
+  // 'assets' -> Everything else
   const filteredHistory = history.filter(tx => {
       const isRef = tx.type === 'referral_reward' || tx.type === 'referral';
       
       if (historyFilter === 'rewards') {
           return isRef;
       }
-      // Assets view shows purchases, wins, withdraws. 
-      // It should NOT show incoming referral rewards, as those are in the rewards tab.
       return !isRef; 
   });
 
@@ -322,19 +321,26 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       </div>
       
       {showHistory && (
-          <div className="fixed inset-0 z-[60] bg-gray-900 flex flex-col animate-fade-in">
-              <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-gray-900/90 backdrop-blur-md">
+          // MODAL LAYOUT FIX:
+          // 1. z-[100] to sit above nav bar (usually z-50)
+          // 2. h-[100dvh] for strict full height on mobile browsers
+          // 3. inset-0 fixed for positioning
+          <div className="fixed inset-0 z-[100] h-[100dvh] bg-gray-900 flex flex-col animate-fade-in">
+              {/* HEADER FIX: Added pt-12 for safe area and z-index */}
+              <div className="flex-none flex items-center justify-between px-5 py-4 pt-12 border-b border-gray-800 bg-gray-900 z-10">
                   <h2 className="text-lg font-bold flex items-center gap-2">
                       <span className="bg-blue-500/20 p-1.5 rounded-lg text-blue-400">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
                       </span>
                       {historyFilter === 'rewards' ? t('referral_earnings') : t('tx_history')}
                   </h2>
-                  <button onClick={() => setShowHistory(false)} className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white">
+                  <button onClick={() => setShowHistory(false)} className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white active:scale-95 transition-transform">
                       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                   </button>
               </div>
-              <div className="flex-1 overflow-y-auto p-4">
+              
+              {/* CONTENT FIX: Added pb-24 to prevent bottom cut-off */}
+              <div className="flex-1 overflow-y-auto p-4 pb-24">
                   {loadingHistory ? (
                       <div className="flex justify-center pt-10"><div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"></div></div>
                   ) : filteredHistory.length === 0 ? (
@@ -353,7 +359,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                                       <div>
                                           <div className="font-bold text-sm text-white flex items-center gap-1">
                                               {tx.description}
-                                              {tx.type === 'purchase' && tx.currency && (
+                                              {/* CURRENCY BADGE FIX: Show for purchase OR referral rewards */}
+                                              {(tx.type === 'purchase' || tx.type === 'referral_reward' || tx.type === 'referral') && tx.currency && (
                                                 <span className={`text-[10px] px-1.5 py-0.5 rounded ml-1 font-medium ${tx.currency === Currency.STARS ? 'bg-yellow-500/20 text-yellow-400' : tx.currency === Currency.TON ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'}`}>{tx.currency}</span>
                                               )}
                                           </div>
