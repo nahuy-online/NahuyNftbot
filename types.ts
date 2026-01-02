@@ -51,7 +51,7 @@ export interface UserProfile {
     level1: number;
     level2: number;
     level3: number;
-    earnings: {
+    bonusBalance: { // Renamed from earnings
       [key in Currency]: number;
     };
   };

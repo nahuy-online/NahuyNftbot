@@ -20,7 +20,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   
   // History Modal State
   const [showHistory, setShowHistory] = useState(false);
-  const [historyFilter, setHistoryFilter] = useState<'assets' | 'rewards'>('assets');
+  const [historyFilter, setHistoryFilter] = useState<'assets' | 'bonus'>('assets');
   const [history, setHistory] = useState<NftTransaction[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
@@ -157,9 +157,16 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   ];
   
   const filteredHistory = history.filter(tx => {
-      const isRef = tx.type === 'referral_reward' || tx.type === 'referral';
-      if (historyFilter === 'rewards') return isRef;
-      return !isRef; 
+      // Bonus History includes: Rewards (+) AND Purchases using currency (Spend -)
+      const isBonusRelated = 
+        tx.type === 'referral_reward' || 
+        tx.type === 'referral' || 
+        (tx.type === 'purchase' && tx.assetType === 'currency'); // Spend from bonus
+      
+      if (historyFilter === 'bonus') return isBonusRelated;
+      
+      // Assets History: Everything else (NFT purchases, Dice purchases, Wins, Withdraws)
+      return !isBonusRelated; 
   });
 
   return (
@@ -266,10 +273,10 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           </div>
       )}
 
-      {/* Rewards Section */}
+      {/* Referral Program */}
       <div className="pt-4 border-t border-gray-800 pb-safe">
           <div className="flex justify-between items-baseline mb-4">
-             <h3 className="font-bold text-lg">{t('referral_earnings')}</h3>
+             <h3 className="font-bold text-lg">{t('referral_bonus')}</h3>
              <button onClick={handleInvite} className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-full font-bold transition-colors flex items-center gap-1 active:bg-blue-700">
                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
                 {t('invite_btn')}
@@ -290,20 +297,21 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                ))}
           </div>
 
-          <div onClick={() => { setHistoryFilter('rewards'); setShowHistory(true); }}
+          <div onClick={() => { setHistoryFilter('bonus'); setShowHistory(true); }}
              className="bg-gradient-to-r from-gray-800 to-gray-900 p-4 rounded-xl border border-white/5 flex justify-between items-center transition-all duration-300 hover:border-white/20 cursor-pointer group">
              <div className="text-xs text-gray-400 flex items-center gap-2">
-                 {t('total_rewards')}
+                 {t('bonus_balance')}
                  <svg className="opacity-50 group-hover:opacity-100 transition-opacity" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
              </div>
              <div className="flex gap-3 text-xs font-mono font-bold">
-                  <span className={`text-yellow-500 ${user.referralStats.earnings.STARS > 0 ? 'animate-pulse' : ''}`}>{user.referralStats.earnings.STARS} ★</span>
-                  <span className="text-blue-400">{user.referralStats.earnings.TON} T</span>
-                  <span className="text-green-400">{user.referralStats.earnings.USDT} $</span>
+                  <span className={`text-yellow-500 ${user.referralStats.bonusBalance.STARS > 0 ? 'animate-pulse' : ''}`}>{user.referralStats.bonusBalance.STARS} ★</span>
+                  <span className="text-blue-400">{user.referralStats.bonusBalance.TON} T</span>
+                  <span className="text-green-400">{user.referralStats.bonusBalance.USDT} $</span>
              </div>
           </div>
       </div>
 
+      {/* Debug */}
       <div className="mt-8 p-4 bg-red-900/20 border border-red-500/30 rounded-xl space-y-3">
           <div className="flex items-center gap-2 mb-2 border-b border-red-500/20 pb-2">
             <span className="text-red-500 text-lg">🛠️</span>
@@ -321,46 +329,44 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       {showHistory && createPortal(
           <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] bg-gray-900 flex flex-col animate-fade-in">
               
-              {/* Header with EXTREME top padding for safety on all devices */}
               <div className="flex-none flex items-center justify-between px-5 pb-4 pt-20 bg-gray-900 border-b border-gray-800 z-50 shadow-xl">
                   <h2 className="text-xl font-bold flex items-center gap-3">
-                      <span className={`p-2 rounded-xl flex items-center justify-center ${historyFilter === 'rewards' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
-                        {historyFilter === 'rewards' ? (
+                      <span className={`p-2 rounded-xl flex items-center justify-center ${historyFilter === 'bonus' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                        {historyFilter === 'bonus' ? (
                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
                         ) : (
                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
                         )}
                       </span>
-                      {historyFilter === 'rewards' ? t('referral_earnings') : t('tx_history')}
+                      {historyFilter === 'bonus' ? t('referral_bonus') : t('tx_history')}
                   </h2>
                   <button onClick={() => setShowHistory(false)} className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-700 active:scale-95 transition-all border border-white/10">
                       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                   </button>
               </div>
               
-              {/* Scrollable Content */}
               <div className="flex-1 overflow-y-auto overflow-x-hidden pb-safe">
                   
-                  {/* Rewards Summary Dashboard - Only for Rewards Mode */}
-                  {historyFilter === 'rewards' && (
+                  {/* Bonus Balance Dashboard - Only for Bonus Mode */}
+                  {historyFilter === 'bonus' && (
                       <div className="p-5 pb-0 grid grid-cols-1 gap-3 animate-fade-in">
                           <div className="p-4 rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 border border-white/5 flex items-center justify-between shadow-lg">
                               <div className="flex items-center gap-3">
                                   <div className="w-10 h-10 rounded-full bg-yellow-500/20 text-yellow-500 flex items-center justify-center text-lg shadow-[0_0_10px_rgba(234,179,8,0.2)]">★</div>
                                   <div>
                                       <div className="text-xs text-gray-400 font-bold uppercase tracking-wider">Stars</div>
-                                      <div className="text-xl font-bold text-white">{user.referralStats.earnings.STARS}</div>
+                                      <div className="text-xl font-bold text-white">{user.referralStats.bonusBalance.STARS}</div>
                                   </div>
                               </div>
                           </div>
                           <div className="grid grid-cols-2 gap-3">
                               <div className="p-4 rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 border border-white/5 flex flex-col justify-center shadow-lg">
                                   <div className="text-xs text-blue-400 font-bold uppercase mb-1">TON</div>
-                                  <div className="text-lg font-bold text-white">{user.referralStats.earnings.TON}</div>
+                                  <div className="text-lg font-bold text-white">{user.referralStats.bonusBalance.TON}</div>
                               </div>
                               <div className="p-4 rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 border border-white/5 flex flex-col justify-center shadow-lg">
                                   <div className="text-xs text-green-400 font-bold uppercase mb-1">USDT</div>
-                                  <div className="text-lg font-bold text-white">{user.referralStats.earnings.USDT}</div>
+                                  <div className="text-lg font-bold text-white">{user.referralStats.bonusBalance.USDT}</div>
                               </div>
                           </div>
                           <div className="h-px bg-gray-800 my-2"></div>
@@ -374,10 +380,10 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                     ) : filteredHistory.length === 0 ? (
                         <div className="text-center text-gray-500 pt-10 flex flex-col items-center">
                             <div className="w-20 h-20 bg-gray-800/50 rounded-full flex items-center justify-center mb-4 text-4xl opacity-50 grayscale">
-                                {historyFilter === 'rewards' ? '💸' : '📂'}
+                                {historyFilter === 'bonus' ? '💸' : '📂'}
                             </div>
                             <p className="font-medium">{t('no_tx')}</p>
-                            {historyFilter === 'rewards' && <p className="text-xs mt-2 opacity-50 max-w-[200px]">Invite friends to start earning rewards!</p>}
+                            {historyFilter === 'bonus' && <p className="text-xs mt-2 opacity-50 max-w-[200px]">Invite friends to start earning bonus!</p>}
                         </div>
                     ) : (
                         filteredHistory.map((tx) => (
@@ -399,10 +405,12 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                                 </div>
                                 <div className="text-right">
                                     <div className={`font-mono font-bold text-base flex items-center justify-end gap-1 ${
-                                        tx.type === 'withdraw' ? 'text-red-400' : 'text-green-400'
+                                        tx.type === 'withdraw' || (tx.type === 'purchase' && tx.assetType === 'currency') 
+                                            ? 'text-red-400' 
+                                            : 'text-green-400'
                                     }`}>
-                                        {tx.type === 'withdraw' ? '-' : '+'}{tx.amount}
-                                        {/* USDT BADGE FIX: Explicitly handle USDT currency check */}
+                                        {tx.type === 'withdraw' || (tx.type === 'purchase' && tx.assetType === 'currency') ? '-' : '+'}{tx.amount}
+                                        
                                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
                                             tx.currency === Currency.STARS ? 'bg-yellow-500/10 text-yellow-500' : 
                                             tx.currency === Currency.TON ? 'bg-blue-500/10 text-blue-400' :
@@ -411,6 +419,9 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                                         }`}>
                                             {tx.currency || (tx.assetType === 'nft' ? 'NFT' : '')}
                                         </span>
+                                        
+                                        {/* RE-ENABLE ASTERISK FOR LOCKED ITEMS */}
+                                        {tx.isLocked && <span className="text-yellow-500 text-sm ml-1">*</span>}
                                     </div>
                                 </div>
                             </div>

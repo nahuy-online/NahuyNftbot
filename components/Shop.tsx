@@ -8,7 +8,6 @@ import { useTonConnectUI } from '@tonconnect/ui-react';
 
 interface ShopProps {
   onPurchaseComplete: () => void;
-  // Passing user earnings to check balance
   userBalance: { [key in Currency]: number };
 }
 
@@ -23,14 +22,11 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
   const handleBuy = async () => {
     setLoading(true);
     try {
-      // 1. Init Payment 
       const paymentData = await createPayment('nft', selectedPack, selectedCurrency, useRewardBalance);
 
       if (!paymentData.ok) throw new Error(paymentData.error || "Failed to initiate payment");
       
-      // IF FULLY COVERED BY REWARDS -> Skip external wallet
       if (paymentData.isInternal) {
-           // Direct verification
            await verifyPayment('nft', selectedPack, selectedCurrency, true);
            if (window.Telegram?.WebApp?.HapticFeedback) window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
            alert(t('success_purchase', { count: selectedPack }));
@@ -39,9 +35,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
            return;
       }
 
-      // 2. Execute External Payment (for the remainder)
       if (selectedCurrency === Currency.STARS && paymentData.invoiceLink) {
-         // --- TELEGRAM STARS ---
          await new Promise<void>((resolve, reject) => {
              const isMock = paymentData.invoiceLink === "https://t.me/$";
              if (isMock) {
@@ -61,7 +55,6 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
          });
 
       } else if (selectedCurrency !== Currency.STARS && paymentData.transaction) {
-         // --- TON / USDT ---
          if (!tonConnectUI.connected) {
              alert(t('connect_first')); 
              await tonConnectUI.openModal();
@@ -71,7 +64,6 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
          await tonConnectUI.sendTransaction(paymentData.transaction);
       }
 
-      // 3. Verify Payment
       await verifyPayment('nft', selectedPack, selectedCurrency, useRewardBalance);
       
       if (window.Telegram?.WebApp?.HapticFeedback) {
@@ -95,7 +87,6 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
   const currentBalance = userBalance[selectedCurrency];
   const hasSomeBalance = currentBalance > 0;
   
-  // Calculate Split
   const discount = useRewardBalance ? Math.min(totalPrice, currentBalance) : 0;
   const payAmount = parseFloat((totalPrice - discount).toFixed(4));
 
@@ -108,7 +99,6 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
         <p className="text-gray-400 text-sm">{t('shop_subtitle')}</p>
       </div>
 
-      {/* Image Showcase */}
       <div className="relative mx-auto w-64 h-64">
         <div className="absolute inset-0 bg-blue-500 rounded-2xl blur-2xl opacity-20 animate-pulse"></div>
         <div className="relative aspect-square rounded-2xl overflow-hidden shadow-2xl border border-white/10 group">
@@ -124,7 +114,6 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
         </div>
       </div>
 
-      {/* Currency Selector */}
       <div className="space-y-3">
         <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">{t('select_currency')}</label>
         <div className="grid grid-cols-3 gap-3">
@@ -155,7 +144,6 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
         )}
       </div>
 
-      {/* Pack Selector */}
       <div className="space-y-3">
         <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">{t('quantity')}</label>
         <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide snap-x">
@@ -175,10 +163,9 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
         </div>
       </div>
 
-      {/* Payment Method Toggle (Rewards) */}
       <div className={`bg-gray-800/80 p-3 rounded-xl border flex items-center justify-between transition-colors ${useRewardBalance ? 'border-green-500/50 bg-green-900/10' : 'border-white/5'}`}>
           <div>
-              <div className="text-xs text-gray-400 font-bold uppercase">{t('referral_earnings')}</div>
+              <div className="text-xs text-gray-400 font-bold uppercase">{t('referral_bonus')}</div>
               <div className="text-sm font-bold text-white">
                   {currentBalance} <span className="text-gray-500">{selectedCurrency}</span>
               </div>
@@ -194,11 +181,10 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
                     : 'bg-gray-800 text-gray-600 border-gray-700 cursor-not-allowed opacity-50'
              }`}
           >
-              {useRewardBalance ? '✓ Apply' : 'Use Balance'}
+              {useRewardBalance ? '✓ Apply' : t('pay_with_balance')}
           </button>
       </div>
 
-      {/* Summary & Action */}
       <div className="fixed bottom-[65px] left-0 right-0 p-4 bg-gray-900/95 backdrop-blur-lg border-t border-white/10 z-40 pb-safe">
         <div className="max-w-md mx-auto flex gap-4 items-center">
             <div className="flex-1">
@@ -210,7 +196,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
                                 {payAmount} <span className="text-sm text-gray-400">{selectedCurrency}</span>
                             </div>
                             <div className="text-[10px] text-green-400 font-mono">
-                                + {discount} from Bal
+                                + {discount} from Bonus
                             </div>
                         </>
                     ) : (

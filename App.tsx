@@ -52,21 +52,18 @@ const App: React.FC = () => {
     }
     
     // --- INFINITE LOADING FIX ---
-    // Try to load data. If it takes too long (e.g., backend down or in Preview), 
-    // automatically switch to Mock Mode to show the UI.
     const autoMockTimer = setTimeout(() => {
         if (!user && !error) {
             console.warn("⏳ Load timeout: Switching to Mock Mode automatically.");
             switchToDemo();
         }
-    }, 2500); // 2.5 seconds timeout
+    }, 2500); 
 
     loadData();
 
     return () => clearTimeout(autoMockTimer);
   }, [tonConnectUI]);
 
-  // --- MOCK SYNC: Listen for LocalStorage changes in other tabs ---
   useEffect(() => {
       const handleStorageChange = (e: StorageEvent) => {
           if (e.key && e.key.startsWith('mock_user_')) {
@@ -77,8 +74,6 @@ const App: React.FC = () => {
       window.addEventListener('storage', handleStorageChange);
       return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
-
-  // --- RENDERING ---
 
   if (error) {
     return (
@@ -126,14 +121,12 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans selection:bg-blue-500/30">
       
-      {/* Content Area */}
       <main className="max-w-md mx-auto min-h-screen relative">
-        {activeTab === 'shop' && <Shop onPurchaseComplete={() => loadData()} userBalance={user.referralStats.earnings} />}
+        {activeTab === 'shop' && <Shop onPurchaseComplete={() => loadData()} userBalance={user.referralStats.bonusBalance} />}
         {activeTab === 'dice' && <DiceGame user={user} onUpdate={() => loadData()} />}
         {activeTab === 'profile' && <Profile user={user} onUpdate={() => loadData()} />}
       </main>
 
-      {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-gray-800/90 backdrop-blur-md border-t border-gray-700 pb-safe z-50">
         <div className="max-w-md mx-auto flex justify-around items-center h-16">
           <button

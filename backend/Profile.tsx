@@ -319,9 +319,9 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           <div className="bg-gradient-to-r from-gray-800 to-gray-900 p-4 rounded-xl border border-white/5 flex justify-between items-center">
              <div className="text-xs text-gray-400">{t('total_rewards')}</div>
              <div className="flex gap-3 text-xs font-mono font-bold">
-                  <span className="text-yellow-500">{user.referralStats.earnings.STARS} ★</span>
-                  <span className="text-blue-400">{user.referralStats.earnings.TON} T</span>
-                  <span className="text-green-400">{user.referralStats.earnings.USDT} $</span>
+                  <span className="text-yellow-500">{user.referralStats.bonusBalance.STARS} ★</span>
+                  <span className="text-blue-400">{user.referralStats.bonusBalance.TON} T</span>
+                  <span className="text-green-400">{user.referralStats.bonusBalance.USDT} $</span>
              </div>
           </div>
       </div>
