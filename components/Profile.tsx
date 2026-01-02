@@ -1,6 +1,5 @@
 
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import { UserProfile, NftTransaction, Currency } from '../types';
 import { withdrawNFTWithAddress, fetchNftHistory, debugResetDb } from '../services/mockApi';
 import { TonConnectButton, useTonAddress } from '@tonconnect/ui-react';
@@ -170,6 +169,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   });
 
   return (
+    <>
     <div className="p-5 pb-24 space-y-6 animate-fade-in relative">
       {/* Header */}
       <div className="flex items-center space-x-4 pb-2 border-b border-gray-800 justify-between">
@@ -325,8 +325,9 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           </div>
           <button onClick={handleDebugReset} className="w-full mt-2 text-xs font-bold text-white bg-red-600/80 hover:bg-red-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>⚠️</span> WIPE DB & RESET</button>
       </div>
+    </div>
       
-      {showHistory && createPortal(
+      {showHistory && (
           <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] bg-gray-900 flex flex-col animate-fade-in">
               
               <div className="flex-none flex items-center justify-between px-5 pb-4 pt-20 bg-gray-900 border-b border-gray-800 z-50 shadow-xl">
@@ -429,9 +430,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                     )}
                   </div>
               </div>
-          </div>,
-          document.body
+          </div>
       )}
-    </div>
+    </>
   );
 };
