@@ -33,7 +33,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   
   useEffect(() => {
       if (showHistory) {
-          // Prevent background scrolling on the body
           document.body.style.overflow = 'hidden';
           loadHistoryData();
       } else {
@@ -141,7 +140,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           case 'purchase': return '🛍️';
           case 'win': return '🎲';
           case 'referral_reward': 
-          case 'referral': return '💰'; 
+          case 'referral': return '💎'; 
           case 'withdraw': return '📤';
           default: return '📄';
       }
@@ -156,20 +155,15 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       { lvl: 1, percent: '7%' }, { lvl: 2, percent: '5%' }, { lvl: 3, percent: '3%' },
   ];
   
-  // Filter logic: 
-  // 'rewards' -> Referral Rewards
-  // 'assets' -> Everything else
   const filteredHistory = history.filter(tx => {
       const isRef = tx.type === 'referral_reward' || tx.type === 'referral';
-      
-      if (historyFilter === 'rewards') {
-          return isRef;
-      }
+      if (historyFilter === 'rewards') return isRef;
       return !isRef; 
   });
 
   return (
     <div className="p-5 pb-24 space-y-6 animate-fade-in relative">
+      {/* Header */}
       <div className="flex items-center space-x-4 pb-2 border-b border-gray-800 justify-between">
         <div className="flex items-center space-x-4">
             <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 flex items-center justify-center text-2xl font-bold shadow-lg ring-2 ring-white/10">
@@ -187,6 +181,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
         </button>
       </div>
 
+      {/* Wallet & Lang */}
       <div className="space-y-3">
         <div className="bg-gray-800/60 backdrop-blur-md rounded-2xl p-4 border border-white/5">
             <div className="flex justify-between items-center mb-3">
@@ -204,6 +199,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
         </div>
       </div>
 
+      {/* Assets Dashboard */}
       <div>
         <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3 ml-1">{t('assets')}</h3>
         <div className="grid grid-cols-2 gap-3">
@@ -269,6 +265,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           </div>
       )}
 
+      {/* Rewards Section */}
       <div className="pt-4 border-t border-gray-800 pb-safe">
           <div className="flex justify-between items-baseline mb-4">
              <h3 className="font-bold text-lg">{t('referral_earnings')}</h3>
@@ -306,6 +303,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           </div>
       </div>
 
+      {/* Debug */}
       <div className="mt-8 p-4 bg-red-900/20 border border-red-500/30 rounded-xl space-y-3">
           <div className="flex items-center gap-2 mb-2 border-b border-red-500/20 pb-2">
             <span className="text-red-500 text-lg">🛠️</span>
@@ -320,65 +318,108 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           <button onClick={handleDebugReset} className="w-full mt-2 text-xs font-bold text-white bg-red-600/80 hover:bg-red-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>⚠️</span> WIPE DB & RESET</button>
       </div>
       
+      {/* --- REFACTORED MODAL --- */}
       {showHistory && (
-          // MODAL LAYOUT FIX:
-          // 1. z-[100] to sit above nav bar (usually z-50)
-          // 2. h-[100dvh] for strict full height on mobile browsers
-          // 3. inset-0 fixed for positioning
-          <div className="fixed inset-0 z-[100] h-[100dvh] bg-gray-900 flex flex-col animate-fade-in">
-              {/* HEADER FIX: Added pt-12 for safe area and z-index */}
-              <div className="flex-none flex items-center justify-between px-5 py-4 pt-12 border-b border-gray-800 bg-gray-900 z-10">
-                  <h2 className="text-lg font-bold flex items-center gap-2">
-                      <span className="bg-blue-500/20 p-1.5 rounded-lg text-blue-400">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
+          // Fixed full viewport overlay with strict Z-index
+          <div className="fixed inset-0 z-[100] h-[100dvh] bg-gray-900 flex flex-col animate-fade-in safe-area-bottom">
+              
+              {/* Fixed Header */}
+              <div className="flex-none flex items-center justify-between px-5 py-4 pt-14 bg-gray-900 border-b border-gray-800 z-20">
+                  <h2 className="text-xl font-bold flex items-center gap-3">
+                      <span className={`p-2 rounded-xl flex items-center justify-center ${historyFilter === 'rewards' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                        {historyFilter === 'rewards' ? (
+                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
+                        ) : (
+                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
+                        )}
                       </span>
                       {historyFilter === 'rewards' ? t('referral_earnings') : t('tx_history')}
                   </h2>
-                  <button onClick={() => setShowHistory(false)} className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white active:scale-95 transition-transform">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                  <button onClick={() => setShowHistory(false)} className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-700 active:scale-95 transition-all">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                   </button>
               </div>
               
-              {/* CONTENT FIX: Added pb-24 to prevent bottom cut-off */}
-              <div className="flex-1 overflow-y-auto p-4 pb-24">
-                  {loadingHistory ? (
-                      <div className="flex justify-center pt-10"><div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"></div></div>
-                  ) : filteredHistory.length === 0 ? (
-                      <div className="text-center text-gray-500 pt-10 flex flex-col items-center">
-                          <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mb-4 text-3xl opacity-50">📂</div>
-                          <p>{t('no_tx')}</p>
-                      </div>
-                  ) : (
-                      <div className="space-y-3">
-                          {filteredHistory.map((tx) => (
-                              <div key={tx.id} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex items-center justify-between">
-                                  <div className="flex items-center gap-3">
-                                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl bg-gray-700/50`}>
-                                          {getTxIcon(tx.type, tx.assetType)}
-                                      </div>
-                                      <div>
-                                          <div className="font-bold text-sm text-white flex items-center gap-1">
-                                              {tx.description}
-                                              {/* CURRENCY BADGE FIX: Show for purchase OR referral rewards */}
-                                              {(tx.type === 'purchase' || tx.type === 'referral_reward' || tx.type === 'referral') && tx.currency && (
-                                                <span className={`text-[10px] px-1.5 py-0.5 rounded ml-1 font-medium ${tx.currency === Currency.STARS ? 'bg-yellow-500/20 text-yellow-400' : tx.currency === Currency.TON ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'}`}>{tx.currency}</span>
-                                              )}
-                                          </div>
-                                          <div className="text-[10px] text-gray-500">{formatDate(tx.timestamp)}</div>
-                                      </div>
-                                  </div>
-                                  <div className={`font-mono font-bold text-lg flex items-center gap-1 ${tx.type === 'withdraw' ? 'text-red-400' : 'text-green-400'}`}>
-                                      {tx.type === 'withdraw' ? '-' : '+'}{tx.amount}
-                                      <span className="text-xs opacity-70">
-                                          {tx.assetType === 'dice' ? '🎲' : tx.assetType === 'nft' ? 'NFT' : tx.assetType === 'currency' ? (tx.currency === 'STARS' ? '★' : tx.currency === 'TON' ? 'T' : '$') : ''}
-                                      </span>
-                                      {tx.assetType === 'nft' && tx.isLocked && <span className="text-yellow-500 text-sm transform -translate-y-1">*</span>}
+              {/* Scrollable Content */}
+              <div className="flex-1 overflow-y-auto overflow-x-hidden pb-32">
+                  
+                  {/* Rewards Summary Dashboard - Only for Rewards Mode */}
+                  {historyFilter === 'rewards' && (
+                      <div className="p-5 pb-0 grid grid-cols-1 gap-3 animate-fade-in">
+                          <div className="p-4 rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 border border-white/5 flex items-center justify-between shadow-lg">
+                              <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-full bg-yellow-500/20 text-yellow-500 flex items-center justify-center text-lg shadow-[0_0_10px_rgba(234,179,8,0.2)]">★</div>
+                                  <div>
+                                      <div className="text-xs text-gray-400 font-bold uppercase tracking-wider">Stars</div>
+                                      <div className="text-xl font-bold text-white">{user.referralStats.earnings.STARS}</div>
                                   </div>
                               </div>
-                          ))}
-                          {filteredHistory.some(h => h.isLocked) && <div className="pt-2 text-[10px] text-gray-500 text-center">{t('locked_policy')}</div>}
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                              <div className="p-4 rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 border border-white/5 flex flex-col justify-center shadow-lg">
+                                  <div className="text-xs text-blue-400 font-bold uppercase mb-1">TON</div>
+                                  <div className="text-lg font-bold text-white">{user.referralStats.earnings.TON}</div>
+                              </div>
+                              <div className="p-4 rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 border border-white/5 flex flex-col justify-center shadow-lg">
+                                  <div className="text-xs text-green-400 font-bold uppercase mb-1">USDT</div>
+                                  <div className="text-lg font-bold text-white">{user.referralStats.earnings.USDT}</div>
+                              </div>
+                          </div>
+                          <div className="h-px bg-gray-800 my-2"></div>
                       </div>
                   )}
+
+                  {/* List Container */}
+                  <div className="p-4 space-y-3">
+                    {loadingHistory ? (
+                        <div className="flex justify-center pt-10"><div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"></div></div>
+                    ) : filteredHistory.length === 0 ? (
+                        <div className="text-center text-gray-500 pt-10 flex flex-col items-center">
+                            <div className="w-20 h-20 bg-gray-800/50 rounded-full flex items-center justify-center mb-4 text-4xl opacity-50 grayscale">
+                                {historyFilter === 'rewards' ? '💸' : '📂'}
+                            </div>
+                            <p className="font-medium">{t('no_tx')}</p>
+                            {historyFilter === 'rewards' && <p className="text-xs mt-2 opacity-50 max-w-[200px]">Invite friends to start earning rewards!</p>}
+                        </div>
+                    ) : (
+                        filteredHistory.map((tx) => (
+                            <div key={tx.id} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex items-center justify-between active:scale-[0.99] transition-transform">
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shadow-inner ${
+                                        tx.type.includes('referral') 
+                                            ? 'bg-purple-900/30 text-purple-400 border border-purple-500/20' 
+                                            : 'bg-gray-700/30 text-gray-300'
+                                    }`}>
+                                        {getTxIcon(tx.type, tx.assetType)}
+                                    </div>
+                                    <div>
+                                        <div className="font-bold text-sm text-white flex flex-col">
+                                            <span>{tx.description}</span>
+                                        </div>
+                                        <div className="text-[10px] text-gray-500 font-mono mt-0.5">{formatDate(tx.timestamp)}</div>
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <div className={`font-mono font-bold text-base flex items-center justify-end gap-1 ${
+                                        tx.type === 'withdraw' ? 'text-red-400' : 'text-green-400'
+                                    }`}>
+                                        {tx.type === 'withdraw' ? '-' : '+'}{tx.amount}
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                                            tx.currency === Currency.STARS ? 'bg-yellow-500/10 text-yellow-500' : 
+                                            tx.currency === Currency.TON ? 'bg-blue-500/10 text-blue-400' :
+                                            tx.currency === Currency.USDT ? 'bg-green-500/10 text-green-400' : 
+                                            tx.assetType === 'nft' ? 'bg-white/10 text-white' : ''
+                                        }`}>
+                                            {tx.currency || (tx.assetType === 'nft' ? 'NFT' : '')}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                    {/* Spacer for bottom safe area */}
+                    <div className="h-8"></div>
+                  </div>
               </div>
           </div>
       )}
