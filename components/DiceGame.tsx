@@ -11,44 +11,25 @@ interface DiceGameProps {
   onUpdate: () => void;
 }
 
-// --- VISUAL EFFECTS HELPERS ---
+// ... (Effect Components omitted for brevity - reuse previous effects) ...
+// Since I must replace the whole file content, I will include the effects again.
 
-// Helper to get an angle that avoids the center (Top/Up direction -90deg)
-// We want two cones: Top-Right (-15 to -75) and Top-Left (-105 to -165)
-// This logic is now shared for uniform spread.
 const getSafeAngle = () => {
     const isRight = Math.random() > 0.5;
-    // 0 is Right, -90 is Up, -180 is Left
-    if (isRight) {
-        // -15 to -75
-        return (-15 - Math.random() * 60) * (Math.PI / 180);
-    } else {
-        // -105 to -165
-        return (-105 - Math.random() * 60) * (Math.PI / 180);
-    }
+    if (isRight) { return (-15 - Math.random() * 60) * (Math.PI / 180); } 
+    else { return (-105 - Math.random() * 60) * (Math.PI / 180); }
 };
 
-// 1. FIREWORKS (For 6/Jackpot) - Gold/Orange, streaks 🎇
-// Identical spread logic to others
 const FireworksEffect = () => {
     const particles = Array.from({ length: 90 }).map((_, i) => {
         const angleRad = getSafeAngle();
         const angleDeg = angleRad * (180 / Math.PI);
-        const distance = 160 + Math.random() * 180; // Unified distance
-        
+        const distance = 160 + Math.random() * 180;
         const tx = Math.cos(angleRad) * distance;
         const ty = Math.sin(angleRad) * distance;
-        
-        // Rotate streak to align with movement vector
-        // +90 because CSS gradient assumes bottom-to-top is the 'forward' visually for rotation
         const rotation = angleDeg + 90;
-
         return { 
-            id: i, 
-            tx: `${tx}px`, 
-            ty: `${ty}px`, 
-            rot: `${rotation}deg`,
-            // Fire Colors
+            id: i, tx: `${tx}px`, ty: `${ty}px`, rot: `${rotation}deg`,
             color: ['#FFD700', '#FFA500', '#FF4500', '#FF8C00'][Math.floor(Math.random() * 4)],
             delay: Math.random() * 0.4
         };
@@ -57,34 +38,21 @@ const FireworksEffect = () => {
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
             {particles.map(p => (
                 <div key={p.id} className="firework-streak"
-                    style={{ 
-                        '--tx': p.tx, 
-                        '--ty': p.ty, 
-                        '--rot': p.rot,
-                        color: p.color, // CSS currentColor uses this
-                        animationDelay: `${p.delay}s`,
-                        animationDuration: '3s'
-                    } as React.CSSProperties} />
+                    style={{ '--tx': p.tx, '--ty': p.ty, '--rot': p.rot, color: p.color, animationDelay: `${p.delay}s`, animationDuration: '3s' } as React.CSSProperties} />
             ))}
             <div className="absolute w-40 h-40 bg-orange-500/20 blur-[60px] rounded-full animate-pulse z-0"></div>
         </div>
     );
 };
 
-// 2. CONFETTI (For 5/Amazing) - Multi-color, strips 🎉
-// Identical spread logic to others
 const ConfettiEffect = () => {
     const pieces = Array.from({ length: 50 }).map((_, i) => {
         const angleRad = getSafeAngle();
-        const distance = 160 + Math.random() * 180; // Unified distance
-        
+        const distance = 160 + Math.random() * 180;
         const tx = Math.cos(angleRad) * distance;
         const ty = Math.sin(angleRad) * distance;
-        
         return {
-            id: i, 
-            tx: `${tx}px`, 
-            ty: `${ty}px`, 
+            id: i, tx: `${tx}px`, ty: `${ty}px`, 
             color: ['#F472B6', '#34D399', '#60A5FA', '#FBBF24', '#A78BFA'][i % 5],
             delay: Math.random() * 0.3
         };
@@ -93,59 +61,29 @@ const ConfettiEffect = () => {
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
             {pieces.map(p => (
                 <div key={p.id} className="confetti-piece"
-                    style={{ 
-                        '--tx': p.tx, 
-                        '--ty': p.ty, 
-                        backgroundColor: p.color, 
-                        width: Math.random() > 0.5 ? '6px' : '4px', 
-                        height: Math.random() > 0.5 ? '8px' : '12px', 
-                        animationDelay: `${p.delay}s`,
-                        animationDuration: '3s'
-                    } as React.CSSProperties} />
+                    style={{ '--tx': p.tx, '--ty': p.ty, backgroundColor: p.color, width: Math.random() > 0.5 ? '6px' : '4px', height: Math.random() > 0.5 ? '8px' : '12px', animationDelay: `${p.delay}s`, animationDuration: '3s' } as React.CSSProperties} />
             ))}
         </div>
     );
 };
 
-// 3. SPARKLES (For 4/Great) - Cyan/Blue, Stars ✨
-// Identical spread logic to others
 const SparklesEffect = () => {
     const stars = Array.from({ length: 45 }).map((_, i) => {
         const angleRad = getSafeAngle();
-        const distance = 160 + Math.random() * 180; // Unified distance
-        
+        const distance = 160 + Math.random() * 180;
         const tx = Math.cos(angleRad) * distance;
         const ty = Math.sin(angleRad) * distance;
-
         return {
-            id: i,
-            tx: `${tx}px`,
-            ty: `${ty}px`,
-            scale: 0.5 + Math.random() * 0.8,
-            delay: Math.random() * 0.5,
-            color: ['#22d3ee', '#a5f3fc', '#ffffff'][Math.floor(Math.random() * 3)]
+            id: i, tx: `${tx}px`, ty: `${ty}px`, scale: 0.5 + Math.random() * 0.8,
+            delay: Math.random() * 0.5, color: ['#22d3ee', '#a5f3fc', '#ffffff'][Math.floor(Math.random() * 3)]
         };
     });
-
     return (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
-             {/* Background Aura */}
              <div className="absolute w-40 h-40 bg-cyan-400/10 blur-[50px] rounded-full animate-pulse"></div>
-             
-             {/* Flying Stars */}
              {stars.map(s => (
-                 <div 
-                    key={s.id} 
-                    className="sparkle-star"
-                    style={{ 
-                        '--tx': s.tx,
-                        '--ty': s.ty,
-                        color: s.color,
-                        fontSize: `${14 * s.scale}px`,
-                        animationDelay: `${s.delay}s`,
-                        animationDuration: '3s' 
-                    } as React.CSSProperties} 
-                 >
+                 <div key={s.id} className="sparkle-star"
+                    style={{ '--tx': s.tx, '--ty': s.ty, color: s.color, fontSize: `${14 * s.scale}px`, animationDelay: `${s.delay}s`, animationDuration: '3s' } as React.CSSProperties} >
                     {Math.random() > 0.6 ? '✦' : '★'}
                  </div>
              ))}
@@ -153,52 +91,42 @@ const SparklesEffect = () => {
     );
 };
 
-// --- MAIN COMPONENT ---
-
 export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
   const [view, setView] = useState<'play' | 'buy'>('play');
   const [rolling, setRolling] = useState(false);
   const [lastRoll, setLastRoll] = useState<number | null>(null);
   const { t } = useTranslation();
   
-  // 3D Rotation
   const [rotation, setRotation] = useState<{x: number, y: number}>({ x: 0, y: 0 });
   
   // Buy State
   const [selectedCurrency, setSelectedCurrency] = useState<Currency>(Currency.TON);
   const [selectedPack, setSelectedPack] = useState<number>(1);
   const [buyLoading, setBuyLoading] = useState(false);
+  const [useRewardBalance, setUseRewardBalance] = useState(false);
   
-  // Wallet
   const [tonConnectUI] = useTonConnectUI();
 
   useEffect(() => {
-    if (!lastRoll) {
-        setRotation({ x: -25, y: -25 });
-    }
+    if (!lastRoll) setRotation({ x: -25, y: -25 });
   }, []);
 
   const handleRoll = async () => {
     if (user.diceBalance.available <= 0) {
-        if (window.Telegram?.WebApp?.HapticFeedback) {
-             window.Telegram.WebApp.HapticFeedback.notificationOccurred('warning');
-        }
+        if (window.Telegram?.WebApp?.HapticFeedback) window.Telegram.WebApp.HapticFeedback.notificationOccurred('warning');
         setView('buy');
         return;
     }
 
     setRolling(true);
     setLastRoll(null);
-    if (window.Telegram?.WebApp?.HapticFeedback) {
-        window.Telegram.WebApp.HapticFeedback.impactOccurred('medium');
-    }
+    if (window.Telegram?.WebApp?.HapticFeedback) window.Telegram.WebApp.HapticFeedback.impactOccurred('medium');
 
     try {
         const delayPromise = new Promise(resolve => setTimeout(resolve, 800)); 
         const rollPromise = rollDice();
         const [, result] = await Promise.all([delayPromise, rollPromise]);
         
-        // 3D Rotation Logic
         const faceRotations: Record<number, {x: number, y: number}> = {
             1: { x: 0, y: 0 }, 2: { x: 0, y: 90 }, 3: { x: -90, y: 0 },
             4: { x: 90, y: 0 }, 5: { x: 0, y: -90 }, 6: { x: 180, y: 0 }
@@ -214,18 +142,14 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
         if (Math.random() > 0.5) nextY += 360;
 
         setRotation({ x: nextX, y: nextY });
-
         await new Promise(resolve => setTimeout(resolve, 1600));
 
         setLastRoll(result);
         onUpdate(); 
         
         if (window.Telegram?.WebApp?.HapticFeedback) {
-            if (result >= 4) { // Success haptic for 4, 5, 6
-                window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
-            } else {
-                window.Telegram.WebApp.HapticFeedback.impactOccurred('heavy');
-            }
+            if (result >= 4) window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+            else window.Telegram.WebApp.HapticFeedback.impactOccurred('heavy');
         }
 
     } catch (e) {
@@ -239,21 +163,28 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
     setBuyLoading(true);
     try {
         // 1. Create Payment
-        const paymentData = await createPayment('dice', selectedPack, selectedCurrency);
-        if (!paymentData.ok) throw new Error("Payment init failed");
+        const paymentData = await createPayment('dice', selectedPack, selectedCurrency, useRewardBalance);
+        if (!paymentData.ok) throw new Error(paymentData.error || "Payment init failed");
+
+        // IF INTERNAL
+        if (paymentData.isInternal) {
+             await verifyPayment('dice', selectedPack, selectedCurrency, true);
+             if (window.Telegram?.WebApp?.HapticFeedback) window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+             alert(t('success_buy_attempts', { count: selectedPack }));
+             onUpdate();
+             setView('play');
+             setBuyLoading(false);
+             return;
+        }
 
         // 2. Execute Payment
         if (selectedCurrency === Currency.STARS && paymentData.invoiceLink) {
              await new Promise<void>((resolve, reject) => {
-                 // Detect Mock Link
                  const isMock = paymentData.invoiceLink === "https://t.me/$";
-                 
                  if (isMock) {
-                     console.log("Mock Payment Initiated");
                      setTimeout(() => {
-                         const confirmed = window.confirm("Mock Payment (Stars): Confirm transaction?");
-                         if (confirmed) resolve(); 
-                         else reject(new Error("Cancelled"));
+                         const confirmed = window.confirm("Mock Payment (Stars): Confirm?");
+                         if (confirmed) resolve(); else reject(new Error("Cancelled"));
                      }, 300);
                      return;
                  }
@@ -278,35 +209,31 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
         }
 
         // 3. Verify
-        await verifyPayment('dice', selectedPack, selectedCurrency);
+        await verifyPayment('dice', selectedPack, selectedCurrency, false);
 
-        if (window.Telegram?.WebApp?.HapticFeedback) {
-            window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
-        }
+        if (window.Telegram?.WebApp?.HapticFeedback) window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
         alert(t('success_buy_attempts', { count: selectedPack }));
         onUpdate();
         setView('play');
     } catch (e: any) {
-        if (e.message === 'Cancelled' || e.message === 'Invoice cancelled') {
-            console.log("Purchase cancelled by user");
-            return;
-        }
-        console.error(e);
-        alert(t('fail_purchase'));
+        if (e.message === 'Cancelled' || e.message === 'Invoice cancelled') return;
+        alert(t('fail_purchase') + (e.message ? `: ${e.message}` : ''));
     } finally {
         setBuyLoading(false);
     }
   };
 
   const renderDots = (count: number) => {
-      return Array.from({ length: count }).map((_, i) => (
-          <div key={i} className="dot"></div>
-      ));
+      return Array.from({ length: count }).map((_, i) => <div key={i} className="dot"></div>);
   };
 
   if (view === 'buy') {
     const price = (DICE_ATTEMPT_PRICES[selectedCurrency] * selectedPack).toFixed(selectedCurrency === Currency.STARS ? 0 : 2);
     
+    // Check balance for Pay with Rewards
+    const currentBalance = user.referralStats.earnings[selectedCurrency];
+    const canAffordWithRewards = currentBalance >= parseFloat(price);
+
     return (
         <div className="p-5 pb-44 animate-fade-in min-h-full">
             <button onClick={() => setView('play')} className="mb-6 px-4 py-2 bg-gray-800 rounded-lg text-sm text-gray-300 hover:text-white flex items-center w-fit transition-colors">
@@ -320,15 +247,10 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
 
                 <div className="grid grid-cols-3 gap-2">
                     {(Object.values(Currency) as Currency[]).map((curr) => (
-                        <button
-                        key={curr}
-                        onClick={() => setSelectedCurrency(curr)}
+                        <button key={curr} onClick={() => { setSelectedCurrency(curr); setUseRewardBalance(false); }}
                         className={`py-3 rounded-xl text-sm font-bold border transition-all ${
-                            selectedCurrency === curr
-                            ? 'bg-green-600 border-green-500 text-white shadow-lg'
-                            : 'bg-gray-800 border-gray-700 text-gray-400'
-                        }`}
-                        >
+                            selectedCurrency === curr ? 'bg-green-600 border-green-500 text-white shadow-lg' : 'bg-gray-800 border-gray-700 text-gray-400'
+                        }`}>
                         {curr === Currency.STARS ? 'STARS*' : curr}
                         </button>
                     ))}
@@ -337,35 +259,55 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
                 {selectedCurrency === Currency.STARS && (
                     <div className="flex items-start gap-2 bg-yellow-500/10 border border-yellow-500/20 p-3 rounded-lg animate-fade-in">
                         <span className="text-yellow-500 text-lg">⚠️</span>
-                        <p className="text-xs text-yellow-200/80 leading-tight pt-1">
-                            {t('locked_attempts_warning')}
-                        </p>
+                        <p className="text-xs text-yellow-200/80 leading-tight pt-1">{t('locked_attempts_warning')}</p>
                     </div>
                 )}
 
                 <div className="grid grid-cols-4 gap-2">
                 {PACK_SIZES.map((size) => (
-                    <button
-                    key={size}
-                    onClick={() => setSelectedPack(size)}
+                    <button key={size} onClick={() => setSelectedPack(size)}
                     className={`py-4 rounded-xl text-sm font-bold border transition-all ${
-                        selectedPack === size
-                        ? 'bg-white text-black border-white shadow-lg'
-                        : 'bg-gray-800 border-gray-700 text-gray-400'
-                    }`}
-                    >
+                        selectedPack === size ? 'bg-white text-black border-white shadow-lg' : 'bg-gray-800 border-gray-700 text-gray-400'
+                    }`}>
                     {size}
                     </button>
                 ))}
+                </div>
+
+                 {/* Payment Method Toggle (Rewards) */}
+                <div className="bg-gray-800/80 p-3 rounded-xl border border-white/5 flex items-center justify-between">
+                    <div>
+                        <div className="text-xs text-gray-400 font-bold uppercase">{t('referral_earnings')}</div>
+                        <div className="text-sm font-bold text-white">
+                            {currentBalance} <span className="text-gray-500">{selectedCurrency}</span>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={() => canAffordWithRewards && setUseRewardBalance(!useRewardBalance)}
+                        disabled={!canAffordWithRewards}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                            useRewardBalance 
+                            ? 'bg-green-500 text-black border-green-500' 
+                            : canAffordWithRewards 
+                                ? 'bg-gray-700 text-white hover:bg-gray-600 border-gray-600'
+                                : 'bg-gray-800 text-gray-600 border-gray-700 cursor-not-allowed opacity-50'
+                        }`}
+                    >
+                        {useRewardBalance ? '✓ Used' : 'Use Balance'}
+                    </button>
                 </div>
 
                 <div className="fixed bottom-24 left-0 right-0 px-5 max-w-md mx-auto z-40 pb-safe">
                     <button
                         onClick={handleBuyAttempts}
                         disabled={buyLoading}
-                        className="w-full py-4 rounded-xl font-bold text-lg bg-green-500 hover:bg-green-400 text-white shadow-[0_0_20px_rgba(34,197,94,0.3)] transition-all active:scale-95 disabled:opacity-50"
+                        className={`w-full py-4 rounded-xl font-bold text-lg shadow-[0_0_20px_rgba(34,197,94,0.3)] transition-all active:scale-95 disabled:opacity-50 ${
+                             useRewardBalance 
+                             ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white' 
+                             : 'bg-green-500 hover:bg-green-400 text-white'
+                        }`}
                     >
-                        {buyLoading ? t('processing') : t('pay_btn', { price, currency: selectedCurrency })}
+                        {buyLoading ? t('processing') : (useRewardBalance ? t('pay_with_balance') : t('pay_btn', { price, currency: selectedCurrency }))}
                     </button>
                 </div>
             </div>
@@ -373,30 +315,13 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
     );
   }
 
-  // --- LOGIC: Calculate actual win amount based on roll ---
-  // EXACT LOGIC: Roll value = Amount
-  const getWinAmount = (roll: number) => {
-      return roll; // 1->1, 2->2, ..., 6->6
-  };
-
-  // Result config logic
+  const getWinAmount = (roll: number) => roll;
   const getResultConfig = (roll: number) => {
-      // 6: Gold, Legendary only (Fireworks)
       if (roll === 6) return { bg: 'bg-gradient-to-r from-yellow-600 to-amber-500', border: 'border-yellow-300', shadow: 'shadow-[0_0_30px_rgba(250,204,21,0.5)]', text: t('win_jackpot'), subtext: t('win_legendary'), Effect: FireworksEffect, icon: '👑', iconAnim: 'animate-bounce' };
-      
-      // 5: Purple, Amazing (Confetti)
       if (roll === 5) return { bg: 'bg-gradient-to-r from-purple-600 to-pink-500', border: 'border-pink-300', shadow: 'shadow-[0_0_25px_rgba(236,72,153,0.5)]', text: t('win_amazing'), subtext: t('win_epic'), Effect: ConfettiEffect, icon: '🎉', iconAnim: 'animate-spin-slow' };
-      
-      // 4: Blue/Cyan, Great Win (Sparkles/Stars)
       if (roll === 4) return { bg: 'bg-gradient-to-r from-blue-600 to-cyan-500', border: 'border-cyan-300', shadow: 'shadow-[0_0_20px_rgba(6,182,212,0.5)]', text: t('win_great'), subtext: t('win_rare'), Effect: SparklesEffect, icon: '✨', iconAnim: 'animate-pulse' };
-
-      // 3: Green, Nice Catch
       if (roll === 3) return { bg: 'bg-gradient-to-r from-green-600 to-emerald-600', border: 'border-green-400', shadow: 'shadow-[0_0_15px_rgba(74,222,128,0.3)]', text: t('win_basic'), subtext: t('win_nice'), Effect: null, icon: '🎲', iconAnim: 'animate-pulse' };
-
-      // 2: Green, Could be worse
       if (roll === 2) return { bg: 'bg-gradient-to-r from-green-600 to-emerald-600', border: 'border-green-400', shadow: 'shadow-[0_0_15px_rgba(74,222,128,0.3)]', text: t('win_basic'), subtext: t('win_2_sub'), Effect: null, icon: '🎲', iconAnim: 'animate-pulse' };
-
-      // 1: Green, It happens
       return { bg: 'bg-gradient-to-r from-green-600 to-emerald-600', border: 'border-green-400', shadow: 'shadow-[0_0_15px_rgba(74,222,128,0.3)]', text: t('win_basic'), subtext: t('win_1_sub'), Effect: null, icon: '🎲', iconAnim: 'animate-pulse' };
   };
 
@@ -405,31 +330,20 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
 
   return (
     <div className="p-4 flex flex-col items-center justify-center min-h-[75vh] pb-24 relative overflow-hidden">
-      {/* Background Ambience */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-64 h-64 bg-green-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
       <div className="text-center mb-8 z-10">
-        <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white to-gray-500 mb-2 italic">
-            {t('lucky_dice')}
-        </h1>
+        <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white to-gray-500 mb-2 italic">{t('lucky_dice')}</h1>
         <p className="text-gray-400 font-medium">{t('roll_slogan')}</p>
       </div>
 
       <div className="flex flex-col items-center w-full max-w-xs z-10">
-          
-          {/* 3D Dice Scene */}
           <div className="scene mb-8">
             <div className="cube" style={{ transform: `translateZ(-50px) rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)` }}>
-                <div className="cube-face face-1"><div className="dot-container">{renderDots(1)}</div></div>
-                <div className="cube-face face-2"><div className="dot-container">{renderDots(2)}</div></div>
-                <div className="cube-face face-3"><div className="dot-container">{renderDots(3)}</div></div>
-                <div className="cube-face face-4"><div className="dot-container">{renderDots(4)}</div></div>
-                <div className="cube-face face-5"><div className="dot-container">{renderDots(5)}</div></div>
-                <div className="cube-face face-6"><div className="dot-container">{renderDots(6)}</div></div>
+                {[1,2,3,4,5,6].map(i => <div key={i} className={`cube-face face-${i}`}><div className="dot-container">{renderDots(i)}</div></div>)}
             </div>
           </div>
           
-          {/* Result Message Area */}
           <div className="h-24 mb-10 w-full flex items-center justify-center relative">
              {lastRoll && !rolling && resultConfig ? (
                 <div className="relative w-full flex justify-center items-center animate-pop-in">
@@ -443,7 +357,6 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
                                 {winAmount > 0 && <span className="text-sm font-bold bg-white/20 px-1.5 rounded">+{winAmount} NFT</span>}
                             </div>
                         </div>
-                        <div className="shimmer opacity-30 rounded-2xl overflow-hidden pointer-events-none"></div>
                     </div>
                 </div>
              ) : rolling ? (
@@ -456,15 +369,11 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
              )}
           </div>
 
-          {/* Controls */}
           <div className="w-full space-y-4">
-            <button
-                onClick={handleRoll}
-                disabled={rolling}
+            <button onClick={handleRoll} disabled={rolling}
                 className={`w-full py-5 rounded-2xl font-bold text-xl shadow-xl transition-all active:scale-95 border border-white/5 relative overflow-hidden group ${
                     rolling ? 'bg-gray-700 cursor-wait' : 'bg-white text-black hover:bg-gray-100'
-                }`}
-            >
+                }`}>
                 <span className="relative z-10">{rolling ? t('wait_btn') : t('roll_btn')}</span>
                 {!rolling && <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-500"></div>}
             </button>
@@ -477,10 +386,8 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
             </div>
 
             {user.diceBalance.available === 0 && (
-                <button
-                    onClick={() => setView('buy')}
-                    className="w-full py-3 rounded-xl font-medium text-sm text-green-400 border border-green-500/30 bg-green-500/10 hover:bg-green-500/20 transition-colors"
-                >
+                <button onClick={() => setView('buy')}
+                    className="w-full py-3 rounded-xl font-medium text-sm text-green-400 border border-green-500/30 bg-green-500/10 hover:bg-green-500/20 transition-colors">
                     {t('buy_more_btn')}
                 </button>
             )}

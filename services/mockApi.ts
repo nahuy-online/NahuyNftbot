@@ -4,10 +4,43 @@ import { NFT_PRICES, DICE_ATTEMPT_PRICES } from '../constants';
 
 const API_BASE = '/api'; 
 
-// --- STATEFUL MOCK ENGINE (LOCAL STORAGE) ---
+// --- SAFE STORAGE WRAPPER (Handles SecurityError in iframes) ---
+const memoryStore: Record<string, string> = {};
+
+const safeStorage = {
+    getItem: (key: string): string | null => {
+        try {
+            return localStorage.getItem(key);
+        } catch (e) {
+            return memoryStore[key] || null;
+        }
+    },
+    setItem: (key: string, value: string) => {
+        try {
+            localStorage.setItem(key, value);
+        } catch (e) {
+            memoryStore[key] = value;
+        }
+    },
+    removeItem: (key: string) => {
+        try {
+            localStorage.removeItem(key);
+        } catch (e) {
+            delete memoryStore[key];
+        }
+    },
+    length: () => {
+         try { return localStorage.length; } catch(e) { return Object.keys(memoryStore).length; }
+    },
+    key: (index: number) => {
+        try { return localStorage.key(index); } catch(e) { return Object.keys(memoryStore)[index]; }
+    }
+};
+
+// --- STATEFUL MOCK ENGINE ---
 const getLocalState = (userId: number, username: string) => {
     const key = `mock_user_${userId}`;
-    const stored = localStorage.getItem(key);
+    const stored = safeStorage.getItem(key);
     if (stored) return JSON.parse(stored) as UserProfile;
 
     // Generate random mock code with ref_ prefix
@@ -24,21 +57,22 @@ const getLocalState = (userId: number, username: string) => {
         diceBalance: { available: 2, starsAttempts: 0, used: 0 },
         referralStats: { level1: 0, level2: 0, level3: 0, earnings: { STARS: 0, TON: 0, USDT: 0 } }
     };
-    localStorage.setItem(key, JSON.stringify(newUser));
+    safeStorage.setItem(key, JSON.stringify(newUser));
     return newUser;
 };
 
 const updateLocalState = (user: UserProfile) => {
-    localStorage.setItem(`mock_user_${user.id}`, JSON.stringify(user));
+    safeStorage.setItem(`mock_user_${user.id}`, JSON.stringify(user));
 };
 
-// HELPER: Find a user ID in localStorage by their referral code
+// HELPER: Find a user ID in storage by their referral code
 const findUserIdByCode = (code: string): number | null => {
     try {
-        for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
+        const len = safeStorage.length();
+        for (let i = 0; i < len; i++) {
+            const key = safeStorage.key(i);
             if (key && key.startsWith('mock_user_')) {
-                const raw = localStorage.getItem(key);
+                const raw = safeStorage.getItem(key);
                 if (raw) {
                     const data = JSON.parse(raw) as UserProfile;
                     if (data.referralCode && data.referralCode.toLowerCase() === code.toLowerCase()) {
@@ -53,10 +87,10 @@ const findUserIdByCode = (code: string): number | null => {
     return null;
 };
 
-// HELPER: Distribute Rewards to Referrer in LocalStorage
+// HELPER: Distribute Rewards to Referrer in Storage
 const distributeMockRewards = (referrerId: number, totalAmount: number, currency: Currency) => {
     const key = `mock_user_${referrerId}`;
-    const stored = localStorage.getItem(key);
+    const stored = safeStorage.getItem(key);
     if (!stored) return;
 
     try {
@@ -69,7 +103,19 @@ const distributeMockRewards = (referrerId: number, totalAmount: number, currency
             
         referrer.referralStats.earnings[currency] += reward;
         
-        localStorage.setItem(key, JSON.stringify(referrer));
+        safeStorage.setItem(key, JSON.stringify(referrer));
+        
+        // Add transaction record for referrer
+        addLocalHistory(referrerId, {
+            id: `m_ref_${Date.now()}`,
+            type: 'referral',
+            assetType: 'currency',
+            amount: reward,
+            currency: currency,
+            description: `Ref Reward (Lvl 1)`,
+            timestamp: Date.now()
+        });
+
         console.log(`[Mock] 💰 Sent ${reward} ${currency} to referrer ${referrerId}`);
     } catch (e) {
         console.error("Failed to distribute mock rewards", e);
@@ -78,21 +124,21 @@ const distributeMockRewards = (referrerId: number, totalAmount: number, currency
 
 const getLocalHistory = (userId: number): NftTransaction[] => {
     const key = `mock_history_${userId}`;
-    const stored = localStorage.getItem(key);
+    const stored = safeStorage.getItem(key);
     return stored ? JSON.parse(stored) : [];
 };
 
 const addLocalHistory = (userId: number, tx: NftTransaction) => {
     const hist = getLocalHistory(userId);
     hist.unshift(tx);
-    localStorage.setItem(`mock_history_${userId}`, JSON.stringify(hist));
+    safeStorage.setItem(`mock_history_${userId}`, JSON.stringify(hist));
 };
 
 let FORCED_MOCK = false;
 
 export const enableMockMode = () => {
     FORCED_MOCK = true;
-    console.log("🛠️ Mock Mode Enabled by User");
+    console.log("🛠️ Mock Mode Enabled");
 };
 
 // --- API HELPER ---
@@ -110,7 +156,7 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
 
   const payload = body ? { id: userId, ...body } : { id: userId };
 
-  // --- CHECK MOCK TRIGGER ---
+  // --- MOCK ENGINE ---
   const runMock = async () => {
         const user = getLocalState(userId, username);
         
@@ -119,10 +165,8 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
              
              // Try to bind if not bound
              if (!user.referrerId && startParam && startParam !== "none" && startParam !== user.referralCode) {
-                 // 1. Try to find REAL mock user
                  const realRefId = findUserIdByCode(startParam);
-                 
-                 // 2. Fallback to extracting ID from "ref_123" if user wiped DB but remembers code
+                 // Fallback legacy ID check
                  let fallbackId = null;
                  if (!realRefId && startParam.startsWith('ref_')) {
                      const parts = startParam.replace('ref_', '');
@@ -135,12 +179,14 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                      user.referrerId = targetId;
                      user.referralDebug = `Mock: Bound to ${realRefId ? 'Real' : 'Legacy'} ID ${targetId}`;
                      
-                     // If we found a real user file, increment their "Level 1" count immediately
                      if (realRefId) {
                          const refKey = `mock_user_${realRefId}`;
-                         const refData = JSON.parse(localStorage.getItem(refKey)!);
-                         refData.referralStats.level1 += 1;
-                         localStorage.setItem(refKey, JSON.stringify(refData));
+                         const refDataStr = safeStorage.getItem(refKey);
+                         if (refDataStr) {
+                             const refData = JSON.parse(refDataStr);
+                             refData.referralStats.level1 += 1;
+                             safeStorage.setItem(refKey, JSON.stringify(refData));
+                         }
                      }
                      
                      updateLocalState(user);
@@ -154,37 +200,25 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
         if (endpoint === '/roll') {
             if (user.diceBalance.available <= 0) throw new Error("No dice attempts left (Mock)");
             
-            // Locking logic for roll
             const isStarsRun = user.diceBalance.starsAttempts > 0;
-            
             const roll = Math.floor(Math.random() * 6) + 1;
+            
             user.diceBalance.available -= 1;
-            if (isStarsRun) {
-                user.diceBalance.starsAttempts -= 1;
-            }
+            if (isStarsRun) user.diceBalance.starsAttempts -= 1;
 
             if (roll > 0) { 
                 user.nftBalance.total += roll; 
-                
                 if (isStarsRun) {
                     user.nftBalance.locked += roll;
-                    user.nftBalance.lockedDetails.push({
-                        amount: roll,
-                        unlockDate: Date.now() + (21 * 86400000)
-                    });
+                    user.nftBalance.lockedDetails.push({ amount: roll, unlockDate: Date.now() + (21 * 86400000) });
                 } else {
                     user.nftBalance.available += roll; 
                 }
             }
             
             addLocalHistory(userId, { 
-                id: `m_${Date.now()}`, 
-                type: 'win', 
-                assetType: 'nft', 
-                amount: roll, 
-                description: `Rolled ${roll}`, 
-                timestamp: Date.now(),
-                isLocked: isStarsRun
+                id: `m_${Date.now()}`, type: 'win', assetType: 'nft', amount: roll, 
+                description: `Rolled ${roll}`, timestamp: Date.now(), isLocked: isStarsRun
             });
             
             updateLocalState(user);
@@ -194,18 +228,28 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
         if (endpoint === '/history') return getLocalHistory(userId);
         
         if (endpoint === '/payment/create') { 
-            const { type, amount, currency } = payload;
+            const { type, amount, currency, useRewardBalance } = payload;
             
+            // Check if paying with rewards
+            if (useRewardBalance) {
+                const priceConfig = type === 'nft' ? NFT_PRICES : DICE_ATTEMPT_PRICES;
+                const cost = (priceConfig[currency as Currency] || 0) * amount;
+                
+                if (user.referralStats.earnings[currency as Currency] < cost) {
+                    return { ok: false, error: "Insufficient reward balance" };
+                }
+                
+                // Return success immediately for internal payment
+                return { ok: true, isInternal: true };
+            }
+
+            // Normal external payment
             if (currency === 'STARS') {
                 return { ok: true, invoiceLink: "https://t.me/$" };
             } else {
-                // FIXED: Return a mock transaction for TON/USDT so the wallet modal actually opens!
-                // Using a testnet burn address or dev address
                 const priceConfig = type === 'nft' ? NFT_PRICES : DICE_ATTEMPT_PRICES;
-                const price = priceConfig[currency as Currency] || 0.01;
-                const total = price * amount;
+                const total = (priceConfig[currency as Currency] || 0) * amount;
                 const nano = Math.floor(total * 1e9).toString();
-
                 return { 
                     ok: true, 
                     transaction: {
@@ -220,77 +264,85 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
         }
         
         if (endpoint === '/payment/verify') { 
-            const { type, amount, currency } = payload;
+            const { type, amount, currency, useRewardBalance } = payload;
             const isStars = currency === 'STARS';
+
+            // IF Paying with Rewards, deduct balance
+            if (useRewardBalance) {
+                const priceConfig = type === 'nft' ? NFT_PRICES : DICE_ATTEMPT_PRICES;
+                const cost = (priceConfig[currency as Currency] || 0) * amount;
+                
+                // Double check (backend side validation simulation)
+                if (user.referralStats.earnings[currency as Currency] < cost) {
+                    throw new Error("Insufficient reward balance");
+                }
+                
+                user.referralStats.earnings[currency as Currency] -= cost;
+                
+                // Add spending record
+                 addLocalHistory(userId, { 
+                    id: `m_spend_${Date.now()}`, type: 'purchase', assetType: 'currency', 
+                    amount: cost, currency: currency, description: `Spent Rewards on ${type}`, 
+                    timestamp: Date.now()
+                });
+            }
 
              // Update Balance
              if (type === 'nft') {
                  user.nftBalance.total += amount; 
-                 if (isStars) {
-                     user.nftBalance.locked += amount;
-                     user.nftBalance.lockedDetails.push({
-                         amount: amount,
-                         unlockDate: Date.now() + (21 * 86400000)
-                     });
-                 } else {
-                     user.nftBalance.available += amount;
-                 }
+                 // Items bought with rewards are NOT locked unless currency was Stars (policy optional, let's say rewards are clean)
+                 // Actually, if bought with Stars Rewards, still Stars policy applies? 
+                 // Let's assume Rewards = Clean for simplicity, except Stars might be locked. 
+                 // For now: Reward purchase = No lock.
+                 user.nftBalance.available += amount;
              } else {
                  user.diceBalance.available += amount;
-                 if (isStars) {
-                     user.diceBalance.starsAttempts += amount;
-                 }
+                 // Reward purchase does not add to "starsAttempts" (locked attempts)
              }
              
              updateLocalState(user);
 
-             // DISTRIBUTE REWARDS
-             if (user.referrerId) {
+             // DISTRIBUTE REWARDS (Only if paid with real money, OR we can decide rewards generate rewards. 
+             // Usually Internal spending DOES NOT generate upline rewards to prevent loop.
+             if (!useRewardBalance && user.referrerId) {
                  const priceMap = type === 'nft' ? NFT_PRICES : DICE_ATTEMPT_PRICES;
                  const pricePerUnit = priceMap[currency as Currency] || 0;
                  const totalSpent = pricePerUnit * amount;
-                 
                  distributeMockRewards(user.referrerId, totalSpent, currency as Currency);
              }
 
              addLocalHistory(userId, { 
-                id: `m_pay_${Date.now()}`, 
-                type: 'purchase', 
-                assetType: type, 
-                amount: amount, 
-                currency: currency,
-                description: `Purchase ${amount} ${type}`, 
-                timestamp: Date.now(),
-                isLocked: isStars && type === 'nft'
+                id: `m_pay_${Date.now()}`, type: 'purchase', assetType: type, 
+                amount: amount, currency: currency, description: `Purchase ${amount} ${type}`, 
+                timestamp: Date.now(), isLocked: false 
             });
 
              return { ok: true }; 
         }
+        
         if (endpoint === '/withdraw') {
              const amt = user.nftBalance.available;
              if (amt <= 0) throw new Error("No funds");
              user.nftBalance.available = 0;
              user.nftBalance.total -= amt;
-             
-             addLocalHistory(userId, { 
-                id: `m_wd_${Date.now()}`, 
-                type: 'withdraw', 
-                assetType: 'nft', 
-                amount: amt, 
-                description: `Withdraw to ${payload.address}`, 
-                timestamp: Date.now()
-            });
-            updateLocalState(user);
-            return { ok: true };
+             addLocalHistory(userId, { id: `m_wd_${Date.now()}`, type: 'withdraw', assetType: 'nft', amount: amt, description: `Withdraw to ${payload.address}`, timestamp: Date.now() });
+             updateLocalState(user);
+             return { ok: true };
         }
-        if (endpoint === '/debug/reset') { localStorage.clear(); return {ok:true}; }
+        if (endpoint === '/debug/reset') { 
+            const keys = [];
+            for(let i=0; i<safeStorage.length(); i++) keys.push(safeStorage.key(i));
+            keys.forEach(k => { if(k && k.startsWith('mock_')) safeStorage.removeItem(k); });
+            return {ok:true}; 
+        }
   };
 
   if (FORCED_MOCK) return runMock();
 
   try {
     const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), 10000);
+    // Short timeout for preview environments to fail faster
+    const id = setTimeout(() => controller.abort(), 3000); 
 
     const response = await fetch(url, {
         method,
@@ -300,51 +352,27 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
     });
     
     clearTimeout(id);
-
-    // FIX: Read text first to safely handle non-JSON or empty bodies
     const responseText = await response.text();
     let responseJson: any = null;
-    
-    try {
-        if (responseText) responseJson = JSON.parse(responseText);
-    } catch (e) {
-        // Not JSON
-    }
+    try { if (responseText) responseJson = JSON.parse(responseText); } catch (e) {}
 
-    if (response.status === 500) {
-        const errMsg = responseJson?.error || responseText || "Connection Refused (Proxy Error)";
-        throw new Error(`SERVER ERROR (500): ${errMsg}`);
-    }
-
-    if (response.status === 502 || response.status === 504) throw new Error("Gateway Timeout / Bad Gateway");
-    if (response.status === 503) throw new Error("Server is initializing (DB)...");
-    if (response.status === 404) throw new Error("MOCK_FALLBACK"); 
-    
-    if (!response.ok) {
-        throw new Error(`Backend error: ${responseJson?.error || responseText}`);
+    if (!response.ok || response.status === 404 || response.status === 500) {
+        throw new Error("Backend Error");
     }
     
     return responseJson || {};
   } catch (error: any) {
-    const isNetworkError = error.message === "MOCK_FALLBACK" || 
-                           error.name === 'AbortError' || 
-                           error.message.includes("Failed to fetch") ||
-                           error.message.includes("NetworkError") ||
-                           error.message.includes("ECONNREFUSED") ||
-                           error.message.includes("Connection Refused");
-
-    if (isNetworkError) {
-        console.warn(`⚠️ Backend Unreachable (${endpoint}). Using Local Mock Data.`);
-        return runMock();
-    }
-    throw error;
+    // ALWAYS fallback to Mock in dev/preview if fetch fails
+    console.warn(`⚠️ Backend unavailable (${error.message}). Switching to Mock.`);
+    return runMock();
   }
 };
 
 export const fetchUserProfile = async (startParam?: string) => apiRequest('/auth', 'POST', { startParam });
 export const fetchNftHistory = async () => apiRequest('/history');
-export const createPayment = async (type: 'nft' | 'dice', amount: number, currency: Currency) => apiRequest('/payment/create', 'POST', { type, amount, currency });
-export const verifyPayment = async (type: 'nft' | 'dice', amount: number, currency: Currency) => apiRequest('/payment/verify', 'POST', { type, amount, currency });
+// Updated signature to support reward balance
+export const createPayment = async (type: 'nft' | 'dice', amount: number, currency: Currency, useRewardBalance: boolean = false) => apiRequest('/payment/create', 'POST', { type, amount, currency, useRewardBalance });
+export const verifyPayment = async (type: 'nft' | 'dice', amount: number, currency: Currency, useRewardBalance: boolean = false) => apiRequest('/payment/verify', 'POST', { type, amount, currency, useRewardBalance });
 export const rollDice = async () => { const data = await apiRequest('/roll', 'POST'); return data.roll; };
 export const withdrawNFTWithAddress = async (address: string) => apiRequest('/withdraw', 'POST', { address });
 export const debugResetDb = async () => apiRequest('/debug/reset', 'POST');

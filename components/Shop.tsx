@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Currency } from '../types';
 import { NFT_PRICES, PACK_SIZES } from '../constants';
@@ -7,99 +8,92 @@ import { useTonConnectUI } from '@tonconnect/ui-react';
 
 interface ShopProps {
   onPurchaseComplete: () => void;
+  // Passing user earnings to check balance
+  userBalance: { [key in Currency]: number };
 }
 
-export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
+export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) => {
   const [selectedCurrency, setSelectedCurrency] = useState<Currency>(Currency.TON);
   const [selectedPack, setSelectedPack] = useState<number>(1);
   const [loading, setLoading] = useState(false);
+  const [useRewardBalance, setUseRewardBalance] = useState(false);
   const { t } = useTranslation();
   const [tonConnectUI] = useTonConnectUI();
 
   const handleBuy = async () => {
     setLoading(true);
     try {
-      // 1. Init Payment (Get Invoice or Transaction Params)
-      const paymentData = await createPayment('nft', selectedPack, selectedCurrency);
+      // 1. Init Payment 
+      const paymentData = await createPayment('nft', selectedPack, selectedCurrency, useRewardBalance);
 
-      if (!paymentData.ok) throw new Error("Failed to initiate payment");
+      if (!paymentData.ok) throw new Error(paymentData.error || "Failed to initiate payment");
+      
+      // IF INTERNAL PAYMENT (Reward Balance) -> Skip external wallet
+      if (paymentData.isInternal) {
+           // Direct verification
+           await verifyPayment('nft', selectedPack, selectedCurrency, true);
+           if (window.Telegram?.WebApp?.HapticFeedback) window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+           alert(t('success_purchase', { count: selectedPack }));
+           onPurchaseComplete();
+           setLoading(false);
+           return;
+      }
 
-      // 2. Execute Payment
+      // 2. Execute External Payment
       if (selectedCurrency === Currency.STARS && paymentData.invoiceLink) {
          // --- TELEGRAM STARS ---
          await new Promise<void>((resolve, reject) => {
-             // Detect Mock Link to avoid "Invoice url is invalid" error in WebApp
              const isMock = paymentData.invoiceLink === "https://t.me/$";
-
              if (isMock) {
-                 console.log("Mock Payment Initiated");
-                 // Use a slight delay to simulate network/UI
                  setTimeout(() => {
-                     const confirmed = window.confirm("Mock Payment (Stars): Confirm transaction?");
-                     if (confirmed) resolve(); 
-                     else reject(new Error("Cancelled"));
+                     const confirmed = window.confirm("Mock Payment (Stars): Confirm?");
+                     if (confirmed) resolve(); else reject(new Error("Cancelled"));
                  }, 300);
                  return;
              }
-
              if (window.Telegram?.WebApp) {
                  window.Telegram.WebApp.openInvoice(paymentData.invoiceLink!, (status) => {
-                     if (status === 'paid') {
-                         resolve();
-                     } else {
-                         reject(new Error("Invoice cancelled"));
-                     }
+                     if (status === 'paid') resolve(); else reject(new Error("Invoice cancelled"));
                  });
              } else {
-                 // Fallback for browser testing
-                 const confirmed = confirm("[MOCK] Pay with Stars?");
-                 if (confirmed) resolve(); else reject(new Error("Cancelled"));
+                 if(confirm("[MOCK] Pay with Stars?")) resolve(); else reject(new Error("Cancelled"));
              }
          });
 
       } else if (selectedCurrency !== Currency.STARS && paymentData.transaction) {
-         // --- TON / USDT via TonConnect ---
+         // --- TON / USDT ---
          if (!tonConnectUI.connected) {
-             alert(t('connect_first')); // "Please connect wallet"
+             alert(t('connect_first')); 
              await tonConnectUI.openModal();
-             // Stop here, user needs to connect first
              setLoading(false); 
              return;
          }
-         
-         // Send Transaction to Wallet
          await tonConnectUI.sendTransaction(paymentData.transaction);
       }
 
-      // 3. Verify Payment on Backend
-      await verifyPayment('nft', selectedPack, selectedCurrency);
+      // 3. Verify Payment
+      await verifyPayment('nft', selectedPack, selectedCurrency, false);
       
-      // Success Feedback
       if (window.Telegram?.WebApp?.HapticFeedback) {
         window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
       }
-      
       alert(t('success_purchase', { count: selectedPack }));
       onPurchaseComplete();
 
     } catch (e: any) {
-      if (e.message === 'Cancelled' || e.message === 'Invoice cancelled') {
-          console.log("Payment flow cancelled by user.");
-          return;
-      }
-      
+      if (e.message === 'Cancelled' || e.message === 'Invoice cancelled') return;
       console.error(e);
-      if (window.Telegram?.WebApp?.HapticFeedback) {
-        window.Telegram.WebApp.HapticFeedback.notificationOccurred('error');
-      }
-      alert(t('fail_purchase')); // Or show specific error msg
+      alert(t('fail_purchase') + (e.message ? `: ${e.message}` : '')); 
     } finally {
       setLoading(false);
     }
   };
 
   const pricePerUnit = NFT_PRICES[selectedCurrency];
-  const totalPrice = (pricePerUnit * selectedPack).toFixed(selectedCurrency === Currency.STARS ? 0 : 2);
+  const totalPrice = parseFloat((pricePerUnit * selectedPack).toFixed(selectedCurrency === Currency.STARS ? 0 : 4));
+  
+  const currentBalance = userBalance[selectedCurrency];
+  const canAffordWithRewards = currentBalance >= totalPrice;
 
   return (
     <div className="p-5 space-y-8 pb-44 animate-fade-in">
@@ -133,7 +127,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
           {(Object.values(Currency) as Currency[]).map((curr) => (
             <button
               key={curr}
-              onClick={() => setSelectedCurrency(curr)}
+              onClick={() => { setSelectedCurrency(curr); setUseRewardBalance(false); }}
               className={`relative py-3 rounded-xl text-sm font-bold border transition-all duration-200 ${
                 selectedCurrency === curr
                   ? 'bg-blue-600 border-blue-400 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)] transform -translate-y-1'
@@ -177,6 +171,29 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
         </div>
       </div>
 
+      {/* Payment Method Toggle (Rewards) */}
+      <div className="bg-gray-800/80 p-3 rounded-xl border border-white/5 flex items-center justify-between">
+          <div>
+              <div className="text-xs text-gray-400 font-bold uppercase">{t('referral_earnings')}</div>
+              <div className="text-sm font-bold text-white">
+                  {currentBalance} <span className="text-gray-500">{selectedCurrency}</span>
+              </div>
+          </div>
+          <button 
+             onClick={() => canAffordWithRewards && setUseRewardBalance(!useRewardBalance)}
+             disabled={!canAffordWithRewards}
+             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                 useRewardBalance 
+                 ? 'bg-green-500 text-black border-green-500' 
+                 : canAffordWithRewards 
+                    ? 'bg-gray-700 text-white hover:bg-gray-600 border-gray-600'
+                    : 'bg-gray-800 text-gray-600 border-gray-700 cursor-not-allowed opacity-50'
+             }`}
+          >
+              {useRewardBalance ? '✓ Used' : 'Use Balance'}
+          </button>
+      </div>
+
       {/* Summary & Action */}
       <div className="fixed bottom-[65px] left-0 right-0 p-4 bg-gray-900/95 backdrop-blur-lg border-t border-white/10 z-40 pb-safe">
         <div className="max-w-md mx-auto flex gap-4 items-center">
@@ -192,7 +209,9 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
             className={`flex-[2] py-4 rounded-xl font-bold text-lg shadow-lg transition-all active:scale-95 flex justify-center items-center ${
                 loading 
                     ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
-                    : 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-blue-900/20'
+                    : useRewardBalance
+                        ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-green-900/20'
+                        : 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-blue-900/20'
             }`}
             >
             {loading ? (
@@ -201,7 +220,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete }) => {
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
             ) : (
-                t('purchase_btn')
+                useRewardBalance ? t('pay_with_balance') : t('purchase_btn')
             )}
             </button>
         </div>

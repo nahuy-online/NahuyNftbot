@@ -1,3 +1,4 @@
+
 export enum Currency {
   TON = 'TON',
   USDT = 'USDT',
@@ -15,7 +16,7 @@ export interface LockedNftItem {
   unlockDate: number; // Timestamp
 }
 
-export type TransactionType = 'purchase' | 'win' | 'referral' | 'withdraw';
+export type TransactionType = 'purchase' | 'win' | 'referral' | 'withdraw' | 'referral_reward';
 
 export interface NftTransaction {
   id: string;

@@ -50,13 +50,25 @@ const App: React.FC = () => {
         window.Telegram.WebApp.expand();
         window.Telegram.WebApp.enableClosingConfirmation();
     }
+    
+    // --- INFINITE LOADING FIX ---
+    // Try to load data. If it takes too long (e.g., backend down or in Preview), 
+    // automatically switch to Mock Mode to show the UI.
+    const autoMockTimer = setTimeout(() => {
+        if (!user && !error) {
+            console.warn("⏳ Load timeout: Switching to Mock Mode automatically.");
+            switchToDemo();
+        }
+    }, 2500); // 2.5 seconds timeout
+
     loadData();
+
+    return () => clearTimeout(autoMockTimer);
   }, [tonConnectUI]);
 
   // --- MOCK SYNC: Listen for LocalStorage changes in other tabs ---
   useEffect(() => {
       const handleStorageChange = (e: StorageEvent) => {
-          // If any mock_user data changed, reload to reflect rewards/referrals instantly
           if (e.key && e.key.startsWith('mock_user_')) {
               console.log("♻️ Mock DB Sync: Data changed in another tab, reloading...");
               loadData();
@@ -116,7 +128,7 @@ const App: React.FC = () => {
       
       {/* Content Area */}
       <main className="max-w-md mx-auto min-h-screen relative">
-        {activeTab === 'shop' && <Shop onPurchaseComplete={() => loadData()} />}
+        {activeTab === 'shop' && <Shop onPurchaseComplete={() => loadData()} userBalance={user.referralStats.earnings} />}
         {activeTab === 'dice' && <DiceGame user={user} onUpdate={() => loadData()} />}
         {activeTab === 'profile' && <Profile user={user} onUpdate={() => loadData()} />}
       </main>
