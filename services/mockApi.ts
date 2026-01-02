@@ -108,7 +108,7 @@ const distributeMockRewards = (referrerId: number, totalAmount: number, currency
         // Add transaction record for referrer
         addLocalHistory(referrerId, {
             id: `m_ref_${Date.now()}`,
-            type: 'referral',
+            type: 'referral_reward',
             assetType: 'currency',
             amount: reward,
             currency: currency,
@@ -230,26 +230,28 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
         if (endpoint === '/payment/create') { 
             const { type, amount, currency, useRewardBalance } = payload;
             
-            // Check if paying with rewards
+            const priceConfig = type === 'nft' ? NFT_PRICES : DICE_ATTEMPT_PRICES;
+            const totalCost = (priceConfig[currency as Currency] || 0) * amount;
+            let finalPayAmount = totalCost;
+
+            // PARTIAL PAYMENT LOGIC
             if (useRewardBalance) {
-                const priceConfig = type === 'nft' ? NFT_PRICES : DICE_ATTEMPT_PRICES;
-                const cost = (priceConfig[currency as Currency] || 0) * amount;
+                const currentReward = user.referralStats.earnings[currency as Currency] || 0;
+                // We deduct as much as possible, up to the total cost
+                const deduction = Math.min(currentReward, totalCost);
+                finalPayAmount = totalCost - deduction;
                 
-                if (user.referralStats.earnings[currency as Currency] < cost) {
-                    return { ok: false, error: "Insufficient reward balance" };
+                // If strictly covered by rewards
+                if (finalPayAmount <= 0) {
+                     return { ok: true, isInternal: true };
                 }
-                
-                // Return success immediately for internal payment
-                return { ok: true, isInternal: true };
             }
 
-            // Normal external payment
+            // Generate invoice for the REMAINDER (finalPayAmount)
             if (currency === 'STARS') {
                 return { ok: true, invoiceLink: "https://t.me/$" };
             } else {
-                const priceConfig = type === 'nft' ? NFT_PRICES : DICE_ATTEMPT_PRICES;
-                const total = (priceConfig[currency as Currency] || 0) * amount;
-                const nano = Math.floor(total * 1e9).toString();
+                const nano = Math.floor(finalPayAmount * 1e9).toString();
                 return { 
                     ok: true, 
                     transaction: {
@@ -267,54 +269,63 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
             const { type, amount, currency, useRewardBalance } = payload;
             const isStars = currency === 'STARS';
 
-            // IF Paying with Rewards, deduct balance
+            const priceConfig = type === 'nft' ? NFT_PRICES : DICE_ATTEMPT_PRICES;
+            const totalCost = (priceConfig[currency as Currency] || 0) * amount;
+            let paidFromRewards = 0;
+            let paidFromWallet = totalCost;
+
+            // DEDUCT REWARDS
             if (useRewardBalance) {
-                const priceConfig = type === 'nft' ? NFT_PRICES : DICE_ATTEMPT_PRICES;
-                const cost = (priceConfig[currency as Currency] || 0) * amount;
+                const currentReward = user.referralStats.earnings[currency as Currency] || 0;
+                paidFromRewards = Math.min(currentReward, totalCost);
+                paidFromWallet = totalCost - paidFromRewards;
+
+                // Update Reward Balance
+                user.referralStats.earnings[currency as Currency] -= paidFromRewards;
                 
-                // Double check (backend side validation simulation)
-                if (user.referralStats.earnings[currency as Currency] < cost) {
-                    throw new Error("Insufficient reward balance");
+                if (paidFromRewards > 0) {
+                     addLocalHistory(userId, { 
+                        id: `m_spend_${Date.now()}`, type: 'purchase', assetType: 'currency', 
+                        amount: paidFromRewards, currency: currency, description: `Discount used on ${type}`, 
+                        timestamp: Date.now()
+                    });
                 }
-                
-                user.referralStats.earnings[currency as Currency] -= cost;
-                
-                // Add spending record
-                 addLocalHistory(userId, { 
-                    id: `m_spend_${Date.now()}`, type: 'purchase', assetType: 'currency', 
-                    amount: cost, currency: currency, description: `Spent Rewards on ${type}`, 
-                    timestamp: Date.now()
-                });
             }
 
-             // Update Balance
+             // Update Asset Balance
              if (type === 'nft') {
                  user.nftBalance.total += amount; 
-                 // Items bought with rewards are NOT locked unless currency was Stars (policy optional, let's say rewards are clean)
-                 // Actually, if bought with Stars Rewards, still Stars policy applies? 
-                 // Let's assume Rewards = Clean for simplicity, except Stars might be locked. 
-                 // For now: Reward purchase = No lock.
-                 user.nftBalance.available += amount;
+                 if (isStars && paidFromWallet > 0) {
+                     // If any part was paid with Stars from Wallet -> Lock it
+                     user.nftBalance.locked += amount;
+                     user.nftBalance.lockedDetails.push({
+                         amount: amount,
+                         unlockDate: Date.now() + (21 * 86400000)
+                     });
+                 } else {
+                     user.nftBalance.available += amount;
+                 }
              } else {
                  user.diceBalance.available += amount;
-                 // Reward purchase does not add to "starsAttempts" (locked attempts)
+                 if (isStars && paidFromWallet > 0) {
+                     user.diceBalance.starsAttempts += amount;
+                 }
              }
              
              updateLocalState(user);
 
-             // DISTRIBUTE REWARDS (Only if paid with real money, OR we can decide rewards generate rewards. 
-             // Usually Internal spending DOES NOT generate upline rewards to prevent loop.
-             if (!useRewardBalance && user.referrerId) {
-                 const priceMap = type === 'nft' ? NFT_PRICES : DICE_ATTEMPT_PRICES;
-                 const pricePerUnit = priceMap[currency as Currency] || 0;
-                 const totalSpent = pricePerUnit * amount;
-                 distributeMockRewards(user.referrerId, totalSpent, currency as Currency);
+             // DISTRIBUTE REWARDS (Only on the WALLET portion)
+             // We do not pay referral rewards on the amount paid via rewards (internal points)
+             if (paidFromWallet > 0 && user.referrerId) {
+                 const pricePerUnit = paidFromWallet / amount; // effective price per unit for rewards calc
+                 distributeMockRewards(user.referrerId, paidFromWallet, currency as Currency);
              }
 
              addLocalHistory(userId, { 
                 id: `m_pay_${Date.now()}`, type: 'purchase', assetType: type, 
-                amount: amount, currency: currency, description: `Purchase ${amount} ${type}`, 
-                timestamp: Date.now(), isLocked: false 
+                amount: amount, currency: currency, 
+                description: `Purchase ${amount} ${type} (Wallet: ${paidFromWallet.toFixed(4)})`, 
+                timestamp: Date.now(), isLocked: (isStars && type === 'nft')
             });
 
              return { ok: true }; 

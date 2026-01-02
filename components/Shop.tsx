@@ -28,7 +28,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
 
       if (!paymentData.ok) throw new Error(paymentData.error || "Failed to initiate payment");
       
-      // IF INTERNAL PAYMENT (Reward Balance) -> Skip external wallet
+      // IF FULLY COVERED BY REWARDS -> Skip external wallet
       if (paymentData.isInternal) {
            // Direct verification
            await verifyPayment('nft', selectedPack, selectedCurrency, true);
@@ -39,7 +39,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
            return;
       }
 
-      // 2. Execute External Payment
+      // 2. Execute External Payment (for the remainder)
       if (selectedCurrency === Currency.STARS && paymentData.invoiceLink) {
          // --- TELEGRAM STARS ---
          await new Promise<void>((resolve, reject) => {
@@ -72,7 +72,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
       }
 
       // 3. Verify Payment
-      await verifyPayment('nft', selectedPack, selectedCurrency, false);
+      await verifyPayment('nft', selectedPack, selectedCurrency, useRewardBalance);
       
       if (window.Telegram?.WebApp?.HapticFeedback) {
         window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
@@ -93,7 +93,11 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
   const totalPrice = parseFloat((pricePerUnit * selectedPack).toFixed(selectedCurrency === Currency.STARS ? 0 : 4));
   
   const currentBalance = userBalance[selectedCurrency];
-  const canAffordWithRewards = currentBalance >= totalPrice;
+  const hasSomeBalance = currentBalance > 0;
+  
+  // Calculate Split
+  const discount = useRewardBalance ? Math.min(totalPrice, currentBalance) : 0;
+  const payAmount = parseFloat((totalPrice - discount).toFixed(4));
 
   return (
     <div className="p-5 space-y-8 pb-44 animate-fade-in">
@@ -172,7 +176,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
       </div>
 
       {/* Payment Method Toggle (Rewards) */}
-      <div className="bg-gray-800/80 p-3 rounded-xl border border-white/5 flex items-center justify-between">
+      <div className={`bg-gray-800/80 p-3 rounded-xl border flex items-center justify-between transition-colors ${useRewardBalance ? 'border-green-500/50 bg-green-900/10' : 'border-white/5'}`}>
           <div>
               <div className="text-xs text-gray-400 font-bold uppercase">{t('referral_earnings')}</div>
               <div className="text-sm font-bold text-white">
@@ -180,17 +184,17 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
               </div>
           </div>
           <button 
-             onClick={() => canAffordWithRewards && setUseRewardBalance(!useRewardBalance)}
-             disabled={!canAffordWithRewards}
+             onClick={() => hasSomeBalance && setUseRewardBalance(!useRewardBalance)}
+             disabled={!hasSomeBalance}
              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
                  useRewardBalance 
                  ? 'bg-green-500 text-black border-green-500' 
-                 : canAffordWithRewards 
+                 : hasSomeBalance 
                     ? 'bg-gray-700 text-white hover:bg-gray-600 border-gray-600'
                     : 'bg-gray-800 text-gray-600 border-gray-700 cursor-not-allowed opacity-50'
              }`}
           >
-              {useRewardBalance ? '✓ Used' : 'Use Balance'}
+              {useRewardBalance ? '✓ Apply' : 'Use Balance'}
           </button>
       </div>
 
@@ -199,8 +203,21 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
         <div className="max-w-md mx-auto flex gap-4 items-center">
             <div className="flex-1">
                 <div className="text-xs text-gray-400 uppercase">{t('total')}</div>
-                <div className="text-xl font-bold text-white leading-none">
-                    {totalPrice} <span className="text-sm font-medium text-gray-400">{selectedCurrency}</span>
+                <div className="flex flex-col">
+                    {useRewardBalance && discount > 0 ? (
+                        <>
+                            <div className="text-lg font-bold text-white leading-none">
+                                {payAmount} <span className="text-sm text-gray-400">{selectedCurrency}</span>
+                            </div>
+                            <div className="text-[10px] text-green-400 font-mono">
+                                + {discount} from Bal
+                            </div>
+                        </>
+                    ) : (
+                        <div className="text-xl font-bold text-white leading-none">
+                            {totalPrice} <span className="text-sm font-medium text-gray-400">{selectedCurrency}</span>
+                        </div>
+                    )}
                 </div>
             </div>
             <button
@@ -209,7 +226,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
             className={`flex-[2] py-4 rounded-xl font-bold text-lg shadow-lg transition-all active:scale-95 flex justify-center items-center ${
                 loading 
                     ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
-                    : useRewardBalance
+                    : useRewardBalance && payAmount === 0
                         ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-green-900/20'
                         : 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-blue-900/20'
             }`}
@@ -220,7 +237,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
             ) : (
-                useRewardBalance ? t('pay_with_balance') : t('purchase_btn')
+                useRewardBalance && payAmount === 0 ? t('pay_full_balance') : t('pay_btn_short', { price: payAmount, currency: selectedCurrency })
             )}
             </button>
         </div>

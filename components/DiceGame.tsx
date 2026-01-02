@@ -11,9 +11,7 @@ interface DiceGameProps {
   onUpdate: () => void;
 }
 
-// ... (Effect Components omitted for brevity - reuse previous effects) ...
-// Since I must replace the whole file content, I will include the effects again.
-
+// Reuse previous effects logic
 const getSafeAngle = () => {
     const isRight = Math.random() > 0.5;
     if (isRight) { return (-15 - Math.random() * 60) * (Math.PI / 180); } 
@@ -166,7 +164,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
         const paymentData = await createPayment('dice', selectedPack, selectedCurrency, useRewardBalance);
         if (!paymentData.ok) throw new Error(paymentData.error || "Payment init failed");
 
-        // IF INTERNAL
+        // IF INTERNAL (Full Coverage)
         if (paymentData.isInternal) {
              await verifyPayment('dice', selectedPack, selectedCurrency, true);
              if (window.Telegram?.WebApp?.HapticFeedback) window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
@@ -177,7 +175,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
              return;
         }
 
-        // 2. Execute Payment
+        // 2. Execute Payment (Partial or Full Wallet)
         if (selectedCurrency === Currency.STARS && paymentData.invoiceLink) {
              await new Promise<void>((resolve, reject) => {
                  const isMock = paymentData.invoiceLink === "https://t.me/$";
@@ -209,7 +207,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
         }
 
         // 3. Verify
-        await verifyPayment('dice', selectedPack, selectedCurrency, false);
+        await verifyPayment('dice', selectedPack, selectedCurrency, useRewardBalance);
 
         if (window.Telegram?.WebApp?.HapticFeedback) window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
         alert(t('success_buy_attempts', { count: selectedPack }));
@@ -228,11 +226,15 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
   };
 
   if (view === 'buy') {
-    const price = (DICE_ATTEMPT_PRICES[selectedCurrency] * selectedPack).toFixed(selectedCurrency === Currency.STARS ? 0 : 2);
+    const totalPrice = parseFloat((DICE_ATTEMPT_PRICES[selectedCurrency] * selectedPack).toFixed(selectedCurrency === Currency.STARS ? 0 : 4));
     
     // Check balance for Pay with Rewards
     const currentBalance = user.referralStats.earnings[selectedCurrency];
-    const canAffordWithRewards = currentBalance >= parseFloat(price);
+    const hasSomeBalance = currentBalance > 0;
+    
+    // Calculate Split
+    const discount = useRewardBalance ? Math.min(totalPrice, currentBalance) : 0;
+    const payAmount = parseFloat((totalPrice - discount).toFixed(4));
 
     return (
         <div className="p-5 pb-44 animate-fade-in min-h-full">
@@ -275,7 +277,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
                 </div>
 
                  {/* Payment Method Toggle (Rewards) */}
-                <div className="bg-gray-800/80 p-3 rounded-xl border border-white/5 flex items-center justify-between">
+                <div className={`bg-gray-800/80 p-3 rounded-xl border flex items-center justify-between transition-colors ${useRewardBalance ? 'border-green-500/50 bg-green-900/10' : 'border-white/5'}`}>
                     <div>
                         <div className="text-xs text-gray-400 font-bold uppercase">{t('referral_earnings')}</div>
                         <div className="text-sm font-bold text-white">
@@ -283,17 +285,17 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
                         </div>
                     </div>
                     <button 
-                        onClick={() => canAffordWithRewards && setUseRewardBalance(!useRewardBalance)}
-                        disabled={!canAffordWithRewards}
+                        onClick={() => hasSomeBalance && setUseRewardBalance(!useRewardBalance)}
+                        disabled={!hasSomeBalance}
                         className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
                             useRewardBalance 
                             ? 'bg-green-500 text-black border-green-500' 
-                            : canAffordWithRewards 
+                            : hasSomeBalance 
                                 ? 'bg-gray-700 text-white hover:bg-gray-600 border-gray-600'
                                 : 'bg-gray-800 text-gray-600 border-gray-700 cursor-not-allowed opacity-50'
                         }`}
                     >
-                        {useRewardBalance ? '✓ Used' : 'Use Balance'}
+                        {useRewardBalance ? '✓ Apply' : 'Use Balance'}
                     </button>
                 </div>
 
@@ -301,13 +303,21 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
                     <button
                         onClick={handleBuyAttempts}
                         disabled={buyLoading}
-                        className={`w-full py-4 rounded-xl font-bold text-lg shadow-[0_0_20px_rgba(34,197,94,0.3)] transition-all active:scale-95 disabled:opacity-50 ${
+                        className={`w-full py-4 rounded-xl font-bold text-lg shadow-[0_0_20px_rgba(34,197,94,0.3)] transition-all active:scale-95 disabled:opacity-50 flex flex-col items-center justify-center leading-tight ${
                              useRewardBalance 
                              ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white' 
                              : 'bg-green-500 hover:bg-green-400 text-white'
                         }`}
                     >
-                        {buyLoading ? t('processing') : (useRewardBalance ? t('pay_with_balance') : t('pay_btn', { price, currency: selectedCurrency }))}
+                        {buyLoading ? t('processing') : (
+                            useRewardBalance ? (
+                                payAmount === 0 ? t('pay_full_balance') : 
+                                <>
+                                    <span>{t('pay_btn', { price: payAmount, currency: selectedCurrency })}</span>
+                                    <span className="text-xs opacity-80">+ {discount} from Balance</span>
+                                </>
+                            ) : t('pay_btn', { price: totalPrice, currency: selectedCurrency })
+                        )}
                     </button>
                 </div>
             </div>
