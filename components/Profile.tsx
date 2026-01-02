@@ -134,6 +134,12 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
+  // Helper to limit decimals for display (max 4)
+  const formatCrypto = (val: number) => {
+      if (!val) return 0;
+      return parseFloat(val.toFixed(4));
+  };
+
   const getTxIcon = (type: string, assetType: string) => {
       if (assetType === 'dice') return '🎫';
       switch(type) {
@@ -305,8 +311,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
              </div>
              <div className="flex gap-3 text-xs font-mono font-bold">
                   <span className={`text-yellow-500 ${user.referralStats.bonusBalance.STARS > 0 ? 'animate-pulse' : ''}`}>{user.referralStats.bonusBalance.STARS} ★</span>
-                  <span className="text-blue-400">{user.referralStats.bonusBalance.TON} T</span>
-                  <span className="text-green-400">{user.referralStats.bonusBalance.USDT} $</span>
+                  <span className="text-blue-400">{formatCrypto(user.referralStats.bonusBalance.TON)} T</span>
+                  <span className="text-green-400">{formatCrypto(user.referralStats.bonusBalance.USDT)} $</span>
              </div>
           </div>
       </div>
@@ -363,11 +369,11 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                           <div className="grid grid-cols-2 gap-3">
                               <div className="p-4 rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 border border-white/5 flex flex-col justify-center shadow-lg">
                                   <div className="text-xs text-blue-400 font-bold uppercase mb-1">TON</div>
-                                  <div className="text-lg font-bold text-white">{user.referralStats.bonusBalance.TON}</div>
+                                  <div className="text-lg font-bold text-white">{formatCrypto(user.referralStats.bonusBalance.TON)}</div>
                               </div>
                               <div className="p-4 rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 border border-white/5 flex flex-col justify-center shadow-lg">
                                   <div className="text-xs text-green-400 font-bold uppercase mb-1">USDT</div>
-                                  <div className="text-lg font-bold text-white">{user.referralStats.bonusBalance.USDT}</div>
+                                  <div className="text-lg font-bold text-white">{formatCrypto(user.referralStats.bonusBalance.USDT)}</div>
                               </div>
                           </div>
                           <div className="h-px bg-gray-800 my-2"></div>
