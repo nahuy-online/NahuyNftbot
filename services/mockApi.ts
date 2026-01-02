@@ -87,6 +87,18 @@ const findUserIdByCode = (code: string): number | null => {
     return null;
 };
 
+const getLocalHistory = (userId: number): NftTransaction[] => {
+    const key = `mock_history_${userId}`;
+    const stored = safeStorage.getItem(key);
+    return stored ? JSON.parse(stored) : [];
+};
+
+const addLocalHistory = (userId: number, tx: NftTransaction) => {
+    const hist = getLocalHistory(userId);
+    hist.unshift(tx);
+    safeStorage.setItem(`mock_history_${userId}`, JSON.stringify(hist));
+};
+
 // HELPER: Distribute Rewards to Referrer in Storage
 const distributeMockRewards = (referrerId: number, totalAmount: number, currency: Currency) => {
     const key = `mock_user_${referrerId}`;
@@ -107,7 +119,7 @@ const distributeMockRewards = (referrerId: number, totalAmount: number, currency
         
         // Add transaction record for referrer
         addLocalHistory(referrerId, {
-            id: `m_ref_${Date.now()}`,
+            id: `m_ref_${Date.now()}_${Math.random()}`,
             type: 'referral_reward',
             assetType: 'currency',
             amount: reward,
@@ -120,18 +132,6 @@ const distributeMockRewards = (referrerId: number, totalAmount: number, currency
     } catch (e) {
         console.error("Failed to distribute mock rewards", e);
     }
-};
-
-const getLocalHistory = (userId: number): NftTransaction[] => {
-    const key = `mock_history_${userId}`;
-    const stored = safeStorage.getItem(key);
-    return stored ? JSON.parse(stored) : [];
-};
-
-const addLocalHistory = (userId: number, tx: NftTransaction) => {
-    const hist = getLocalHistory(userId);
-    hist.unshift(tx);
-    safeStorage.setItem(`mock_history_${userId}`, JSON.stringify(hist));
 };
 
 let FORCED_MOCK = false;
@@ -251,7 +251,17 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
             if (currency === 'STARS') {
                 return { ok: true, invoiceLink: "https://t.me/$" };
             } else {
-                const nano = Math.floor(finalPayAmount * 1e9).toString();
+                let nano: string;
+                if (currency === 'USDT') {
+                    // FIX: Real USDT requires a Jetton Transfer (complex body).
+                    // For MOCK/DEMO: Request 0.05 TON as "Gas Fee" to avoid "Insufficient TON" wallet error
+                    // for the full USDT face value.
+                    nano = "50000000"; // 0.05 TON
+                } else {
+                    // Native TON
+                    nano = Math.floor(finalPayAmount * 1e9).toString();
+                }
+
                 return { 
                     ok: true, 
                     transaction: {
@@ -317,7 +327,7 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
              // DISTRIBUTE REWARDS (Only on the WALLET portion)
              // We do not pay referral rewards on the amount paid via rewards (internal points)
              if (paidFromWallet > 0 && user.referrerId) {
-                 const pricePerUnit = paidFromWallet / amount; // effective price per unit for rewards calc
+                 // Use totalCost to determine pricePerUnit? No, simply send X% of wallet contribution.
                  distributeMockRewards(user.referrerId, paidFromWallet, currency as Currency);
              }
 

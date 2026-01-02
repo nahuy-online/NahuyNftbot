@@ -19,7 +19,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   
   // History Modal State
   const [showHistory, setShowHistory] = useState(false);
-  const [historyFilter, setHistoryFilter] = useState<'all' | 'referral'>('all');
+  const [historyFilter, setHistoryFilter] = useState<'assets' | 'rewards'>('assets');
   const [history, setHistory] = useState<NftTransaction[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
@@ -154,7 +154,15 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       { lvl: 1, percent: '7%' }, { lvl: 2, percent: '5%' }, { lvl: 3, percent: '3%' },
   ];
   
-  const filteredHistory = history.filter(tx => historyFilter === 'all' ? true : tx.type === 'referral_reward' || tx.type === 'referral');
+  // Filter logic: 
+  // 'assets' -> Purchase, Win, Withdraw
+  // 'rewards' -> Referral Rewards
+  const filteredHistory = history.filter(tx => {
+      if (historyFilter === 'rewards') {
+          return tx.type === 'referral_reward';
+      }
+      return tx.type === 'purchase' || tx.type === 'win' || tx.type === 'withdraw';
+  });
 
   return (
     <div className="p-5 pb-24 space-y-6 animate-fade-in relative">
@@ -195,7 +203,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       <div>
         <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3 ml-1">{t('assets')}</h3>
         <div className="grid grid-cols-2 gap-3">
-            <div onClick={() => { setHistoryFilter('all'); setShowHistory(true); }}
+            <div onClick={() => { setHistoryFilter('assets'); setShowHistory(true); }}
                 className="bg-gray-800 p-4 rounded-2xl border border-white/5 flex flex-col justify-between h-28 cursor-pointer hover:bg-gray-750 active:scale-95 transition-all relative group">
                 <div className="flex justify-between items-start">
                     <div className="text-gray-400 text-xs font-bold uppercase">{t('total_balance')}</div>
@@ -280,7 +288,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                ))}
           </div>
 
-          <div onClick={() => { setHistoryFilter('referral'); setShowHistory(true); }}
+          <div onClick={() => { setHistoryFilter('rewards'); setShowHistory(true); }}
              className="bg-gradient-to-r from-gray-800 to-gray-900 p-4 rounded-xl border border-white/5 flex justify-between items-center transition-all duration-300 hover:border-white/20 cursor-pointer group">
              <div className="text-xs text-gray-400 flex items-center gap-2">
                  {t('total_rewards')}
@@ -315,7 +323,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                       <span className="bg-blue-500/20 p-1.5 rounded-lg text-blue-400">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
                       </span>
-                      {historyFilter === 'referral' ? t('referral_earnings') : t('tx_history')}
+                      {historyFilter === 'rewards' ? t('referral_earnings') : t('tx_history')}
                   </h2>
                   <button onClick={() => setShowHistory(false)} className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white">
                       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
