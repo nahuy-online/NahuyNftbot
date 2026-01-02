@@ -1,3 +1,4 @@
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -11,7 +12,12 @@ if (!rootElement) {
 }
 
 // 1. Initialize Session (Swap wallet data if user changed)
-initSession();
+// Wrapped in try-catch to prevent crash in AI Studio Preview / restricted iframes
+try {
+  initSession();
+} catch (e) {
+  console.warn("Session init failed (likely due to iframe restrictions):", e);
+}
 
 // Public manifest for demonstration. Replace with your app's manifest URL in production.
 const manifestUrl = 'https://ton-connect.github.io/demo-dapp-with-react-ui/tonconnect-manifest.json';

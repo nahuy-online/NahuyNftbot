@@ -192,7 +192,32 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
         }
 
         if (endpoint === '/history') return getLocalHistory(userId);
-        if (endpoint === '/payment/create') return { ok: true, invoiceLink: "https://t.me/$" };
+        
+        if (endpoint === '/payment/create') { 
+            const { type, amount, currency } = payload;
+            
+            if (currency === 'STARS') {
+                return { ok: true, invoiceLink: "https://t.me/$" };
+            } else {
+                // FIXED: Return a mock transaction for TON/USDT so the wallet modal actually opens!
+                // Using a testnet burn address or dev address
+                const priceConfig = type === 'nft' ? NFT_PRICES : DICE_ATTEMPT_PRICES;
+                const price = priceConfig[currency as Currency] || 0.01;
+                const total = price * amount;
+                const nano = Math.floor(total * 1e9).toString();
+
+                return { 
+                    ok: true, 
+                    transaction: {
+                        validUntil: Math.floor(Date.now() / 1000) + 600,
+                        messages: [{ 
+                            address: "0QBycgJ7cxTLe4Y84HG6tOGQgf-284Es4zJzVJM8R2h1U_av", 
+                            amount: nano 
+                        }]
+                    }
+                };
+            }
+        }
         
         if (endpoint === '/payment/verify') { 
             const { type, amount, currency } = payload;
