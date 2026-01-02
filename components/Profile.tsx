@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { UserProfile, NftTransaction, Currency } from '../types';
 import { withdrawNFTWithAddress, fetchNftHistory, debugResetDb } from '../services/mockApi';
 import { TonConnectButton, useTonAddress } from '@tonconnect/ui-react';
@@ -303,7 +304,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           </div>
       </div>
 
-      {/* Debug */}
       <div className="mt-8 p-4 bg-red-900/20 border border-red-500/30 rounded-xl space-y-3">
           <div className="flex items-center gap-2 mb-2 border-b border-red-500/20 pb-2">
             <span className="text-red-500 text-lg">🛠️</span>
@@ -318,10 +318,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           <button onClick={handleDebugReset} className="w-full mt-2 text-xs font-bold text-white bg-red-600/80 hover:bg-red-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>⚠️</span> WIPE DB & RESET</button>
       </div>
       
-      {/* --- REFACTORED MODAL --- */}
-      {showHistory && (
-          // Use z-[9999] to ensure it's on top of everything. 
-          // h-full ensures it covers the screen.
+      {showHistory && createPortal(
           <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] bg-gray-900 flex flex-col animate-fade-in">
               
               {/* Header with EXTREME top padding for safety on all devices */}
@@ -421,7 +418,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                     )}
                   </div>
               </div>
-          </div>
+          </div>,
+          document.body
       )}
     </div>
   );
