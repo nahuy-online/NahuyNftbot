@@ -139,7 +139,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       switch(type) {
           case 'purchase': return '🛍️';
           case 'win': return '🎲';
-          case 'referral_reward': return '💰'; 
+          case 'referral_reward': 
+          case 'referral': return '💰'; 
           case 'withdraw': return '📤';
           default: return '📄';
       }
@@ -155,13 +156,17 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   ];
   
   // Filter logic: 
-  // 'assets' -> Purchase, Win, Withdraw
-  // 'rewards' -> Referral Rewards
+  // 'rewards' -> Referral Rewards (Include both new 'referral_reward' and legacy 'referral' types)
+  // 'assets' -> Everything else (Purchase, Win, Withdraw)
   const filteredHistory = history.filter(tx => {
+      const isRef = tx.type === 'referral_reward' || tx.type === 'referral';
+      
       if (historyFilter === 'rewards') {
-          return tx.type === 'referral_reward';
+          return isRef;
       }
-      return tx.type === 'purchase' || tx.type === 'win' || tx.type === 'withdraw';
+      // Assets view shows purchases, wins, withdraws. 
+      // It should NOT show incoming referral rewards, as those are in the rewards tab.
+      return !isRef; 
   });
 
   return (
