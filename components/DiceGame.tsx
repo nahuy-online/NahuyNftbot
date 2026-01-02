@@ -272,9 +272,9 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
                  {/* Payment Method Toggle (Bonus) */}
                 <div className={`bg-gray-800/80 p-3 rounded-xl border flex items-center justify-between transition-colors ${useRewardBalance ? 'border-green-500/50 bg-green-900/10' : 'border-white/5'}`}>
                     <div>
-                        <div className="text-xs text-gray-400 font-bold uppercase">{t('referral_bonus')}</div>
+                        <div className="text-xs text-gray-400 font-bold uppercase">{t('bonus_balance')}</div>
                         <div className="text-sm font-bold text-white">
-                            {currentBalance} <span className="text-gray-500">{selectedCurrency}</span>
+                            {parseFloat(currentBalance.toFixed(4))} <span className="text-gray-500">{selectedCurrency}</span>
                         </div>
                     </div>
                     <button 
