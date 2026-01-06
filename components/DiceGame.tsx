@@ -149,6 +149,18 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
             else window.Telegram.WebApp.HapticFeedback.impactOccurred('heavy');
         }
 
+        // --- RESTORED NOTIFICATIONS ---
+        if (result > 0) {
+             setTimeout(() => {
+                 const msg = `🎉 ${t('win_basic')}! +${result} NFT`;
+                 if (window.Telegram?.WebApp?.showAlert) {
+                     window.Telegram.WebApp.showAlert(msg);
+                 } else {
+                     alert(msg);
+                 }
+             }, 500);
+        }
+
     } catch (e) {
         alert(t('error_roll'));
     } finally {
@@ -181,7 +193,6 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
                  try {
                      confirmed = window.confirm("⭐️ Stars Payment (Simulation): Confirm purchase?");
                  } catch (e) {
-                     // If confirm is blocked (e.g. in some iframes), auto-confirm for dev convenience
                      console.warn("Auto-confirming mock payment due to environment restriction.");
                  }
                  if (!confirmed) throw new Error("Cancelled");
