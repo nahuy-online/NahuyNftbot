@@ -365,12 +365,18 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
         if (endpoint === '/debug/seize') {
              const { assetType = 'nft' } = payload;
              const hist = getLocalHistory(userId);
+             console.log(`🔍 DEBUG [Mock]: Seizing ${assetType}. History length: ${hist.length}`);
              
              if (assetType === 'dice') {
                  // Find last active Stars Dice purchase
                  const lastTx = hist.find(x => x.currency === 'STARS' && x.type === 'purchase' && x.assetType === 'dice' && !x.description.includes('Refunded'));
                  
-                 if (!lastTx) return { ok: false, message: "No active Stars DICE purchase to seize (Mock)" };
+                 if (!lastTx) {
+                     console.log("🔍 DEBUG [Mock]: No active Stars DICE purchase found.");
+                     return { ok: false, message: "No active Stars DICE purchase to seize (Mock)" };
+                 }
+
+                 console.log(`🔍 DEBUG [Mock]: Found purchase to refund: ${lastTx.id}, Amount: ${lastTx.amount}`);
 
                  const purchaseAmount = lastTx.amount;
                  const currentStarsAttempts = user.diceBalance.starsAttempts || 0;
@@ -378,6 +384,8 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                  // Calculate used vs unused
                  const unusedAttempts = Math.min(currentStarsAttempts, purchaseAmount);
                  const usedAttempts = purchaseAmount - unusedAttempts;
+                 
+                 console.log(`🔍 DEBUG [Mock]: Purchase ${purchaseAmount}. Available Stars Attempts: ${currentStarsAttempts}. Unused: ${unusedAttempts}, Used: ${usedAttempts}`);
 
                  let seizureLog = `Seized ${unusedAttempts} Unused Attempts`;
 
@@ -389,8 +397,22 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
 
                  // 2. Seize NFTs for USED attempts
                  if (usedAttempts > 0) {
-                     // Find last N wins that were locked (Stars based)
-                     const lockedWins = hist.filter(x => x.type === 'win' && x.isLocked);
+                     // Check existing locked details to exclude already seized items
+                     const alreadySeizedSerials = new Set<number>();
+                     user.nftBalance.lockedDetails.forEach(d => {
+                         if (d.isSeized && d.serials) d.serials.forEach(s => alreadySeizedSerials.add(s));
+                     });
+
+                     // Find last N wins that were locked (Stars based) and NOT ALREADY SEIZED
+                     const lockedWins = hist.filter(x => {
+                         if (x.type !== 'win' || !x.isLocked) return false;
+                         // Ensure this win hasn't been seized already
+                         if (x.serials && x.serials.some(s => alreadySeizedSerials.has(s))) return false;
+                         return true;
+                     });
+
+                     console.log(`🔍 DEBUG [Mock]: Found ${lockedWins.length} potential win transactions to seize.`);
+
                      // Take the top 'usedAttempts'
                      const targetWins = lockedWins.slice(0, usedAttempts);
 
@@ -411,7 +433,10 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                                 !d.isSeized && d.serials && d.serials.some(s => serials.includes(s))
                              );
                              if (detailIdx !== -1) {
+                                 console.log(`🔍 DEBUG [Mock]: Marking LockedDetail index ${detailIdx} as Seized.`);
                                  user.nftBalance.lockedDetails[detailIdx].isSeized = true;
+                             } else {
+                                 console.warn("🔍 DEBUG [Mock]: Could not find corresponding LockedDetail for serials:", serials);
                              }
                          }
                      });
@@ -437,7 +462,7 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                  return { ok: true, message: seizureLog };
 
              } else {
-                 // NFT Seizure Logic (Unchanged)
+                 // NFT Seizure Logic
                  const lastStarTx = hist.find(x => x.currency === 'STARS' && x.type === 'purchase' && x.assetType === 'nft' && !x.description.includes('Refunded'));
                  
                  if (!lastStarTx) return { ok: false, message: "No active Stars NFT purchase to seize (Mock)" };
@@ -445,6 +470,8 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                  const amount = lastStarTx.amount;
                  const serials = lastStarTx.serials || [];
                  
+                 console.log(`🔍 DEBUG [Mock]: Seizing direct NFT purchase. Amount: ${amount}, Serials: ${serials}`);
+
                  // Remove Serials from reserved list
                  if (user.reservedSerials) user.reservedSerials = user.reservedSerials.filter(s => !serials.includes(s));
                  
