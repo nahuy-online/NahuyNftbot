@@ -382,62 +382,119 @@ async function processSeizure(userId, assetType = 'nft') {
         }
 
         const tx = txRes.rows[0];
-        const amount = parseFloat(tx.amount);
+        const purchaseAmount = parseInt(tx.amount);
 
         // --- DICE SEIZURE LOGIC ---
         if (assetType === 'dice') {
-            // Deduct Dice Balances (Floor at 0 to avoid negative attempts for now)
-            await client.query(`
-                UPDATE users 
-                SET dice_available = GREATEST(0, dice_available - $1),
-                    dice_stars_attempts = GREATEST(0, dice_stars_attempts - $1)
-                WHERE id = $2
-            `, [amount, userId]);
+            // Check how many stars attempts user currently has
+            const uRes = await client.query('SELECT dice_stars_attempts, dice_available FROM users WHERE id=$1', [userId]);
+            const currentStarsAttempts = uRes.rows[0].dice_stars_attempts || 0;
+            const currentTotalAttempts = uRes.rows[0].dice_available || 0;
+
+            // How many attempts from this specific purchase are still unused?
+            // We assume LIFO for this logic: the current balance includes the most recently bought stars attempts.
+            const unusedAttempts = Math.min(currentStarsAttempts, purchaseAmount);
+            
+            // How many attempts were used?
+            const usedAttempts = purchaseAmount - unusedAttempts;
+
+            let seizureLog = `Seized ${unusedAttempts} Unused Attempts`;
+
+            // 1. Remove UNUSED attempts from balance
+            if (unusedAttempts > 0) {
+                await client.query(`
+                    UPDATE users 
+                    SET dice_available = GREATEST(0, dice_available - $1),
+                        dice_stars_attempts = GREATEST(0, dice_stars_attempts - $1)
+                    WHERE id = $2
+                `, [unusedAttempts, userId]);
+            }
+
+            // 2. Seize NFTs for USED attempts
+            // We need to find the last N 'win' transactions that were locked (Stars based)
+            if (usedAttempts > 0) {
+                const winsRes = await client.query(`
+                    SELECT * FROM transactions 
+                    WHERE user_id=$1 AND type='win' AND is_locked=TRUE 
+                    ORDER BY created_at DESC 
+                    LIMIT $2
+                `, [userId, usedAttempts]);
+
+                let totalSeizedNFTs = 0;
+                let allSeizedSerials = [];
+
+                for (const winTx of winsRes.rows) {
+                    const serials = winTx.serials || [];
+                    if (serials.length > 0) {
+                        // Mark these NFTs as seized
+                        await client.query(`
+                            UPDATE user_nfts 
+                            SET is_seized = TRUE, source = 'seized' 
+                            WHERE serial_number = ANY($1) AND user_id = $2
+                        `, [serials, userId]);
+
+                        allSeizedSerials.push(...serials);
+                        totalSeizedNFTs += serials.length;
+                    }
+                    // Mark win tx as refunded/seized? (Optional, but good for tracking)
+                    // We just log a seizure tx below.
+                }
+
+                // Deduct NFT totals
+                if (totalSeizedNFTs > 0) {
+                    await client.query(`
+                        UPDATE users 
+                        SET nft_total = GREATEST(0, nft_total - $1),
+                            nft_locked = GREATEST(0, nft_locked - $1)
+                        WHERE id = $2
+                    `, [totalSeizedNFTs, userId]);
+                    
+                    seizureLog += ` AND ${totalSeizedNFTs} NFTs from ${usedAttempts} used attempts (Serials: ${allSeizedSerials.join(',')})`;
+                } else {
+                     seizureLog += ` (Used ${usedAttempts} attempts but won 0 NFTs)`;
+                }
+            }
 
             await client.query(`UPDATE transactions SET is_refunded = TRUE WHERE id = $1`, [tx.id]);
 
             await client.query(`
                 INSERT INTO transactions (user_id, type, asset_type, amount, description)
                 VALUES ($1, 'seizure', 'dice', $2, $3)
-            `, [userId, amount, `Seized Dice Attempts (Refund Tx #${tx.id})`]);
+            `, [userId, purchaseAmount, `${seizureLog} (Refund Tx #${tx.id})`]);
             
             await client.query('COMMIT');
-            return { ok: true, message: `Seized ${amount} Dice Attempts` };
+            return { ok: true, message: seizureLog };
         }
 
-        // --- NFT SEIZURE LOGIC ---
+        // --- NFT SEIZURE LOGIC (Unchanged) ---
         const serials = tx.serials || [];
         if (serials.length === 0) {
             await client.query('ROLLBACK');
             return { ok: false, message: "Transaction has no serials attached." };
         }
 
-        // Mark as seized
         await client.query(`
             UPDATE user_nfts 
             SET is_seized = TRUE, source = 'seized' 
             WHERE serial_number = ANY($1) AND user_id = $2
         `, [serials, userId]);
 
-        // Mark Transaction as Refunded
         await client.query(`UPDATE transactions SET is_refunded = TRUE WHERE id = $1`, [tx.id]);
 
-        // Deduct Balance from User
         await client.query(`
             UPDATE users 
             SET nft_total = GREATEST(0, nft_total - $1), 
                 nft_locked = GREATEST(0, nft_locked - $1) 
             WHERE id = $2
-        `, [amount, userId]);
+        `, [purchaseAmount, userId]);
 
-        // Log Seizure Transaction
         await client.query(`
             INSERT INTO transactions (user_id, type, asset_type, amount, description, serials)
             VALUES ($1, 'seizure', 'nft', $2, $3, $4)
-        `, [userId, amount, `Seized due to Refund (Tx #${tx.id})`, JSON.stringify(serials)]);
+        `, [userId, purchaseAmount, `Seized due to Refund (Tx #${tx.id})`, JSON.stringify(serials)]);
 
         await client.query('COMMIT');
-        return { ok: true, message: `Seized ${amount} NFTs (Serials: ${serials.join(', ')})` };
+        return { ok: true, message: `Seized ${purchaseAmount} NFTs (Serials: ${serials.join(', ')})` };
 
     } catch (e) {
         if(client) await client.query('ROLLBACK');
