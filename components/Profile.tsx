@@ -130,10 +130,11 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       }
   };
 
-  const handleDebugSeizure = async () => {
-      if (confirm("👮 Simulate 'Stars Refund'? This will seize the last locked NFT purchase.")) {
+  const handleDebugSeizure = async (assetType: 'nft' | 'dice') => {
+      const label = assetType === 'nft' ? 'NFT' : 'DICE Attempts';
+      if (confirm(`👮 Simulate 'Stars Refund' for ${label}? This will seize the last locked purchase.`)) {
           try {
-              const res = await debugSeizeAsset();
+              const res = await debugSeizeAsset(assetType);
               if (res.ok) {
                   alert(res.message);
                   onUpdate();
@@ -370,9 +371,12 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
               <div className="text-gray-500">Referred By:</div><div className={`font-bold ${user.referrerId ? "text-green-400" : "text-red-500"}`}>{user.referrerId ? user.referrerId : "none"}</div>
               <div className="text-gray-500 col-span-2 mt-1">Status:</div><div className="col-span-2 bg-black/30 p-1.5 rounded text-yellow-300 break-words">{user.referralDebug || "No debug info"}</div>
           </div>
-          <div className="flex gap-2">
-            <button onClick={handleDebugReset} className="flex-1 text-xs font-bold text-white bg-red-600/80 hover:bg-red-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>⚠️</span> RESET DB</button>
-            <button onClick={handleDebugSeizure} className="flex-1 text-xs font-bold text-white bg-orange-600/80 hover:bg-orange-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>👮</span> SIM REFUND</button>
+          <div className="flex flex-col gap-2">
+            <button onClick={handleDebugReset} className="w-full text-xs font-bold text-white bg-red-600/80 hover:bg-red-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>⚠️</span> RESET DB</button>
+            <div className="flex gap-2">
+                <button onClick={() => handleDebugSeizure('nft')} className="flex-1 text-xs font-bold text-white bg-orange-600/80 hover:bg-orange-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>👮</span> REFUND NFT</button>
+                <button onClick={() => handleDebugSeizure('dice')} className="flex-1 text-xs font-bold text-white bg-purple-600/80 hover:bg-purple-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>👮</span> REFUND DICE</button>
+            </div>
           </div>
       </div>
     </div>
@@ -567,7 +571,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                                                 (tx.currency === Currency.USDT || tx.currency === 'USDT') ? 'bg-green-500/10 text-green-400' : 
                                                 tx.assetType === 'nft' ? 'bg-white/10 text-white' : ''
                                             }`}>
-                                                {tx.currency || (tx.assetType === 'nft' ? 'NFT' : '')}
+                                                {tx.currency || (tx.assetType === 'nft' ? 'NFT' : (tx.assetType === 'dice' ? '🎲' : ''))}
                                             </span>
                                             
                                             {tx.isLocked && <span className="text-yellow-500 text-sm ml-1">*</span>}

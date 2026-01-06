@@ -98,7 +98,7 @@ const initDB = async () => {
                     );
                 `);
                 
-                // Specific NFT Items (The Reservation System)
+                // Specific NFT Items
                 await client.query(`
                     CREATE TABLE IF NOT EXISTS user_nfts (
                         serial_number BIGINT PRIMARY KEY,
@@ -363,46 +363,66 @@ async function handlePurchaseSuccess(userId, type, qty, currency, txHash, useRew
 }
 
 // --- LOGIC FOR REFUND SEIZURE ---
-async function processSeizure(userId) {
+async function processSeizure(userId, assetType = 'nft') {
     let client;
     try {
         client = await pool.connect();
         await client.query('BEGIN');
         
-        // 1. Find last Stars Purchase transaction that hasn't been refunded yet
+        // Find last Stars Purchase transaction matching asset type that hasn't been refunded yet
         const txRes = await client.query(`
             SELECT * FROM transactions 
-            WHERE user_id = $1 AND currency = 'STARS' AND type = 'purchase' AND asset_type = 'nft' AND is_refunded = FALSE 
+            WHERE user_id = $1 AND currency = 'STARS' AND type = 'purchase' AND asset_type = $2 AND is_refunded = FALSE 
             ORDER BY created_at DESC LIMIT 1
-        `, [userId]);
+        `, [userId, assetType]);
 
         if (txRes.rows.length === 0) {
             await client.query('ROLLBACK');
-            return { ok: false, message: "No active Stars NFT purchase found to seize." };
+            return { ok: false, message: `No active Stars ${assetType} purchase found to seize.` };
         }
 
         const tx = txRes.rows[0];
-        const serials = tx.serials || [];
         const amount = parseFloat(tx.amount);
 
+        // --- DICE SEIZURE LOGIC ---
+        if (assetType === 'dice') {
+            // Deduct Dice Balances (Floor at 0 to avoid negative attempts for now)
+            await client.query(`
+                UPDATE users 
+                SET dice_available = GREATEST(0, dice_available - $1),
+                    dice_stars_attempts = GREATEST(0, dice_stars_attempts - $1)
+                WHERE id = $2
+            `, [amount, userId]);
+
+            await client.query(`UPDATE transactions SET is_refunded = TRUE WHERE id = $1`, [tx.id]);
+
+            await client.query(`
+                INSERT INTO transactions (user_id, type, asset_type, amount, description)
+                VALUES ($1, 'seizure', 'dice', $2, $3)
+            `, [userId, amount, `Seized Dice Attempts (Refund Tx #${tx.id})`]);
+            
+            await client.query('COMMIT');
+            return { ok: true, message: `Seized ${amount} Dice Attempts` };
+        }
+
+        // --- NFT SEIZURE LOGIC ---
+        const serials = tx.serials || [];
         if (serials.length === 0) {
             await client.query('ROLLBACK');
             return { ok: false, message: "Transaction has no serials attached." };
         }
 
-        // 2. SEIZE: Mark as seized but Keep ownership so it shows in "Seized" list
-        // We set is_seized = TRUE
+        // Mark as seized
         await client.query(`
             UPDATE user_nfts 
             SET is_seized = TRUE, source = 'seized' 
             WHERE serial_number = ANY($1) AND user_id = $2
         `, [serials, userId]);
 
-        // 3. Mark Transaction as Refunded
+        // Mark Transaction as Refunded
         await client.query(`UPDATE transactions SET is_refunded = TRUE WHERE id = $1`, [tx.id]);
 
-        // 4. Deduct Balance from User
-        // They effectively lose the asset from their "Balance" totals, but it remains in the DB linked to them for history
+        // Deduct Balance from User
         await client.query(`
             UPDATE users 
             SET nft_total = GREATEST(0, nft_total - $1), 
@@ -410,7 +430,7 @@ async function processSeizure(userId) {
             WHERE id = $2
         `, [amount, userId]);
 
-        // 5. Log Seizure Transaction
+        // Log Seizure Transaction
         await client.query(`
             INSERT INTO transactions (user_id, type, asset_type, amount, description, serials)
             VALUES ($1, 'seizure', 'nft', $2, $3, $4)
@@ -699,7 +719,7 @@ app.post('/api/debug/reset', async (req, res) => {
 });
 
 app.post('/api/debug/seize', async (req, res) => {
-    const { id } = req.body;
-    const result = await processSeizure(id);
+    const { id, assetType } = req.body;
+    const result = await processSeizure(id, assetType || 'nft');
     res.json(result);
 });

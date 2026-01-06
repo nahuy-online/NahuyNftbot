@@ -363,42 +363,67 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
         }
         
         if (endpoint === '/debug/seize') {
-             // Mock Seizure Logic
+             const { assetType = 'nft' } = payload;
              const hist = getLocalHistory(userId);
-             const lastStarTx = hist.find(x => x.currency === 'STARS' && x.type === 'purchase' && x.assetType === 'nft' && !x.description.includes('Refunded'));
              
-             if (!lastStarTx) return { ok: false, message: "No active Stars purchase to seize (Mock)" };
-             
-             const amount = lastStarTx.amount;
-             const serials = lastStarTx.serials || [];
-             
-             // Remove Serials from reserved list (so they don't show in "My NFTs" or allow withdraw)
-             if (user.reservedSerials) user.reservedSerials = user.reservedSerials.filter(s => !serials.includes(s));
-             
-             // Deduct Balances
-             user.nftBalance.total = Math.max(0, user.nftBalance.total - amount);
-             user.nftBalance.locked = Math.max(0, user.nftBalance.locked - amount);
-             
-             // UPDATE LockedDetails: Mark as Seized instead of removing
-             // We need to find the specific LockedDetail entry that matches these serials or mostly matches
-             const detailIdx = user.nftBalance.lockedDetails.findIndex(d => 
-                !d.isSeized && d.serials && d.serials.some(s => serials.includes(s))
-             );
-             
-             if (detailIdx !== -1) {
-                 user.nftBalance.lockedDetails[detailIdx].isSeized = true;
+             if (assetType === 'dice') {
+                 // Find last Stars Dice purchase
+                 const lastTx = hist.find(x => x.currency === 'STARS' && x.type === 'purchase' && x.assetType === 'dice' && !x.description.includes('Refunded'));
+                 
+                 if (!lastTx) return { ok: false, message: "No active Stars DICE purchase to seize (Mock)" };
+
+                 const amount = lastTx.amount;
+                 
+                 // Deduct Dice Balance (Allow going negative or floor at 0? Let's floor at 0 for now as per simple logic)
+                 user.diceBalance.available = Math.max(0, user.diceBalance.available - amount);
+                 user.diceBalance.starsAttempts = Math.max(0, user.diceBalance.starsAttempts - amount);
+                 
+                 lastTx.description += " (Refunded)";
+                 safeStorage.setItem(`mock_history_${userId}`, JSON.stringify(hist));
+                 
+                 addLocalHistory(userId, {
+                    id: `m_seize_dice_${Date.now()}`, type: 'seizure' as any, assetType: 'dice', amount: amount, 
+                    description: "Seized Dice Attempts (Refund)", timestamp: Date.now()
+                 });
+                 
+                 updateLocalState(user);
+                 return { ok: true, message: `Mock Seized ${amount} Dice Attempts` };
+
+             } else {
+                 // NFT Seizure Logic
+                 const lastStarTx = hist.find(x => x.currency === 'STARS' && x.type === 'purchase' && x.assetType === 'nft' && !x.description.includes('Refunded'));
+                 
+                 if (!lastStarTx) return { ok: false, message: "No active Stars NFT purchase to seize (Mock)" };
+                 
+                 const amount = lastStarTx.amount;
+                 const serials = lastStarTx.serials || [];
+                 
+                 // Remove Serials from reserved list
+                 if (user.reservedSerials) user.reservedSerials = user.reservedSerials.filter(s => !serials.includes(s));
+                 
+                 // Deduct Balances
+                 user.nftBalance.total = Math.max(0, user.nftBalance.total - amount);
+                 user.nftBalance.locked = Math.max(0, user.nftBalance.locked - amount);
+                 
+                 // Mark Locked Details as Seized
+                 const detailIdx = user.nftBalance.lockedDetails.findIndex(d => 
+                    !d.isSeized && d.serials && d.serials.some(s => serials.includes(s))
+                 );
+                 if (detailIdx !== -1) {
+                     user.nftBalance.lockedDetails[detailIdx].isSeized = true;
+                 }
+
+                 lastStarTx.description += " (Refunded)";
+                 safeStorage.setItem(`mock_history_${userId}`, JSON.stringify(hist));
+
+                 addLocalHistory(userId, {
+                    id: `m_seize_${Date.now()}`, type: 'seizure' as any, assetType: 'nft', amount: amount, 
+                    description: "Seized due to Refund", timestamp: Date.now(), serials: serials
+                 });
+                 
+                 updateLocalState(user);
+                 return { ok: true, message: `Mock Seized ${amount} NFTs` };
              }
-
-             lastStarTx.description += " (Refunded)";
-             safeStorage.setItem(`mock_history_${userId}`, JSON.stringify(hist));
-
-             addLocalHistory(userId, {
-                id: `m_seize_${Date.now()}`, type: 'seizure' as any, assetType: 'nft', amount: amount, 
-                description: "Seized due to Refund", timestamp: Date.now(), serials: serials
-             });
-             
-             updateLocalState(user);
-             return { ok: true, message: `Mock Seized ${amount} NFTs` };
         }
   };
 
@@ -438,4 +463,4 @@ export const verifyPayment = async (type: 'nft' | 'dice', amount: number, curren
 export const rollDice = async () => { const data = await apiRequest('/roll', 'POST'); return data.roll; };
 export const withdrawNFTWithAddress = async (address: string) => apiRequest('/withdraw', 'POST', { address });
 export const debugResetDb = async () => apiRequest('/debug/reset', 'POST');
-export const debugSeizeAsset = async () => apiRequest('/debug/seize', 'POST');
+export const debugSeizeAsset = async (assetType: 'nft' | 'dice' = 'nft') => apiRequest('/debug/seize', 'POST', { assetType });
