@@ -368,13 +368,19 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
              console.log(`🔍 DEBUG [Mock]: Seizing ${assetType}. History length: ${hist.length}`);
              
              if (assetType === 'dice') {
+                 // 1. Find the transaction to refund
                  const lastTx = hist.find(x => x.currency === 'STARS' && x.type === 'purchase' && x.assetType === 'dice' && !x.description.includes('Refunded'));
                  
                  if (!lastTx) {
                      return { ok: false, message: "No active Stars DICE purchase to seize (Mock)" };
                  }
 
+                 // 2. Mark it as refunded and SAVE history IMMEDIATELY so we don't overwrite later additions
                  const purchaseAmount = lastTx.amount;
+                 lastTx.description += " (Refunded)";
+                 safeStorage.setItem(`mock_history_${userId}`, JSON.stringify(hist));
+
+                 // 3. Process Refunds (using addLocalHistory which does read->modify->write on the *fresh* storage)
                  const currentStarsAttempts = user.diceBalance.starsAttempts || 0;
                  
                  // Calculate used vs unused
@@ -383,19 +389,18 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                  
                  console.log(`🔍 DEBUG [Mock]: Purchase ${purchaseAmount}. Unused: ${unusedAttempts}, Used: ${usedAttempts}`);
 
-                 // 1. Remove unused attempts
+                 // A. Remove unused attempts
                  if (unusedAttempts > 0) {
                      user.diceBalance.available = Math.max(0, user.diceBalance.available - unusedAttempts);
                      user.diceBalance.starsAttempts = Math.max(0, user.diceBalance.starsAttempts - unusedAttempts);
                      
-                     // Log 1: Seize Attempts
                      addLocalHistory(userId, {
                         id: `m_seize_dice_${Date.now()}`, type: 'seizure' as any, assetType: 'dice', amount: unusedAttempts, 
-                        description: `Seized Unused Attempts (Refund)`, timestamp: Date.now()
+                        description: `Seized Unused Attempts`, timestamp: Date.now()
                      });
                  }
 
-                 // 2. Seize NFTs for USED attempts
+                 // B. Seize NFTs for USED attempts
                  let totalSeizedNFTs = 0;
                  let seizedSerials: number[] = [];
                  
@@ -405,6 +410,7 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                          if (d.isSeized && d.serials) d.serials.forEach(s => alreadySeizedSerials.add(s));
                      });
 
+                     // Get updated history to check against locked wins (though hist variable is slightly stale regarding new seize events, it's fine for finding old wins)
                      const lockedWins = hist.filter(x => {
                          if (x.type !== 'win' || !x.isLocked) return false;
                          if (x.serials && x.serials.some(s => alreadySeizedSerials.has(s))) return false;
@@ -434,18 +440,14 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                         user.nftBalance.total = Math.max(0, user.nftBalance.total - totalSeizedNFTs);
                         user.nftBalance.locked = Math.max(0, user.nftBalance.locked - totalSeizedNFTs);
                         
-                        // Log 2: Seize NFTs (explicitly)
                         addLocalHistory(userId, {
                             id: `m_seize_win_${Date.now()}`, type: 'seizure' as any, assetType: 'nft', amount: totalSeizedNFTs, 
-                            description: `Seized Winnings from Refunded Dice`, timestamp: Date.now() + 1, serials: seizedSerials
+                            description: `Seized Winnings (Refund)`, timestamp: Date.now() + 1, serials: seizedSerials
                         });
                      }
                  }
                  
-                 lastTx.description += " (Refunded)";
-                 safeStorage.setItem(`mock_history_${userId}`, JSON.stringify(hist));
                  updateLocalState(user);
-                 
                  return { ok: true, message: `Refunded: Seized ${unusedAttempts} attempts and ${totalSeizedNFTs} won NFTs.` };
 
              } else {
@@ -457,6 +459,9 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                  const amount = lastStarTx.amount;
                  const serials = lastStarTx.serials || [];
                  
+                 lastStarTx.description += " (Refunded)";
+                 safeStorage.setItem(`mock_history_${userId}`, JSON.stringify(hist));
+
                  if (user.reservedSerials) user.reservedSerials = user.reservedSerials.filter(s => !serials.includes(s));
                  
                  user.nftBalance.total = Math.max(0, user.nftBalance.total - amount);
@@ -468,9 +473,6 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                  if (detailIdx !== -1) {
                      user.nftBalance.lockedDetails[detailIdx].isSeized = true;
                  }
-
-                 lastStarTx.description += " (Refunded)";
-                 safeStorage.setItem(`mock_history_${userId}`, JSON.stringify(hist));
 
                  addLocalHistory(userId, {
                     id: `m_seize_${Date.now()}`, type: 'seizure' as any, assetType: 'nft', amount: amount, 
