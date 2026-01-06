@@ -39,30 +39,23 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
       }
 
       if (selectedCurrency === Currency.STARS && paymentData.invoiceLink) {
-         const isMock = paymentData.invoiceLink === "https://t.me/$";
-
-         if (isMock) {
-             // Mock Simulation: Use confirm or auto-confirm if blocked
-             let confirmed = true;
-             try {
-                 confirmed = window.confirm("⭐️ Stars Payment (Simulation): Confirm purchase?");
-             } catch (e) {
-                 console.warn("Auto-confirming mock payment due to environment restriction.");
+         await new Promise<void>((resolve, reject) => {
+             const isMock = paymentData.invoiceLink === "https://t.me/$";
+             if (isMock) {
+                 setTimeout(() => {
+                     const confirmed = window.confirm("Mock Payment (Stars): Confirm?");
+                     if (confirmed) resolve(); else reject(new Error("Cancelled"));
+                 }, 300);
+                 return;
              }
-             if (!confirmed) throw new Error("Cancelled");
-             // Fall through to verification
-         } else {
-             // Real Telegram Flow
-             await new Promise<void>((resolve, reject) => {
-                 if (window.Telegram?.WebApp?.openInvoice) {
-                     window.Telegram.WebApp.openInvoice(paymentData.invoiceLink!, (status) => {
-                         if (status === 'paid') resolve(); else reject(new Error("Invoice cancelled"));
-                     });
-                 } else {
-                     reject(new Error("Telegram WebApp not available"));
-                 }
-             });
-         }
+             if (window.Telegram?.WebApp) {
+                 window.Telegram.WebApp.openInvoice(paymentData.invoiceLink!, (status) => {
+                     if (status === 'paid') resolve(); else reject(new Error("Invoice cancelled"));
+                 });
+             } else {
+                 if(confirm("[MOCK] Pay with Stars?")) resolve(); else reject(new Error("Cancelled"));
+             }
+         });
 
       } else if (selectedCurrency !== Currency.STARS && paymentData.transaction) {
          if (!tonConnectUI.connected) {
