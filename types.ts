@@ -14,9 +14,10 @@ export interface PriceConfig {
 export interface LockedNftItem {
   amount: number;
   unlockDate: number; // Timestamp
+  serials?: number[]; // Specific NFT IDs involved in this lock batch
 }
 
-export type TransactionType = 'purchase' | 'win' | 'referral' | 'withdraw' | 'referral_reward';
+export type TransactionType = 'purchase' | 'win' | 'referral' | 'withdraw' | 'referral_reward' | 'seizure';
 
 export interface NftTransaction {
   id: string;
@@ -27,6 +28,7 @@ export interface NftTransaction {
   description: string;
   currency?: Currency; // Currency used for payment (if purchase)
   isLocked?: boolean; // If the resulting NFT is locked (requires *)
+  serials?: number[]; // Specific NFT IDs involved in this transaction
 }
 
 export interface UserProfile {
@@ -42,6 +44,7 @@ export interface UserProfile {
     locked: number; // Summary count
     lockedDetails: LockedNftItem[]; // Specific items with dates
   };
+  reservedSerials?: number[]; // IDs of the NFTs user owns (e.g. 101, 102)
   diceBalance: {
     available: number; // Total available
     starsAttempts: number; // Subset of available that was bought with Stars

@@ -173,22 +173,24 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
 
         if (selectedCurrency === Currency.STARS && paymentData.invoiceLink) {
              await new Promise<void>((resolve, reject) => {
-                 const isMock = paymentData.invoiceLink === "https://t.me/$";
-                 if (isMock) {
-                     setTimeout(() => {
-                         const confirmed = window.confirm("Mock Payment (Stars): Confirm?");
-                         if (confirmed) resolve(); else reject(new Error("Cancelled"));
-                     }, 300);
-                     return;
-                 }
+                 // Check if we have native openInvoice support
+                 const hasNativeInvoice = !!window.Telegram?.WebApp?.openInvoice;
+                 // Check if it's the mock link
+                 const isMockLink = paymentData.invoiceLink === "https://t.me/$";
 
-                 if (window.Telegram?.WebApp) {
-                     window.Telegram.WebApp.openInvoice(paymentData.invoiceLink!, (status) => {
+                 // If we have native support AND it's a real link, use native
+                 if (hasNativeInvoice && !isMockLink && paymentData.invoiceLink) {
+                     window.Telegram.WebApp.openInvoice(paymentData.invoiceLink, (status) => {
                          if (status === 'paid') resolve();
                          else reject(new Error("Invoice cancelled"));
                      });
                  } else {
-                     if(confirm("[MOCK] Pay with Stars?")) resolve(); else reject(new Error("Cancelled"));
+                     // Fallback: Browser Preview or Mock Mode
+                     setTimeout(() => {
+                         const confirmed = window.confirm("⭐️ Stars Mock Payment: Confirm purchase?");
+                         if (confirmed) resolve();
+                         else reject(new Error("Cancelled"));
+                     }, 100);
                  }
              });
         } else if (selectedCurrency !== Currency.STARS && paymentData.transaction) {
@@ -230,7 +232,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
     const payAmount = parseFloat((totalPrice - discount).toFixed(4));
 
     return (
-        <div className="p-5 pb-44 animate-fade-in min-h-full">
+        <div className="p-5 pb-24 animate-fade-in min-h-full">
             <button onClick={() => setView('play')} className="mb-6 px-4 py-2 bg-gray-800 rounded-lg text-sm text-gray-300 hover:text-white flex items-center w-fit transition-colors">
                 {t('back_game')}
             </button>
@@ -269,8 +271,51 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
                 ))}
                 </div>
 
-                 {/* Payment Method Toggle (Bonus) */}
-                <div className={`bg-gray-800/80 p-3 rounded-xl border flex items-center justify-between transition-colors ${useRewardBalance ? 'border-green-500/50 bg-green-900/10' : 'border-white/5'}`}>
+                {/* Total & Pay Button (Shop Layout) */}
+                <div className="flex gap-4 items-center mt-6 pt-4 border-t border-white/5 animate-fade-in">
+                    <div className="flex-1">
+                        <div className="text-xs text-gray-400 uppercase">{t('total')}</div>
+                        <div className="flex flex-col">
+                            {useRewardBalance && discount > 0 ? (
+                                <>
+                                    <div className="text-lg font-bold text-white leading-none">
+                                        {payAmount} <span className="text-sm text-gray-400">{selectedCurrency}</span>
+                                    </div>
+                                    <div className="text-[10px] text-green-400 font-mono">
+                                        + {discount} from Bonus
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="text-xl font-bold text-white leading-none">
+                                    {totalPrice} <span className="text-sm font-medium text-gray-400">{selectedCurrency}</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <button
+                        onClick={handleBuyAttempts}
+                        disabled={buyLoading}
+                        className={`flex-[2] py-4 rounded-xl font-bold text-lg shadow-lg transition-all active:scale-95 flex justify-center items-center ${
+                            buyLoading 
+                                ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
+                                : useRewardBalance && payAmount === 0
+                                    ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-green-900/20'
+                                    : 'bg-green-600 hover:bg-green-500 text-white shadow-green-900/20'
+                        }`}
+                    >
+                        {buyLoading ? (
+                            <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        ) : (
+                            useRewardBalance && payAmount === 0 ? t('pay_full_balance') : t('pay_btn_short', { price: payAmount, currency: selectedCurrency })
+                        )}
+                    </button>
+                </div>
+
+                {/* Bonus Balance Toggle (Below Pay Buttons) */}
+                <div className={`bg-gray-800/80 p-3 rounded-xl border flex items-center justify-between transition-colors mt-2 ${useRewardBalance ? 'border-green-500/50 bg-green-900/10' : 'border-white/5'}`}>
                     <div>
                         <div className="text-xs text-gray-400 font-bold uppercase">{t('bonus_balance')}</div>
                         <div className="text-sm font-bold text-white">
@@ -292,27 +337,6 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
                     </button>
                 </div>
 
-                <div className="fixed bottom-24 left-0 right-0 px-5 max-w-md mx-auto z-40 pb-safe">
-                    <button
-                        onClick={handleBuyAttempts}
-                        disabled={buyLoading}
-                        className={`w-full py-4 rounded-xl font-bold text-lg shadow-[0_0_20px_rgba(34,197,94,0.3)] transition-all active:scale-95 disabled:opacity-50 flex flex-col items-center justify-center leading-tight ${
-                             useRewardBalance 
-                             ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white' 
-                             : 'bg-green-500 hover:bg-green-400 text-white'
-                        }`}
-                    >
-                        {buyLoading ? t('processing') : (
-                            useRewardBalance ? (
-                                payAmount === 0 ? t('pay_full_balance') : 
-                                <>
-                                    <span>{t('pay_btn', { price: payAmount, currency: selectedCurrency })}</span>
-                                    <span className="text-xs opacity-80">+ {discount} from Bonus</span>
-                                </>
-                            ) : t('pay_btn', { price: totalPrice, currency: selectedCurrency })
-                        )}
-                    </button>
-                </div>
             </div>
         </div>
     );

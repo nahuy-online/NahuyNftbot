@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Currency } from '../types';
-import { NFT_PRICES, PACK_SIZES } from '../constants';
+import { NFT_PRICES, PACK_SIZES, GETGEMS_URL } from '../constants';
 import { createPayment, verifyPayment } from '../services/mockApi';
 import { useTranslation } from '../i18n/LanguageContext';
 import { useTonConnectUI } from '@tonconnect/ui-react';
@@ -40,20 +40,21 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
 
       if (selectedCurrency === Currency.STARS && paymentData.invoiceLink) {
          await new Promise<void>((resolve, reject) => {
-             const isMock = paymentData.invoiceLink === "https://t.me/$";
-             if (isMock) {
-                 setTimeout(() => {
-                     const confirmed = window.confirm("Mock Payment (Stars): Confirm?");
-                     if (confirmed) resolve(); else reject(new Error("Cancelled"));
-                 }, 300);
-                 return;
-             }
-             if (window.Telegram?.WebApp) {
-                 window.Telegram.WebApp.openInvoice(paymentData.invoiceLink!, (status) => {
+             // Check for native support
+             const hasNativeInvoice = !!window.Telegram?.WebApp?.openInvoice;
+             // Check if it's the mock link
+             const isMockLink = paymentData.invoiceLink === "https://t.me/$";
+
+             if (hasNativeInvoice && !isMockLink && paymentData.invoiceLink) {
+                 window.Telegram.WebApp.openInvoice(paymentData.invoiceLink, (status) => {
                      if (status === 'paid') resolve(); else reject(new Error("Invoice cancelled"));
                  });
              } else {
-                 if(confirm("[MOCK] Pay with Stars?")) resolve(); else reject(new Error("Cancelled"));
+                 // Fallback for Preview or Mock
+                 setTimeout(() => {
+                     const confirmed = window.confirm("⭐️ Stars Mock Payment: Confirm purchase?");
+                     if (confirmed) resolve(); else reject(new Error("Cancelled"));
+                 }, 100);
              }
          });
 
@@ -84,6 +85,14 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
     }
   };
 
+  const openCollection = () => {
+      if (window.Telegram?.WebApp?.openLink) {
+          window.Telegram.WebApp.openLink(GETGEMS_URL);
+      } else {
+          window.open(GETGEMS_URL, '_blank');
+      }
+  };
+
   const pricePerUnit = NFT_PRICES[selectedCurrency];
   const totalPrice = parseFloat((pricePerUnit * selectedPack).toFixed(selectedCurrency === Currency.STARS ? 0 : 4));
   
@@ -94,7 +103,7 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
   const payAmount = parseFloat((totalPrice - discount).toFixed(4));
 
   return (
-    <div className="p-5 space-y-8 pb-44 animate-fade-in">
+    <div className="p-5 space-y-6 pb-24 animate-fade-in">
       <div className="text-center space-y-2">
         <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-500">
           {t('shop_title')}
@@ -102,24 +111,37 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
         <p className="text-gray-400 text-sm">{t('shop_subtitle')}</p>
       </div>
 
-      <div className="relative mx-auto w-64 h-64">
-        <div className="absolute inset-0 bg-blue-500 rounded-2xl blur-2xl opacity-20 animate-pulse"></div>
-        <div className="relative aspect-square rounded-2xl overflow-hidden shadow-2xl border border-white/10 group">
-            <img 
-                src="https://picsum.photos/600/600?random=8" 
-                alt="NFT Preview" 
-                className="object-cover w-full h-full transform transition-transform duration-700 group-hover:scale-110"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
-            <div className="absolute bottom-3 right-3 bg-white/10 backdrop-blur-md px-3 py-1 rounded-full text-xs font-medium border border-white/20">
-            {t('lazy_mint')}
+      <div>
+        <div className="relative mx-auto w-64 h-64">
+            <div className="absolute inset-0 bg-blue-500 rounded-2xl blur-2xl opacity-20 animate-pulse"></div>
+            <div className="relative aspect-square rounded-2xl overflow-hidden shadow-2xl border border-white/10 group">
+                <img 
+                    src="https://picsum.photos/600/600?random=8" 
+                    alt="NFT Preview" 
+                    className="object-cover w-full h-full transform transition-transform duration-700 group-hover:scale-110"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
+                <div className="absolute bottom-3 right-3 bg-white/10 backdrop-blur-md px-3 py-1 rounded-full text-xs font-medium border border-white/20">
+                {t('lazy_mint')}
+                </div>
             </div>
+        </div>
+        
+        <div className="flex justify-center mt-5">
+            <button 
+                onClick={openCollection}
+                className="flex items-center gap-2 text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors bg-blue-500/10 px-4 py-2 rounded-full border border-blue-500/20 hover:bg-blue-500/20 active:scale-95"
+            >
+                <span>💎</span>
+                {t('collection_btn')}
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </button>
         </div>
       </div>
 
+      {/* Currency Selection - Compact */}
       <div className="space-y-3">
-        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">{t('select_currency')}</label>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-2">
           {(Object.values(Currency) as Currency[]).map((curr) => (
             <button
               key={curr}
@@ -147,14 +169,14 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
         )}
       </div>
 
-      <div className="space-y-3">
-        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">{t('quantity')}</label>
-        <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide snap-x">
+      {/* Quantity Selection - Compact Grid */}
+      <div>
+        <div className="grid grid-cols-4 gap-2">
           {PACK_SIZES.map((size) => (
             <button
               key={size}
               onClick={() => setSelectedPack(size)}
-              className={`flex-1 min-w-[70px] py-4 rounded-xl text-sm font-bold border transition-all duration-200 snap-center ${
+              className={`py-4 rounded-xl text-sm font-bold border transition-all duration-200 ${
                 selectedPack === size
                   ? 'bg-purple-600 border-purple-400 text-white shadow-lg transform -translate-y-1'
                   : 'bg-gray-800/50 border-gray-700 text-gray-400 hover:bg-gray-700'
@@ -166,30 +188,8 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
         </div>
       </div>
 
-      <div className={`bg-gray-800/80 p-3 rounded-xl border flex items-center justify-between transition-colors ${useRewardBalance ? 'border-green-500/50 bg-green-900/10' : 'border-white/5'}`}>
-          <div>
-              <div className="text-xs text-gray-400 font-bold uppercase">{t('bonus_balance')}</div>
-              <div className="text-sm font-bold text-white">
-                  {parseFloat(currentBalance.toFixed(4))} <span className="text-gray-500">{selectedCurrency}</span>
-              </div>
-          </div>
-          <button 
-             onClick={() => hasSomeBalance && setUseRewardBalance(!useRewardBalance)}
-             disabled={!hasSomeBalance}
-             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
-                 useRewardBalance 
-                 ? 'bg-green-500 text-black border-green-500' 
-                 : hasSomeBalance 
-                    ? 'bg-gray-700 text-white hover:bg-gray-600 border-gray-600'
-                    : 'bg-gray-800 text-gray-600 border-gray-700 cursor-not-allowed opacity-50'
-             }`}
-          >
-              {useRewardBalance ? '✓ Apply' : t('pay_with_balance')}
-          </button>
-      </div>
-
-      <div className="fixed bottom-[65px] left-0 right-0 p-4 bg-gray-900/95 backdrop-blur-lg border-t border-white/10 z-40 pb-safe">
-        <div className="max-w-md mx-auto flex gap-4 items-center">
+      {/* Total & Pay Button (Inline) */}
+      <div className="flex gap-4 items-center mt-6 pt-4 border-t border-white/5">
             <div className="flex-1">
                 <div className="text-xs text-gray-400 uppercase">{t('total')}</div>
                 <div className="flex flex-col">
@@ -229,8 +229,31 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
                 useRewardBalance && payAmount === 0 ? t('pay_full_balance') : t('pay_btn_short', { price: payAmount, currency: selectedCurrency })
             )}
             </button>
-        </div>
       </div>
+
+      {/* Balance Payment Toggle (Below Pay Button) */}
+      <div className={`bg-gray-800/80 p-3 rounded-xl border flex items-center justify-between transition-colors mt-2 ${useRewardBalance ? 'border-green-500/50 bg-green-900/10' : 'border-white/5'}`}>
+          <div>
+              <div className="text-xs text-gray-400 font-bold uppercase">{t('bonus_balance')}</div>
+              <div className="text-sm font-bold text-white">
+                  {parseFloat(currentBalance.toFixed(4))} <span className="text-gray-500">{selectedCurrency}</span>
+              </div>
+          </div>
+          <button 
+             onClick={() => hasSomeBalance && setUseRewardBalance(!useRewardBalance)}
+             disabled={!hasSomeBalance}
+             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                 useRewardBalance 
+                 ? 'bg-green-500 text-black border-green-500' 
+                 : hasSomeBalance 
+                    ? 'bg-gray-700 text-white hover:bg-gray-600 border-gray-600'
+                    : 'bg-gray-800 text-gray-600 border-gray-700 cursor-not-allowed opacity-50'
+             }`}
+          >
+              {useRewardBalance ? '✓ Apply' : t('pay_with_balance')}
+          </button>
+      </div>
+
     </div>
   );
 };

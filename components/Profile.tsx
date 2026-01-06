@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserProfile, NftTransaction, Currency } from '../types';
-import { withdrawNFTWithAddress, fetchNftHistory, debugResetDb } from '../services/mockApi';
+import { withdrawNFTWithAddress, fetchNftHistory, debugResetDb, debugSeizeAsset } from '../services/mockApi';
 import { TonConnectButton, useTonAddress } from '@tonconnect/ui-react';
 import { BOT_USERNAME } from '../constants';
 import { useTranslation } from '../i18n/LanguageContext';
@@ -61,7 +61,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       const targetAddress = userFriendlyAddress || user.walletAddress;
 
       if (!targetAddress) {
-          if (window.Telegram?.WebApp) {
+          // showAlert uses showPopup which requires v6.2
+          if (window.Telegram?.WebApp?.isVersionAtLeast?.('6.2')) {
              window.Telegram.WebApp.showAlert(t('please_connect'));
           } else {
              alert(t('connect_first'));
@@ -69,8 +70,10 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           return;
       }
       if (user.nftBalance.available <= 0) {
-          if (window.Telegram?.WebApp) {
+          if (window.Telegram?.WebApp?.isVersionAtLeast?.('6.2')) {
               window.Telegram.WebApp.showAlert(t('no_available'));
+          } else {
+              alert(t('no_available'));
           }
           return;
       }
@@ -106,7 +109,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
         const shareText = t('share_text', { amount: user.nftBalance.total });
         const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(shareText)}`;
 
-        if (window.Telegram?.WebApp?.openTelegramLink) {
+        // openTelegramLink requires v6.1
+        if (window.Telegram?.WebApp?.openTelegramLink && window.Telegram.WebApp.isVersionAtLeast?.('6.1')) {
             window.Telegram.WebApp.openTelegramLink(shareUrl);
         } else {
             window.open(shareUrl, '_blank');
@@ -123,6 +127,22 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           localStorage.clear();
           alert("Database Cleared. Reloading...");
           window.location.reload();
+      }
+  };
+
+  const handleDebugSeizure = async () => {
+      if (confirm("👮 Simulate 'Stars Refund'? This will seize the last locked NFT purchase.")) {
+          try {
+              const res = await debugSeizeAsset();
+              if (res.ok) {
+                  alert(res.message);
+                  onUpdate();
+              } else {
+                  alert("Failed: " + res.message);
+              }
+          } catch (e: any) {
+              alert("Error: " + e.message);
+          }
       }
   };
 
@@ -152,6 +172,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           case 'referral_reward': 
           case 'referral': return '💎'; 
           case 'withdraw': return '📤';
+          case 'seizure': return '👮';
           default: return '📄';
       }
   };
@@ -174,7 +195,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       
       if (historyFilter === 'bonus') return isBonusRelated;
       
-      // Assets History: Everything else (NFT purchases, Dice purchases, Wins, Withdraws)
+      // Assets History: Everything else (NFT purchases, Dice purchases, Wins, Withdraws, Seizures)
       return !isBonusRelated; 
   });
 
@@ -256,6 +277,26 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                 </div>
                 <button onClick={() => onUpdate()} className="text-xs bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg transition-colors text-gray-300">{t('available_btn')}</button>
             </div>
+
+            {/* RESERVED SERIALS - EXPANDED VIEW */}
+            {user.reservedSerials && user.reservedSerials.length > 0 && (
+                <div className="col-span-2 bg-gray-800/60 p-3 rounded-2xl border border-blue-500/20">
+                     <div className="flex justify-between items-center mb-2">
+                        <div className="text-xs font-bold text-blue-400 uppercase tracking-wider">{t('reserved_serials')}</div>
+                        <div className="text-[10px] text-gray-500 font-mono bg-black/20 px-2 py-0.5 rounded">Latest</div>
+                     </div>
+                     <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto scrollbar-hide">
+                         {user.reservedSerials.sort((a,b)=>b-a).slice(0, 12).map((sn) => (
+                             <span key={sn} className="text-xs font-mono font-bold bg-blue-500/10 text-blue-300 px-2 py-1 rounded border border-blue-500/10">
+                                 #{sn}
+                             </span>
+                         ))}
+                         {user.reservedSerials.length > 12 && (
+                             <span className="text-xs font-mono text-gray-500 px-2 py-1">...</span>
+                         )}
+                     </div>
+                </div>
+            )}
         </div>
       </div>
 
@@ -271,8 +312,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
               {withdrawing ? t('withdraw_processing') : t('withdraw_btn')}
           </button>
       </div>
-
-      {/* Removed Inline Vesting Schedule - Moved to Modal */}
 
       {/* Referral Program */}
       <div className="pt-4 border-t border-gray-800 pb-safe">
@@ -324,7 +363,10 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
               <div className="text-gray-500">Referred By:</div><div className={`font-bold ${user.referrerId ? "text-green-400" : "text-red-500"}`}>{user.referrerId ? user.referrerId : "none"}</div>
               <div className="text-gray-500 col-span-2 mt-1">Status:</div><div className="col-span-2 bg-black/30 p-1.5 rounded text-yellow-300 break-words">{user.referralDebug || "No debug info"}</div>
           </div>
-          <button onClick={handleDebugReset} className="w-full mt-2 text-xs font-bold text-white bg-red-600/80 hover:bg-red-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>⚠️</span> WIPE DB & RESET</button>
+          <div className="flex gap-2">
+            <button onClick={handleDebugReset} className="flex-1 text-xs font-bold text-white bg-red-600/80 hover:bg-red-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>⚠️</span> RESET DB</button>
+            <button onClick={handleDebugSeizure} className="flex-1 text-xs font-bold text-white bg-orange-600/80 hover:bg-orange-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>👮</span> SIM REFUND</button>
+          </div>
       </div>
     </div>
       
@@ -387,18 +429,33 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                       <div className="p-4 space-y-3 animate-fade-in">
                         {user.nftBalance.lockedDetails && user.nftBalance.lockedDetails.length > 0 ? (
                             user.nftBalance.lockedDetails.sort((a,b) => a.unlockDate - b.unlockDate).map((item, idx) => (
-                                <div key={idx} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex items-center justify-between active:scale-[0.99] transition-transform">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-xl bg-yellow-500/20 flex items-center justify-center text-sm font-bold text-yellow-500">#{idx+1}</div>
-                                        <div>
-                                            <span className="font-bold text-white block">{t('locked')} NFT</span>
-                                            <span className="text-xs text-gray-500 font-mono">{formatDate(item.unlockDate)}</span>
+                                <div key={idx} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex flex-col gap-3 active:scale-[0.99] transition-transform">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-xl bg-yellow-500/20 flex items-center justify-center text-sm font-bold text-yellow-500">#{idx+1}</div>
+                                            <div>
+                                                <span className="font-bold text-white block">{t('locked')} NFT</span>
+                                                <span className="text-xs text-gray-500 font-mono">{formatDate(item.unlockDate)}</span>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="font-bold text-white text-lg">{item.amount} <span className="text-xs text-gray-400">NFT</span></div>
+                                            <span className="text-yellow-500 font-mono text-[10px] bg-yellow-500/10 px-2 py-0.5 rounded">{formatTimeLeft(item.unlockDate)}</span>
                                         </div>
                                     </div>
-                                    <div className="text-right">
-                                        <div className="font-bold text-white text-lg">{item.amount} <span className="text-xs text-gray-400">NFT</span></div>
-                                        <span className="text-yellow-500 font-mono text-[10px] bg-yellow-500/10 px-2 py-0.5 rounded">{formatTimeLeft(item.unlockDate)}</span>
-                                    </div>
+                                    
+                                    {/* SERIALS LIST FOR THIS BATCH */}
+                                    {item.serials && item.serials.length > 0 && (
+                                        <div className="pt-2 border-t border-white/5">
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {item.serials.map(s => (
+                                                    <span key={s} className="text-[10px] font-mono bg-yellow-500/10 text-yellow-200/70 px-1.5 py-0.5 rounded border border-yellow-500/10">
+                                                        #{s}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             ))
                         ) : (
@@ -425,29 +482,34 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                             </div>
                         ) : (
                             filteredHistory.map((tx) => (
-                                <div key={tx.id} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex items-center justify-between active:scale-[0.99] transition-transform">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shadow-inner ${
-                                            tx.type.includes('referral') 
+                                <div key={tx.id} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex justify-between items-center active:scale-[0.99] transition-transform">
+                                    {/* LEFT SIDE: Icon + Text */}
+                                    <div className="flex items-center gap-3 overflow-hidden">
+                                        <div className={`w-12 h-12 rounded-xl flex-shrink-0 flex items-center justify-center text-xl shadow-inner ${
+                                            tx.type === 'seizure' 
+                                                ? 'bg-red-900/30 text-red-500 border border-red-500/20'
+                                                : tx.type.includes('referral') 
                                                 ? 'bg-purple-900/30 text-purple-400 border border-purple-500/20' 
                                                 : 'bg-gray-700/30 text-gray-300'
                                         }`}>
                                             {getTxIcon(tx.type, tx.assetType)}
                                         </div>
-                                        <div>
-                                            <div className="font-bold text-sm text-white flex flex-col">
-                                                <span>{tx.description}</span>
+                                        <div className="min-w-0">
+                                            <div className="font-bold text-sm text-white truncate">
+                                                {tx.description}
                                             </div>
-                                            <div className="text-[10px] text-gray-500 font-mono mt-0.5">{formatDate(tx.timestamp)}</div>
+                                            <div className="text-[10px] text-gray-500 font-mono mt-0.5 truncate">{formatDate(tx.timestamp)}</div>
                                         </div>
                                     </div>
-                                    <div className="text-right">
+
+                                    {/* RIGHT SIDE: Amount + Serials */}
+                                    <div className="text-right flex flex-col items-end gap-1 flex-shrink-0 ml-2">
                                         <div className={`font-mono font-bold text-base flex items-center justify-end gap-1 ${
-                                            tx.type === 'withdraw' || (tx.type === 'purchase' && tx.assetType === 'currency') 
+                                            tx.type === 'seizure' || tx.type === 'withdraw' || (tx.type === 'purchase' && tx.assetType === 'currency') 
                                                 ? 'text-red-400' 
                                                 : 'text-green-400'
                                         }`}>
-                                            {tx.type === 'withdraw' || (tx.type === 'purchase' && tx.assetType === 'currency') ? '-' : '+'}{tx.amount}
+                                            {tx.type === 'seizure' || tx.type === 'withdraw' || (tx.type === 'purchase' && tx.assetType === 'currency') ? '-' : '+'}{tx.amount}
                                             
                                             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
                                                 tx.currency === Currency.STARS ? 'bg-yellow-500/10 text-yellow-500' : 
@@ -458,9 +520,24 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                                                 {tx.currency || (tx.assetType === 'nft' ? 'NFT' : '')}
                                             </span>
                                             
-                                            {/* RE-ENABLE ASTERISK FOR LOCKED ITEMS */}
                                             {tx.isLocked && <span className="text-yellow-500 text-sm ml-1">*</span>}
                                         </div>
+                                        
+                                        {/* Serials in Right Column */}
+                                        {tx.serials && tx.serials.length > 0 && (
+                                            <div className="flex flex-wrap justify-end gap-1 max-w-[140px]">
+                                                {tx.serials.slice(0, 8).map(s => (
+                                                    <span key={s} className="text-[10px] font-mono bg-white/5 text-gray-400 px-1.5 rounded border border-white/5">
+                                                        #{s}
+                                                    </span>
+                                                ))}
+                                                {tx.serials.length > 8 && (
+                                                    <span className="text-[10px] font-mono text-gray-500 px-1">
+                                                        ...
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             ))

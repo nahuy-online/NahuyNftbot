@@ -1,10 +1,13 @@
+
 interface Window {
   Telegram?: {
     WebApp: {
       ready: () => void;
       expand: () => void;
       enableClosingConfirmation: () => void;
+      isVersionAtLeast: (version: string) => boolean;
       showAlert: (message: string) => void;
+      openLink: (url: string, options?: { try_instant_view?: boolean }) => void;
       openTelegramLink: (url: string) => void;
       openInvoice: (url: string, callback?: (status: 'paid' | 'cancelled' | 'failed' | 'pending') => void) => void;
       HapticFeedback: {

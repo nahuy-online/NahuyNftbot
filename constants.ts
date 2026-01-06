@@ -1,7 +1,9 @@
+
 import { PriceConfig } from './types';
 
 // Replace with your actual bot username without @
 export const BOT_USERNAME = 'nahuy_NFT_bot'; 
+export const GETGEMS_URL = 'https://getgems.io/';
 
 // Prices per 1 Item (NFT or Attempt)
 export const NFT_PRICES: PriceConfig = {

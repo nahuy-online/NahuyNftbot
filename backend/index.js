@@ -60,6 +60,8 @@ const initDB = async () => {
             
             try {
                 await client.query('BEGIN');
+                
+                // Users Table
                 await client.query(`
                     CREATE TABLE IF NOT EXISTS users (
                         id BIGINT PRIMARY KEY,
@@ -78,6 +80,7 @@ const initDB = async () => {
                     );
                 `);
                 
+                // Transactions Table
                 await client.query(`
                     CREATE TABLE IF NOT EXISTS transactions (
                         id SERIAL PRIMARY KEY,
@@ -88,17 +91,24 @@ const initDB = async () => {
                         currency TEXT,
                         description TEXT,
                         is_locked BOOLEAN DEFAULT FALSE,
+                        is_refunded BOOLEAN DEFAULT FALSE,
                         tx_hash TEXT UNIQUE,
+                        serials JSONB DEFAULT '[]'::jsonb,
                         created_at TIMESTAMP DEFAULT NOW()
                     );
                 `);
                 
+                // Specific NFT Items (The Reservation System)
+                // serial_number is the unique NFT ID #1, #2, etc.
                 await client.query(`
-                    CREATE TABLE IF NOT EXISTS locked_nfts (
-                        id SERIAL PRIMARY KEY,
+                    CREATE TABLE IF NOT EXISTS user_nfts (
+                        serial_number BIGINT PRIMARY KEY,
                         user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
-                        amount INT,
-                        unlock_date BIGINT
+                        is_locked BOOLEAN DEFAULT FALSE,
+                        is_withdrawn BOOLEAN DEFAULT FALSE,
+                        unlock_date BIGINT DEFAULT 0,
+                        source TEXT, -- 'shop', 'dice', 'seized'
+                        created_at TIMESTAMP DEFAULT NOW()
                     );
                 `);
 
@@ -110,7 +120,9 @@ const initDB = async () => {
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS ref_rewards_usdt NUMERIC(18, 2) DEFAULT 0",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS dice_stars_attempts INT DEFAULT 0",
                     "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT FALSE",
-                    "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS tx_hash TEXT UNIQUE"
+                    "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_refunded BOOLEAN DEFAULT FALSE",
+                    "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS tx_hash TEXT UNIQUE",
+                    "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS serials JSONB DEFAULT '[]'::jsonb"
                 ];
 
                 for (const q of alterQueries) {
@@ -171,6 +183,11 @@ if (BOT_TOKEN) {
             };
             bot.sendMessage(chatId, "Welcome! Tap below to enter.", opts).catch(e => console.error("SendMsg Error", e));
         });
+        
+        // --- REAL REFUND HANDLER (WEBHOOK SIMULATION) ---
+        // In a real production app, you would listen for 'pre_checkout_query' or specific update types
+        // regarding 'refunded_payment'. Since we are in a container, we just mock the logic in endpoints.
+        
         app.locals.bot = bot;
         console.log("✅ Telegram Bot Initialized");
     } catch (e) {
@@ -254,6 +271,26 @@ async function payReward(client, recipientId, totalPurchaseAmount, currency, lev
     `, [recipientId, reward, currency, `Lvl ${levelIdx + 1} Reward`]);
 }
 
+async function reserveNfts(client, userId, quantity, isLocked, source) {
+    await client.query('LOCK TABLE user_nfts IN EXCLUSIVE MODE');
+    
+    const maxRes = await client.query('SELECT MAX(serial_number) as max_sn FROM user_nfts');
+    let startSn = (parseInt(maxRes.rows[0].max_sn) || 0) + 1;
+    
+    const unlockDate = isLocked ? Date.now() + (21 * 86400000) : 0;
+    const serialList = [];
+    
+    for (let i = 0; i < quantity; i++) {
+        const sn = startSn + i;
+        serialList.push(sn);
+        await client.query(
+            `INSERT INTO user_nfts (serial_number, user_id, is_locked, unlock_date, source) VALUES ($1, $2, $3, $4, $5)`,
+            [sn, userId, isLocked, unlockDate, source]
+        );
+    }
+    return serialList; 
+}
+
 async function handlePurchaseSuccess(userId, type, qty, currency, txHash, useRewardBalance, paidFromRewards, paidFromWallet) {
     if (!isDbReady) return false;
     let client;
@@ -265,13 +302,14 @@ async function handlePurchaseSuccess(userId, type, qty, currency, txHash, useRew
 
         const isStars = (currency === 'STARS');
         const isLocked = isStars; 
+        let reservedSerials = [];
 
         // 1. Update Assets
         if (type === 'nft') {
+            reservedSerials = await reserveNfts(client, userId, qty, isLocked, 'shop');
+
             if (isStars) {
-                 const unlock = Date.now() + (21 * 86400000);
                  await client.query('UPDATE users SET nft_total=nft_total+$1, nft_locked=nft_locked+$1 WHERE id=$2', [qty, userId]);
-                 await client.query('INSERT INTO locked_nfts (user_id, amount, unlock_date) VALUES ($1, $2, $3)', [userId, qty, unlock]);
             } else {
                  await client.query('UPDATE users SET nft_total=nft_total+$1, nft_available=nft_available+$1 WHERE id=$2', [qty, userId]);
             }
@@ -282,7 +320,7 @@ async function handlePurchaseSuccess(userId, type, qty, currency, txHash, useRew
             }
         }
 
-        // 2. Deduct Rewards (If used)
+        // 2. Deduct Rewards
         if (paidFromRewards > 0) {
             let colName = 'ref_rewards_ton';
             if (currency === 'STARS') colName = 'ref_rewards_stars';
@@ -290,15 +328,13 @@ async function handlePurchaseSuccess(userId, type, qty, currency, txHash, useRew
             
             await client.query(`UPDATE users SET ${colName} = ${colName} - $1 WHERE id = $2`, [paidFromRewards, userId]);
             
-            // Record spending transaction
             await client.query(`
                 INSERT INTO transactions (user_id, type, asset_type, amount, currency, description)
                 VALUES ($1, 'purchase', 'currency', $2, $3, $4)
             `, [userId, paidFromRewards, currency, `Spent on ${type}`]);
         }
 
-        // 3. Record Main Purchase Transaction
-        // Format description for split payment
+        // 3. Record Main Tx
         let desc = `Purchase ${qty} ${type}`;
         if (paidFromRewards > 0) {
             desc += ` (Wallet: ${paidFromWallet}, Bonus: ${paidFromRewards})`;
@@ -306,12 +342,14 @@ async function handlePurchaseSuccess(userId, type, qty, currency, txHash, useRew
             desc += ` (Wallet: ${paidFromWallet})`;
         }
 
-        await client.query(`
-            INSERT INTO transactions (user_id, type, asset_type, amount, currency, description, is_locked, tx_hash)
-            VALUES ($1, 'purchase', $2, $3, $4, $5, $6, $7)
-        `, [userId, type, qty, currency, desc, isLocked, txHash]);
+        const serialsJson = reservedSerials.length > 0 ? JSON.stringify(reservedSerials) : '[]';
 
-        // 4. Distribute Rewards (Only on Wallet Part)
+        await client.query(`
+            INSERT INTO transactions (user_id, type, asset_type, amount, currency, description, is_locked, tx_hash, serials)
+            VALUES ($1, 'purchase', $2, $3, $4, $5, $6, $7, $8)
+        `, [userId, type, qty, currency, desc, isLocked, txHash, serialsJson]);
+
+        // 4. Distribute Rewards
         if (paidFromWallet > 0) {
             await distributeRewards(client, userId, paidFromWallet, currency);
         }
@@ -322,6 +360,71 @@ async function handlePurchaseSuccess(userId, type, qty, currency, txHash, useRew
         if(client) await client.query('ROLLBACK');
         console.error("Purchase Error:", e);
         return false;
+    } finally {
+        if(client) client.release();
+    }
+}
+
+// --- LOGIC FOR REFUND SEIZURE ---
+async function processSeizure(userId) {
+    let client;
+    try {
+        client = await pool.connect();
+        await client.query('BEGIN');
+        
+        // 1. Find last Stars Purchase transaction that hasn't been refunded yet
+        const txRes = await client.query(`
+            SELECT * FROM transactions 
+            WHERE user_id = $1 AND currency = 'STARS' AND type = 'purchase' AND asset_type = 'nft' AND is_refunded = FALSE 
+            ORDER BY created_at DESC LIMIT 1
+        `, [userId]);
+
+        if (txRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return { ok: false, message: "No active Stars NFT purchase found to seize." };
+        }
+
+        const tx = txRes.rows[0];
+        const serials = tx.serials || [];
+        const amount = parseFloat(tx.amount); // NFT count
+
+        if (serials.length === 0) {
+            await client.query('ROLLBACK');
+            return { ok: false, message: "Transaction has no serials attached." };
+        }
+
+        // 2. SEIZE: Transfer Ownership to Treasury (ID 0)
+        // We set user_id = 0, keep is_locked = true (or false depending on treasury policy), set source = 'seized'
+        await client.query(`
+            UPDATE user_nfts 
+            SET user_id = 0, source = 'seized' 
+            WHERE serial_number = ANY($1) AND user_id = $2
+        `, [serials, userId]);
+
+        // 3. Mark Transaction as Refunded
+        await client.query(`UPDATE transactions SET is_refunded = TRUE WHERE id = $1`, [tx.id]);
+
+        // 4. Deduct Balance from Scammer
+        // Since they were bought with Stars, they were likely added to 'nft_locked' and 'nft_total'
+        await client.query(`
+            UPDATE users 
+            SET nft_total = GREATEST(0, nft_total - $1), 
+                nft_locked = GREATEST(0, nft_locked - $1) 
+            WHERE id = $2
+        `, [amount, userId]);
+
+        // 5. Log Seizure Transaction
+        await client.query(`
+            INSERT INTO transactions (user_id, type, asset_type, amount, description, serials)
+            VALUES ($1, 'seizure', 'nft', $2, $3, $4)
+        `, [userId, amount, `Seized due to Refund (Tx #${tx.id})`, JSON.stringify(serials)]);
+
+        await client.query('COMMIT');
+        return { ok: true, message: `Seized ${amount} NFTs (Serials: ${serials.join(', ')})` };
+
+    } catch (e) {
+        if(client) await client.query('ROLLBACK');
+        return { ok: false, message: e.message };
     } finally {
         if(client) client.release();
     }
@@ -375,7 +478,17 @@ app.post('/api/auth', async (req, res) => {
         const l1 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id = $1', [id]);
         const l2 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id = $1)', [id]);
         const l3 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id = $1))', [id]);
-        const locks = await client.query('SELECT amount, unlock_date FROM locked_nfts WHERE user_id = $1', [id]);
+        
+        // Get Locked Details from user_nfts (Aggregating Serials)
+        const locks = await client.query(`
+            SELECT COUNT(*) as amount, unlock_date, array_agg(serial_number) as serials 
+            FROM user_nfts 
+            WHERE user_id = $1 AND is_locked = TRUE AND is_withdrawn = FALSE 
+            GROUP BY unlock_date
+        `, [id]);
+        
+        // Get Reserved Serials (Limited to last 50)
+        const serials = await client.query('SELECT serial_number FROM user_nfts WHERE user_id = $1 AND is_withdrawn = FALSE ORDER BY serial_number DESC LIMIT 50', [id]);
 
         res.json({
             id: String(user.id),
@@ -388,8 +501,13 @@ app.post('/api/auth', async (req, res) => {
                 total: user.nft_total || 0,
                 available: user.nft_available || 0,
                 locked: user.nft_locked || 0,
-                lockedDetails: locks.rows.map(r => ({ amount: r.amount, unlockDate: parseInt(r.unlock_date) }))
+                lockedDetails: locks.rows.map(r => ({ 
+                    amount: parseInt(r.amount), 
+                    unlockDate: parseInt(r.unlock_date),
+                    serials: r.serials || [] 
+                }))
             },
+            reservedSerials: serials.rows.map(r => parseInt(r.serial_number)),
             diceBalance: {
                 available: user.dice_available || 0,
                 starsAttempts: user.dice_stars_attempts || 0
@@ -398,7 +516,6 @@ app.post('/api/auth', async (req, res) => {
                 level1: parseInt(l1.rows[0].count),
                 level2: parseInt(l2.rows[0].count),
                 level3: parseInt(l3.rows[0].count),
-                // Map ref_rewards_* to bonusBalance
                 bonusBalance: {
                     STARS: user.ref_rewards_stars || 0,
                     TON: parseFloat(user.ref_rewards_ton || 0),
@@ -437,18 +554,20 @@ app.post('/api/roll', async (req, res) => {
             await client.query('UPDATE users SET dice_stars_attempts=dice_stars_attempts-1 WHERE id=$1', [id]);
         }
 
+        let reservedSerials = [];
         if (win > 0) {
+            reservedSerials = await reserveNfts(client, id, win, isStars, 'dice');
+
             if (isStars) {
-                const unlock = Date.now() + (21 * 86400000);
                 await client.query('UPDATE users SET nft_total=nft_total+$1, nft_locked=nft_locked+$1 WHERE id=$2', [win, id]);
-                await client.query('INSERT INTO locked_nfts (user_id, amount, unlock_date) VALUES ($1, $2, $3)', [id, win, unlock]);
             } else {
                 await client.query('UPDATE users SET nft_total=nft_total+$1, nft_available=nft_available+$1 WHERE id=$2', [win, id]);
             }
             
+            const serialsJson = JSON.stringify(reservedSerials);
             await client.query(
-                "INSERT INTO transactions (user_id, type, asset_type, amount, description, is_locked) VALUES ($1, 'win', 'nft', $2, $3, $4)", 
-                [id, win, `Rolled ${roll}`, isStars]
+                "INSERT INTO transactions (user_id, type, asset_type, amount, description, is_locked, serials) VALUES ($1, 'win', 'nft', $2, $3, $4, $5)", 
+                [id, win, `Rolled ${roll}`, isStars, serialsJson]
             );
         }
         await client.query('COMMIT');
@@ -464,8 +583,6 @@ app.post('/api/roll', async (req, res) => {
 app.post('/api/payment/create', async (req, res) => {
     try {
         const { type, amount, currency } = req.body;
-        // Calculation is handled on verification mainly, but needed here for invoice
-        // Simplified invoice logic for brevity in this snippet
         res.json({ ok: true, invoiceLink: "https://t.me/$" }); 
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -475,34 +592,18 @@ app.post('/api/payment/create', async (req, res) => {
 app.post('/api/payment/verify', async (req, res) => {
     try {
         const { id, type, amount, currency, useRewardBalance } = req.body;
-        // In real backend, we'd recalculate costs here securely
-        const priceConfig = type === 'nft' ? PRICES.nft : PRICES.dice;
-        const totalCost = priceConfig[currency] * amount;
         
-        let paidFromRewards = 0;
-        let paidFromWallet = totalCost;
-        
-        // This requires fetching user balance first in a real scenario
-        // For this hybrid/mock wrapper, we trust the logic inside handlePurchaseSuccess
-        // We will pass the split assuming the frontend sent valid data or calc it inside handlePurchaseSuccess.
-        // Let's modify handlePurchaseSuccess to accept split info? 
-        // Or better: Re-fetch user in handlePurchaseSuccess and calc split there.
-        // For now, let's assume the frontend logic is mirrored or we trust the calc for this demo.
-        
-        // Actually, let's just do a simple pass through.
-        // NOTE: In a real app, calculate split server-side.
-        if (useRewardBalance) {
-             // We'd query DB for balance. 
-             // Simplification: Assume handled by `handlePurchaseSuccess` properly if we move logic there.
-             // But `handlePurchaseSuccess` needs to know how much to deduct.
-        }
-        
-        // To properly support the request, I need to fetch the user here to calc deduction.
         const client = await pool.connect();
         const uRes = await client.query('SELECT ref_rewards_stars, ref_rewards_ton, ref_rewards_usdt FROM users WHERE id=$1', [id]);
         client.release();
         
         const user = uRes.rows[0];
+        const priceConfig = type === 'nft' ? PRICES.nft : PRICES.dice;
+        const totalCost = priceConfig[currency] * amount;
+        
+        let paidFromRewards = 0;
+        let paidFromWallet = totalCost;
+
         let balance = 0;
         if (currency === 'STARS') balance = user.ref_rewards_stars;
         else if (currency === 'TON') balance = parseFloat(user.ref_rewards_ton);
@@ -527,8 +628,15 @@ app.get('/api/history', async (req, res) => {
         try {
             const r = await client.query('SELECT * FROM transactions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 20', [id]);
             res.json(r.rows.map(x => ({
-                id: x.id, type: x.type, amount: x.amount, description: x.description, 
-                timestamp: new Date(x.created_at).getTime(), currency: x.currency, isLocked: x.is_locked, assetType: x.asset_type
+                id: x.id, 
+                type: x.type, 
+                amount: x.amount, 
+                description: x.description, 
+                timestamp: new Date(x.created_at).getTime(), 
+                currency: x.currency, 
+                isLocked: x.is_locked, 
+                assetType: x.asset_type,
+                serials: x.serials || [] 
             })));
         } finally { client.release(); }
     } catch (e) { res.json([]); }
@@ -543,8 +651,25 @@ app.post('/api/withdraw', async (req, res) => {
         const u = await client.query('SELECT nft_available FROM users WHERE id=$1 FOR UPDATE', [id]);
         if (u.rows[0].nft_available <= 0) throw new Error("No funds");
         
+        const nfts = await client.query(`
+            SELECT serial_number FROM user_nfts 
+            WHERE user_id = $1 AND is_withdrawn = FALSE AND is_locked = FALSE 
+            LIMIT $2
+            FOR UPDATE
+        `, [id, u.rows[0].nft_available]);
+        
+        const serialsToWithdraw = nfts.rows.map(r => parseInt(r.serial_number));
+        if (serialsToWithdraw.length > 0) {
+            await client.query('UPDATE user_nfts SET is_withdrawn = TRUE WHERE serial_number = ANY($1)', [serialsToWithdraw]);
+        }
+
         await client.query('UPDATE users SET nft_available=0, nft_total=nft_total-$1 WHERE id=$2', [u.rows[0].nft_available, id]);
-        await client.query("INSERT INTO transactions (user_id, type, asset_type, amount, description) VALUES ($1, 'withdraw', 'nft', $2, $3)", [id, u.rows[0].nft_available, `Withdraw to ${address}`]);
+        
+        const serialsJson = JSON.stringify(serialsToWithdraw);
+        await client.query(
+            "INSERT INTO transactions (user_id, type, asset_type, amount, description, serials) VALUES ($1, 'withdraw', 'nft', $2, $3, $4, $5)", 
+            [id, u.rows[0].nft_available, `Withdraw to ${address}`, serialsJson]
+        );
         
         await client.query('COMMIT');
         res.json({ ok: true });
@@ -560,11 +685,17 @@ app.post('/api/debug/reset', async (req, res) => {
     let client;
     try {
         client = await pool.connect();
-        await client.query('TRUNCATE users, transactions, locked_nfts RESTART IDENTITY CASCADE');
+        await client.query('TRUNCATE users, transactions, user_nfts RESTART IDENTITY CASCADE');
         res.json({ ok: true });
     } catch(e) {
         res.status(500).json({error: e.message});
     } finally {
         if(client) client.release();
     }
+});
+
+app.post('/api/debug/seize', async (req, res) => {
+    const { id } = req.body;
+    const result = await processSeizure(id);
+    res.json(result);
 });
