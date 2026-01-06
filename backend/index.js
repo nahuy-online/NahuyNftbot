@@ -389,15 +389,13 @@ async function processSeizure(userId, assetType = 'nft') {
 
         // --- DICE SEIZURE LOGIC ---
         if (assetType === 'dice') {
-            // Check how many stars attempts user currently has
             const uRes = await client.query('SELECT dice_stars_attempts, dice_available FROM users WHERE id=$1', [userId]);
             const currentStarsAttempts = uRes.rows[0].dice_stars_attempts || 0;
-            const currentTotalAttempts = uRes.rows[0].dice_available || 0;
-
-            // How many attempts from this specific purchase are still unused?
+            
+            // Unused attempts = what's left on balance (max cap by purchase amount)
             const unusedAttempts = Math.min(currentStarsAttempts, purchaseAmount);
             
-            // How many attempts were used?
+            // Used attempts = what was bought but not currently on balance
             const usedAttempts = purchaseAmount - unusedAttempts;
 
             console.log(`🔍 DEBUG [Backend]: Unused: ${unusedAttempts}, Used: ${usedAttempts}`);
@@ -412,30 +410,18 @@ async function processSeizure(userId, assetType = 'nft') {
                         dice_stars_attempts = GREATEST(0, dice_stars_attempts - $1)
                     WHERE id = $2
                 `, [unusedAttempts, userId]);
+                
+                // Add explicit transaction for Dice seizure
+                await client.query(`
+                    INSERT INTO transactions (user_id, type, asset_type, amount, description)
+                    VALUES ($1, 'seizure', 'dice', $2, $3)
+                `, [userId, unusedAttempts, `Seized Unused Attempts (Refund Tx #${tx.id})`]);
             }
 
             // 2. Seize NFTs for USED attempts
             if (usedAttempts > 0) {
                 // Find wins that are locked and NOT already seized
-                // We check against user_nfts table to ensure we pick serials that aren't seized
-                const winsRes = await client.query(`
-                    SELECT t.* 
-                    FROM transactions t
-                    WHERE t.user_id=$1 AND t.type='win' AND t.is_locked=TRUE 
-                    AND EXISTS (
-                        SELECT 1 FROM user_nfts un 
-                        WHERE un.user_id = t.user_id 
-                        AND un.is_seized = FALSE 
-                        -- Check intersection of serials. This relies on JSON serials in tx matching user_nfts
-                        -- Simplification: Just find wins created after the purchase? 
-                        -- Or simpler: LIFO on locked, non-seized wins.
-                    )
-                    ORDER BY t.created_at DESC 
-                    LIMIT $2
-                `, [userId, usedAttempts]);
-                
-                // Fallback if SQL complexity above is too much for quick fix: 
-                // Select *all* locked wins, then filter in code against user_nfts status
+                // Logic fallback: Get recent locked wins
                 const allLockedWins = await client.query(`
                    SELECT * FROM transactions WHERE user_id=$1 AND type='win' AND is_locked=TRUE ORDER BY created_at DESC
                 `, [userId]);
@@ -450,12 +436,9 @@ async function processSeizure(userId, assetType = 'nft') {
                     const serials = winTx.serials || [];
                     if (serials.length === 0) continue;
 
-                    // Check if these are already seized
+                    // Check if these are already seized in user_nfts
                     const checkSeized = await client.query(`SELECT count(*) FROM user_nfts WHERE serial_number=ANY($1) AND is_seized=TRUE`, [serials]);
-                    if (parseInt(checkSeized.rows[0].count) > 0) {
-                        console.log(`🔍 DEBUG [Backend]: Skipping win tx ${winTx.id}, already seized.`);
-                        continue;
-                    }
+                    if (parseInt(checkSeized.rows[0].count) > 0) continue;
 
                     // Seize them
                     await client.query(`
@@ -478,18 +461,17 @@ async function processSeizure(userId, assetType = 'nft') {
                         WHERE id = $2
                     `, [totalSeizedNFTs, userId]);
                     
-                    seizureLog += ` AND ${totalSeizedNFTs} NFTs (Serials: ${allSeizedSerials.join(',')})`;
-                } else {
-                     seizureLog += ` (Used ${usedAttempts} attempts but won 0 NFTs or wins already seized)`;
+                    seizureLog += ` and ${totalSeizedNFTs} NFTs`;
+                    
+                    // Add separate transaction for NFT seizure so it appears in history as -X NFT
+                    await client.query(`
+                        INSERT INTO transactions (user_id, type, asset_type, amount, description, serials)
+                        VALUES ($1, 'seizure', 'nft', $2, $3, $4)
+                    `, [userId, totalSeizedNFTs, `Seized Winnings (Refund Dice Tx #${tx.id})`, JSON.stringify(allSeizedSerials)]);
                 }
             }
 
             await client.query(`UPDATE transactions SET is_refunded = TRUE WHERE id = $1`, [tx.id]);
-
-            await client.query(`
-                INSERT INTO transactions (user_id, type, asset_type, amount, description)
-                VALUES ($1, 'seizure', 'dice', $2, $3)
-            `, [userId, purchaseAmount, `${seizureLog} (Refund Tx #${tx.id})`]);
             
             await client.query('COMMIT');
             return { ok: true, message: seizureLog };
