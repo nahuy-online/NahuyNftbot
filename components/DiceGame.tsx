@@ -11,6 +11,7 @@ interface DiceGameProps {
   onUpdate: () => void;
 }
 
+// --- VISUAL EFFECTS ---
 const getSafeAngle = () => {
     const isRight = Math.random() > 0.5;
     if (isRight) { return (-15 - Math.random() * 60) * (Math.PI / 180); } 
@@ -172,27 +173,33 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
         }
 
         if (selectedCurrency === Currency.STARS && paymentData.invoiceLink) {
-             await new Promise<void>((resolve, reject) => {
-                 // Check if we have native openInvoice support
-                 const hasNativeInvoice = !!window.Telegram?.WebApp?.openInvoice;
-                 // Check if it's the mock link
-                 const isMockLink = paymentData.invoiceLink === "https://t.me/$";
-
-                 // If we have native support AND it's a real link, use native
-                 if (hasNativeInvoice && !isMockLink && paymentData.invoiceLink) {
-                     window.Telegram.WebApp.openInvoice(paymentData.invoiceLink, (status) => {
-                         if (status === 'paid') resolve();
-                         else reject(new Error("Invoice cancelled"));
-                     });
-                 } else {
-                     // Fallback: Browser Preview or Mock Mode
-                     setTimeout(() => {
-                         const confirmed = window.confirm("⭐️ Stars Mock Payment: Confirm purchase?");
-                         if (confirmed) resolve();
-                         else reject(new Error("Cancelled"));
-                     }, 100);
+             const isMock = paymentData.invoiceLink === "https://t.me/$";
+             
+             if (isMock) {
+                 // Direct Mock Simulation
+                 let confirmed = true;
+                 try {
+                     confirmed = window.confirm("⭐️ Stars Payment (Simulation): Confirm purchase?");
+                 } catch (e) {
+                     // If confirm is blocked (e.g. in some iframes), auto-confirm for dev convenience
+                     console.warn("Auto-confirming mock payment due to environment restriction.");
                  }
-             });
+                 if (!confirmed) throw new Error("Cancelled");
+                 // Proceed to verify
+             } else {
+                 // Real Telegram Flow
+                 await new Promise<void>((resolve, reject) => {
+                     if (window.Telegram?.WebApp?.openInvoice) {
+                         window.Telegram.WebApp.openInvoice(paymentData.invoiceLink!, (status) => {
+                             if (status === 'paid') resolve();
+                             else reject(new Error("Invoice cancelled"));
+                         });
+                     } else {
+                         reject(new Error("Telegram WebApp not available"));
+                     }
+                 });
+             }
+             
         } else if (selectedCurrency !== Currency.STARS && paymentData.transaction) {
              if (!tonConnectUI.connected) {
                  alert(t('connect_first'));
@@ -232,11 +239,11 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
     const payAmount = parseFloat((totalPrice - discount).toFixed(4));
 
     return (
-        <div className="p-5 pb-24 animate-fade-in min-h-full">
-            <button onClick={() => setView('play')} className="mb-6 px-4 py-2 bg-gray-800 rounded-lg text-sm text-gray-300 hover:text-white flex items-center w-fit transition-colors">
+        <div className="p-5 pb-24 animate-fade-in min-h-full flex flex-col items-center">
+            <button onClick={() => setView('play')} className="mb-6 px-4 py-2 bg-gray-800 rounded-lg text-sm text-gray-300 hover:text-white flex items-center w-fit transition-colors self-start">
                 {t('back_game')}
             </button>
-            <div className="space-y-6">
+            <div className="space-y-6 w-full max-w-sm">
                 <div className="text-center">
                     <h2 className="text-2xl font-bold mb-1">{t('get_attempts')}</h2>
                     <p className="text-gray-400 text-sm">{t('buy_attempts_desc')}</p>
@@ -271,7 +278,7 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
                 ))}
                 </div>
 
-                {/* Total & Pay Button (Shop Layout) */}
+                {/* Total & Pay Button */}
                 <div className="flex gap-4 items-center mt-6 pt-4 border-t border-white/5 animate-fade-in">
                     <div className="flex-1">
                         <div className="text-xs text-gray-400 uppercase">{t('total')}</div>
@@ -314,7 +321,6 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
                     </button>
                 </div>
 
-                {/* Bonus Balance Toggle (Below Pay Buttons) */}
                 <div className={`bg-gray-800/80 p-3 rounded-xl border flex items-center justify-between transition-colors mt-2 ${useRewardBalance ? 'border-green-500/50 bg-green-900/10' : 'border-white/5'}`}>
                     <div>
                         <div className="text-xs text-gray-400 font-bold uppercase">{t('bonus_balance')}</div>
@@ -342,84 +348,102 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
     );
   }
 
-  const getWinAmount = (roll: number) => roll;
-  const getResultConfig = (roll: number) => {
-      if (roll === 6) return { bg: 'bg-gradient-to-r from-yellow-600 to-amber-500', border: 'border-yellow-300', shadow: 'shadow-[0_0_30px_rgba(250,204,21,0.5)]', text: t('win_jackpot'), subtext: t('win_legendary'), Effect: FireworksEffect, icon: '👑', iconAnim: 'animate-bounce' };
-      if (roll === 5) return { bg: 'bg-gradient-to-r from-purple-600 to-pink-500', border: 'border-pink-300', shadow: 'shadow-[0_0_25px_rgba(236,72,153,0.5)]', text: t('win_amazing'), subtext: t('win_epic'), Effect: ConfettiEffect, icon: '🎉', iconAnim: 'animate-spin-slow' };
-      if (roll === 4) return { bg: 'bg-gradient-to-r from-blue-600 to-cyan-500', border: 'border-cyan-300', shadow: 'shadow-[0_0_20px_rgba(6,182,212,0.5)]', text: t('win_great'), subtext: t('win_rare'), Effect: SparklesEffect, icon: '✨', iconAnim: 'animate-pulse' };
-      if (roll === 3) return { bg: 'bg-gradient-to-r from-green-600 to-emerald-600', border: 'border-green-400', shadow: 'shadow-[0_0_15px_rgba(74,222,128,0.3)]', text: t('win_basic'), subtext: t('win_nice'), Effect: null, icon: '🎲', iconAnim: 'animate-pulse' };
-      if (roll === 2) return { bg: 'bg-gradient-to-r from-green-600 to-emerald-600', border: 'border-green-400', shadow: 'shadow-[0_0_15px_rgba(74,222,128,0.3)]', text: t('win_basic'), subtext: t('win_2_sub'), Effect: null, icon: '🎲', iconAnim: 'animate-pulse' };
-      return { bg: 'bg-gradient-to-r from-green-600 to-emerald-600', border: 'border-green-400', shadow: 'shadow-[0_0_15px_rgba(74,222,128,0.3)]', text: t('win_basic'), subtext: t('win_1_sub'), Effect: null, icon: '🎲', iconAnim: 'animate-pulse' };
-  };
-
-  const resultConfig = lastRoll ? getResultConfig(lastRoll) : null;
-  const winAmount = lastRoll ? getWinAmount(lastRoll) : 0;
-
+  // GAME VIEW - Centered Flex Column (Standard Layout)
   return (
-    <div className="p-4 flex flex-col items-center justify-center min-h-[75vh] pb-24 relative overflow-hidden">
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-64 h-64 bg-green-500/10 rounded-full blur-3xl pointer-events-none"></div>
-
-      <div className="text-center mb-8 z-10">
-        <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white to-gray-500 mb-2 italic">{t('lucky_dice')}</h1>
-        <p className="text-gray-400 font-medium">{t('roll_slogan')}</p>
+    <div className="flex flex-col items-center justify-center min-h-[85vh] p-5 pb-24 relative overflow-hidden">
+      
+      {/* BACKGROUND EFFECTS (Z-0) */}
+      {lastRoll === 6 && <FireworksEffect />}
+      {lastRoll === 5 && <ConfettiEffect />}
+      {lastRoll === 4 && <SparklesEffect />}
+      
+      {/* HEADER - CENTERED */}
+      <div className="z-10 text-center mb-8">
+          <h1 className="text-3xl font-black italic tracking-tighter text-white drop-shadow-[0_2px_10px_rgba(255,255,255,0.2)]">
+              {t('lucky_dice')}
+          </h1>
+          <p className="text-sm font-bold text-blue-400 uppercase tracking-widest opacity-80 mt-1">{t('roll_slogan')}</p>
       </div>
 
-      <div className="flex flex-col items-center w-full max-w-xs z-10">
-          <div className="scene mb-8">
-            <div className="cube" style={{ transform: `translateZ(-50px) rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)` }}>
-                {[1,2,3,4,5,6].map(i => <div key={i} className={`cube-face face-${i}`}><div className="dot-container">{renderDots(i)}</div></div>)}
-            </div>
+      {/* 3D DICE SCENE */}
+      <div className="scene z-20 mb-10">
+          <div className="cube" style={{ 
+              transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)` 
+          }}>
+              <div className="cube-face face-1"><div className="dot-container">{renderDots(1)}</div></div>
+              <div className="cube-face face-2"><div className="dot-container">{renderDots(2)}</div></div>
+              <div className="cube-face face-3"><div className="dot-container">{renderDots(3)}</div></div>
+              <div className="cube-face face-4"><div className="dot-container">{renderDots(4)}</div></div>
+              <div className="cube-face face-5"><div className="dot-container">{renderDots(5)}</div></div>
+              <div className="cube-face face-6"><div className="dot-container">{renderDots(6)}</div></div>
           </div>
+      </div>
+
+      {/* RESULT TEXT */}
+      <div className="h-20 flex flex-col items-center justify-center z-20 mb-2">
+          {rolling ? (
+              <div className="text-xl font-black text-gray-500 tracking-[0.2em] animate-pulse">{t('rolling')}</div>
+          ) : lastRoll ? (
+              <div className="text-center animate-pop-in">
+                  <div className={`text-4xl font-black drop-shadow-lg ${
+                      lastRoll === 6 ? 'text-yellow-400' : 
+                      lastRoll === 5 ? 'text-purple-400' : 
+                      lastRoll === 4 ? 'text-blue-400' : 
+                      lastRoll === 3 ? 'text-green-400' : 'text-gray-300'
+                  }`}>
+                      {lastRoll === 6 ? t('win_jackpot') : 
+                       lastRoll === 5 ? t('win_legendary') : 
+                       lastRoll === 4 ? t('win_epic') : 
+                       lastRoll === 3 ? t('win_great') : 
+                       lastRoll === 2 ? t('win_basic') : t('win_nice')}
+                  </div>
+                  <div className="text-sm font-bold text-white/50 mt-1">
+                       {lastRoll === 6 ? t('win_amazing') : 
+                        lastRoll === 5 ? t('win_great') : 
+                        lastRoll === 4 ? t('win_rare') : 
+                        lastRoll === 3 ? t('win_basic') : 
+                        lastRoll === 2 ? t('win_2_sub') : t('win_1_sub')}
+                  </div>
+                  {lastRoll > 0 && (
+                      <div className="mt-2 text-xs font-mono text-green-400 bg-green-900/20 px-3 py-1 rounded-full border border-green-500/20">
+                          +{lastRoll} NFT Won!
+                      </div>
+                  )}
+              </div>
+          ) : (
+              <div className="text-gray-500 font-medium">{t('good_luck')}</div>
+          )}
+      </div>
+
+      {/* ACTION BUTTON & INFO */}
+      <div className="w-full max-w-[220px] z-20 flex flex-col items-center gap-4">
+          <button 
+            onClick={handleRoll} 
+            disabled={rolling}
+            className={`w-full py-4 rounded-xl font-black text-xl shadow-xl transition-all transform active:scale-95 ${
+                rolling 
+                ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                : 'bg-white text-black hover:bg-gray-200 relative overflow-hidden'
+            }`}
+          >
+              {user.diceBalance.available > 0 && !rolling && (
+                  <div className="shimmer"></div>
+              )}
+              {rolling ? t('wait_btn') : t('roll_btn')}
+          </button>
           
-          <div className="h-24 mb-10 w-full flex items-center justify-center relative">
-             {lastRoll && !rolling && resultConfig ? (
-                <div className="relative w-full flex justify-center items-center animate-pop-in">
-                    {resultConfig.Effect && <resultConfig.Effect />}
-                    <div className={`relative z-10 flex items-center gap-4 px-6 py-4 rounded-2xl border ${resultConfig.bg} ${resultConfig.border} ${resultConfig.shadow} text-white transition-all duration-300 w-[90%] justify-center min-h-[86px]`}>
-                        <span className={`text-4xl filter drop-shadow-md ${resultConfig.iconAnim} leading-none flex items-center`}>{resultConfig.icon}</span>
-                        <div className="flex flex-col items-start">
-                            <span className="text-[10px] uppercase font-bold tracking-widest opacity-90">{resultConfig.subtext}</span>
-                            <div className="flex items-baseline gap-1.5">
-                                <span className="text-2xl font-black italic tracking-wide whitespace-nowrap">{resultConfig.text}</span>
-                                {winAmount > 0 && <span className="text-sm font-bold bg-white/20 px-1.5 rounded">+{winAmount} NFT</span>}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-             ) : rolling ? (
-                 <div className="text-green-400/80 font-mono font-medium tracking-widest animate-pulse flex flex-col items-center">
-                    <span>{t('rolling')}</span>
-                    <span className="text-xs opacity-50 mt-1">{t('good_luck')}</span>
-                 </div>
-             ) : (
-                 <div className="text-gray-600 text-sm font-medium">{t('test_luck')}</div>
-             )}
+          <div className="w-full bg-gray-800/50 p-3 rounded-xl border border-white/5 flex items-center justify-between">
+              <span className="text-xs text-gray-400 uppercase font-bold">{t('attempts_left')}</span>
+              <span className={`text-xl font-black ${user.diceBalance.available > 0 ? 'text-green-400' : 'text-red-500'}`}>
+                  {user.diceBalance.available}
+              </span>
           </div>
 
-          <div className="w-full space-y-4">
-            <button onClick={handleRoll} disabled={rolling}
-                className={`w-full py-5 rounded-2xl font-bold text-xl shadow-xl transition-all active:scale-95 border border-white/5 relative overflow-hidden group ${
-                    rolling ? 'bg-gray-700 cursor-wait' : 'bg-white text-black hover:bg-gray-100'
-                }`}>
-                <span className="relative z-10">{rolling ? t('wait_btn') : t('roll_btn')}</span>
-                {!rolling && <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-500"></div>}
-            </button>
-
-            <div className="flex justify-between items-center bg-gray-800/50 px-5 py-3 rounded-xl border border-white/5">
-                <span className="text-gray-400 text-sm font-medium">{t('attempts_left')}</span>
-                <span className={`font-mono font-bold text-lg ${user.diceBalance.available === 0 ? 'text-red-400' : 'text-green-400'}`}>
-                    {user.diceBalance.available}
-                </span>
-            </div>
-
-            {user.diceBalance.available === 0 && (
-                <button onClick={() => setView('buy')}
-                    className="w-full py-3 rounded-xl font-medium text-sm text-green-400 border border-green-500/30 bg-green-500/10 hover:bg-green-500/20 transition-colors">
-                    {t('buy_more_btn')}
-                </button>
-            )}
-          </div>
+          <button onClick={() => setView('buy')} className="w-full py-3 bg-green-600/20 border border-green-500/30 text-green-400 rounded-xl font-bold text-sm hover:bg-green-600/30 transition-colors">
+              {t('buy_more_btn')}
+          </button>
       </div>
+
     </div>
   );
 };

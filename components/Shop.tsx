@@ -39,24 +39,30 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
       }
 
       if (selectedCurrency === Currency.STARS && paymentData.invoiceLink) {
-         await new Promise<void>((resolve, reject) => {
-             // Check for native support
-             const hasNativeInvoice = !!window.Telegram?.WebApp?.openInvoice;
-             // Check if it's the mock link
-             const isMockLink = paymentData.invoiceLink === "https://t.me/$";
+         const isMock = paymentData.invoiceLink === "https://t.me/$";
 
-             if (hasNativeInvoice && !isMockLink && paymentData.invoiceLink) {
-                 window.Telegram.WebApp.openInvoice(paymentData.invoiceLink, (status) => {
-                     if (status === 'paid') resolve(); else reject(new Error("Invoice cancelled"));
-                 });
-             } else {
-                 // Fallback for Preview or Mock
-                 setTimeout(() => {
-                     const confirmed = window.confirm("⭐️ Stars Mock Payment: Confirm purchase?");
-                     if (confirmed) resolve(); else reject(new Error("Cancelled"));
-                 }, 100);
+         if (isMock) {
+             // Mock Simulation: Use confirm or auto-confirm if blocked
+             let confirmed = true;
+             try {
+                 confirmed = window.confirm("⭐️ Stars Payment (Simulation): Confirm purchase?");
+             } catch (e) {
+                 console.warn("Auto-confirming mock payment due to environment restriction.");
              }
-         });
+             if (!confirmed) throw new Error("Cancelled");
+             // Fall through to verification
+         } else {
+             // Real Telegram Flow
+             await new Promise<void>((resolve, reject) => {
+                 if (window.Telegram?.WebApp?.openInvoice) {
+                     window.Telegram.WebApp.openInvoice(paymentData.invoiceLink!, (status) => {
+                         if (status === 'paid') resolve(); else reject(new Error("Invoice cancelled"));
+                     });
+                 } else {
+                     reject(new Error("Telegram WebApp not available"));
+                 }
+             });
+         }
 
       } else if (selectedCurrency !== Currency.STARS && paymentData.transaction) {
          if (!tonConnectUI.connected) {
