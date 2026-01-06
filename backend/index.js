@@ -8,6 +8,8 @@ const { Pool } = pkg;
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import { TonClient, WalletContractV4, internal, beginCell } from "@ton/ton";
+import { mnemonicToPrivateKey } from "@ton/crypto";
 
 process.on('uncaughtException', (err) => {
     console.error('💥 UNCAUGHT EXCEPTION:', err);
@@ -28,6 +30,37 @@ app.use(cors());
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const WEBAPP_URL = "https://t.me/nahuy_NFT_bot/start"; 
+const ADMIN_IDS = (process.env.ADMIN_IDS || "").split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+
+// --- TON CONFIGURATION ---
+const ENABLE_CHAIN = process.env.ENABLE_CHAIN === 'true'; // Set to 'true' in .env to enable real minting
+const COLLECTION_ADDRESS = process.env.COLLECTION_ADDRESS; // Your NFT Collection Address
+const MNEMONIC = process.env.MNEMONIC; // Admin Wallet Mnemonic (24 words)
+const METADATA_BASE_URL = process.env.METADATA_BASE_URL || "https://nft.example.com/meta/"; 
+
+let tonClient = null;
+let adminWallet = null;
+let adminKey = null;
+
+async function initTon() {
+    if (!ENABLE_CHAIN || !MNEMONIC) {
+        console.log("ℹ️ Blockchain interaction disabled (Mock Mode only). Set ENABLE_CHAIN=true and MNEMONIC in .env");
+        return;
+    }
+    try {
+        // Connect to TON Mainnet (or testnet if configured)
+        const endpoint = await import("@ton/ton").then(m => "https://toncenter.com/api/v2/jsonRPC"); 
+        tonClient = new TonClient({ endpoint });
+        
+        adminKey = await mnemonicToPrivateKey(MNEMONIC.split(" "));
+        adminWallet = WalletContractV4.create({ workchain: 0, publicKey: adminKey.publicKey });
+        console.log(`✅ TON Wallet Initialized: ${adminWallet.address.toString()}`);
+    } catch (e) {
+        console.error("⚠️ Failed to init TON Client:", e.message);
+    }
+}
+initTon();
+
 let isDbReady = false;
 let dbInitError = null; 
 
@@ -169,10 +202,66 @@ app.listen(PORT, '0.0.0.0', () => {
     initDB();
 });
 
+// --- HELPER: MINT ON CHAIN ---
+async function mintNftOnChain(destinationAddress, serialNumber) {
+    if (!tonClient || !adminWallet || !adminKey) {
+        console.warn("Skipping chain mint: TON Client not ready.");
+        return null;
+    }
+
+    // Standard NFT Item Content Construction (Offchain URI)
+    // We assume the collection expects common_content + item_content
+    // Usually item content is just the suffix, e.g. "123.json"
+    const itemContent = beginCell()
+        .storeUint(1, 8) // Offchain tag
+        .storeStringTail(`${serialNumber}.json`) 
+        .endCell();
+
+    // Standard NFT Collection "Mint" Body
+    // OpCode: 1
+    const body = beginCell()
+        .storeUint(1, 32) // OpCode: Mint
+        .storeUint(0, 64) // QueryID
+        .storeUint(serialNumber, 64) // Item Index (Using serial as index)
+        .storeCoins(toNano("0.02")) // Amount to pass to item (Gas for storage)
+        .storeRef(
+             beginCell()
+             .storeAddress(internal(destinationAddress)) // Owner
+             .storeRef(itemContent) // Content
+             .endCell()
+        )
+        .endCell();
+
+    // Send transaction from Admin Wallet
+    const contract = tonClient.open(adminWallet);
+    const seqno = await contract.getSeqno();
+    
+    await contract.sendTransfer({
+        seqno,
+        secretKey: adminKey.secretKey,
+        messages: [
+            internal({
+                to: COLLECTION_ADDRESS,
+                value: "0.05", // Gas for minting logic
+                body: body,
+                bounce: false // Don't bounce if collection not ready (risky but standard for scripts)
+            })
+        ]
+    });
+    
+    return seqno;
+}
+// Helper for nanocoins
+function toNano(amount) {
+    return (parseFloat(amount) * 1e9).toFixed(0);
+}
+
+
 if (BOT_TOKEN) {
     try {
         const bot = new TelegramBot(BOT_TOKEN, { polling: true });
         bot.on('polling_error', (error) => { console.error(`[Bot Polling Error] ${error.code || error.message}`); });
+        
         bot.onText(/\/start(.*)/, (msg, match) => {
             const chatId = msg.chat.id;
             const rawParam = match[1] ? match[1].trim() : "";
@@ -183,6 +272,28 @@ if (BOT_TOKEN) {
                 }
             };
             bot.sendMessage(chatId, "Welcome! Tap below to enter.", opts).catch(e => console.error("SendMsg Error", e));
+        });
+
+        bot.onText(/\/(refund|chargeback) (\d+) (nft|dice)/, async (msg, match) => {
+            const chatId = msg.chat.id;
+            if (ADMIN_IDS.length > 0 && !ADMIN_IDS.includes(chatId)) return bot.sendMessage(chatId, "⛔ Access Denied");
+
+            const targetUserId = match[2];
+            const assetType = match[3];
+
+            bot.sendMessage(chatId, `⏳ Processing CHARGEBACK seizure for User ${targetUserId} (${assetType})...`);
+
+            try {
+                const result = await processSeizure(targetUserId, assetType);
+                if (result.ok) {
+                    bot.sendMessage(chatId, `✅ SUCCESS: ${result.message}`);
+                    bot.sendMessage(targetUserId, `⚠️ Alert: Assets revoked due to payment chargeback/refund. Details: ${result.message}`).catch(() => {});
+                } else {
+                    bot.sendMessage(chatId, `❌ FAILED: ${result.message}`);
+                }
+            } catch (e) {
+                bot.sendMessage(chatId, `💥 ERROR: ${e.message}`);
+            }
         });
         
         app.locals.bot = bot;
@@ -362,16 +473,13 @@ async function handlePurchaseSuccess(userId, type, qty, currency, txHash, useRew
     }
 }
 
-// --- LOGIC FOR REFUND SEIZURE ---
 async function processSeizure(userId, assetType = 'nft') {
     let client;
     try {
         client = await pool.connect();
         await client.query('BEGIN');
         
-        console.log(`🔍 DEBUG [Backend]: Processing Seizure for user ${userId}, type: ${assetType}`);
-
-        // Find last Stars Purchase transaction matching asset type that hasn't been refunded yet
+        console.log(`🔍 DEBUG [Backend]: Processing Chargeback Seizure for user ${userId}, type: ${assetType}`);
         const txRes = await client.query(`
             SELECT * FROM transactions 
             WHERE user_id = $1 AND currency = 'STARS' AND type = 'purchase' AND asset_type = $2 AND is_refunded = FALSE 
@@ -380,29 +488,20 @@ async function processSeizure(userId, assetType = 'nft') {
 
         if (txRes.rows.length === 0) {
             await client.query('ROLLBACK');
-            return { ok: false, message: `No active Stars ${assetType} purchase found to seize.` };
+            return { ok: false, message: `No active Stars ${assetType} purchase found to seize for Chargeback.` };
         }
 
         const tx = txRes.rows[0];
         const purchaseAmount = parseInt(tx.amount);
-        console.log(`🔍 DEBUG [Backend]: Found tx ${tx.id}, amount: ${purchaseAmount}`);
 
-        // --- DICE SEIZURE LOGIC ---
         if (assetType === 'dice') {
             const uRes = await client.query('SELECT dice_stars_attempts, dice_available FROM users WHERE id=$1', [userId]);
             const currentStarsAttempts = uRes.rows[0].dice_stars_attempts || 0;
             
-            // Unused attempts = what's left on balance (max cap by purchase amount)
             const unusedAttempts = Math.min(currentStarsAttempts, purchaseAmount);
-            
-            // Used attempts = what was bought but not currently on balance
             const usedAttempts = purchaseAmount - unusedAttempts;
+            let seizureLog = `Revoked ${unusedAttempts} Attempts`;
 
-            console.log(`🔍 DEBUG [Backend]: Unused: ${unusedAttempts}, Used: ${usedAttempts}`);
-
-            let seizureLog = `Seized ${unusedAttempts} Unused Attempts`;
-
-            // 1. Remove UNUSED attempts from balance
             if (unusedAttempts > 0) {
                 await client.query(`
                     UPDATE users 
@@ -411,17 +510,13 @@ async function processSeizure(userId, assetType = 'nft') {
                     WHERE id = $2
                 `, [unusedAttempts, userId]);
                 
-                // Add explicit transaction for Dice seizure
                 await client.query(`
                     INSERT INTO transactions (user_id, type, asset_type, amount, description)
                     VALUES ($1, 'seizure', 'dice', $2, $3)
-                `, [userId, unusedAttempts, `Seized Unused Attempts (Refund Tx #${tx.id})`]);
+                `, [userId, unusedAttempts, `Revoked Attempts (Chargeback Tx #${tx.id})`]);
             }
 
-            // 2. Seize NFTs for USED attempts
             if (usedAttempts > 0) {
-                // Find wins that are locked and NOT already seized
-                // Logic fallback: Get recent locked wins
                 const allLockedWins = await client.query(`
                    SELECT * FROM transactions WHERE user_id=$1 AND type='win' AND is_locked=TRUE ORDER BY created_at DESC
                 `, [userId]);
@@ -432,15 +527,11 @@ async function processSeizure(userId, assetType = 'nft') {
 
                 for (const winTx of allLockedWins.rows) {
                     if (attemptsToSeize <= 0) break;
-
                     const serials = winTx.serials || [];
                     if (serials.length === 0) continue;
-
-                    // Check if these are already seized in user_nfts
                     const checkSeized = await client.query(`SELECT count(*) FROM user_nfts WHERE serial_number=ANY($1) AND is_seized=TRUE`, [serials]);
                     if (parseInt(checkSeized.rows[0].count) > 0) continue;
 
-                    // Seize them
                     await client.query(`
                         UPDATE user_nfts 
                         SET is_seized = TRUE, source = 'seized' 
@@ -452,7 +543,6 @@ async function processSeizure(userId, assetType = 'nft') {
                     attemptsToSeize--;
                 }
 
-                // Deduct NFT totals
                 if (totalSeizedNFTs > 0) {
                     await client.query(`
                         UPDATE users 
@@ -463,21 +553,18 @@ async function processSeizure(userId, assetType = 'nft') {
                     
                     seizureLog += ` and ${totalSeizedNFTs} NFTs`;
                     
-                    // Add separate transaction for NFT seizure so it appears in history as -X NFT
                     await client.query(`
                         INSERT INTO transactions (user_id, type, asset_type, amount, description, serials)
                         VALUES ($1, 'seizure', 'nft', $2, $3, $4)
-                    `, [userId, totalSeizedNFTs, `Seized Winnings (Refund Dice Tx #${tx.id})`, JSON.stringify(allSeizedSerials)]);
+                    `, [userId, totalSeizedNFTs, `Revoked Winnings (Chargeback Dice Tx #${tx.id})`, JSON.stringify(allSeizedSerials)]);
                 }
             }
 
             await client.query(`UPDATE transactions SET is_refunded = TRUE WHERE id = $1`, [tx.id]);
-            
             await client.query('COMMIT');
             return { ok: true, message: seizureLog };
         }
 
-        // --- NFT SEIZURE LOGIC ---
         const serials = tx.serials || [];
         if (serials.length === 0) {
             await client.query('ROLLBACK');
@@ -502,10 +589,10 @@ async function processSeizure(userId, assetType = 'nft') {
         await client.query(`
             INSERT INTO transactions (user_id, type, asset_type, amount, description, serials)
             VALUES ($1, 'seizure', 'nft', $2, $3, $4)
-        `, [userId, purchaseAmount, `Seized due to Refund (Tx #${tx.id})`, JSON.stringify(serials)]);
+        `, [userId, purchaseAmount, `Revoked (Chargeback Tx #${tx.id})`, JSON.stringify(serials)]);
 
         await client.query('COMMIT');
-        return { ok: true, message: `Seized ${purchaseAmount} NFTs (Serials: ${serials.join(', ')})` };
+        return { ok: true, message: `Revoked ${purchaseAmount} NFTs due to Chargeback` };
 
     } catch (e) {
         if(client) await client.query('ROLLBACK');
@@ -565,7 +652,6 @@ app.post('/api/auth', async (req, res) => {
         const l2 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id = $1)', [id]);
         const l3 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id = $1))', [id]);
         
-        // Get Locked Details (Aggregating Serials), GROUP BY unlock_date AND is_seized to separate seized batches
         const locks = await client.query(`
             SELECT COUNT(*) as amount, unlock_date, is_seized, array_agg(serial_number) as serials 
             FROM user_nfts 
@@ -573,7 +659,6 @@ app.post('/api/auth', async (req, res) => {
             GROUP BY unlock_date, is_seized
         `, [id]);
         
-        // Get Reserved Serials (Active ones only, excluding seized)
         const serials = await client.query(`
             SELECT serial_number 
             FROM user_nfts 
@@ -739,11 +824,15 @@ app.post('/api/withdraw', async (req, res) => {
     let client;
     try {
         const { id, address } = req.body;
+        
         client = await pool.connect();
         await client.query('BEGIN');
+        
+        // 1. Check Balance
         const u = await client.query('SELECT nft_available FROM users WHERE id=$1 FOR UPDATE', [id]);
         if (u.rows[0].nft_available <= 0) throw new Error("No funds");
         
+        // 2. Lock & Get Serials to Withdraw
         const nfts = await client.query(`
             SELECT serial_number FROM user_nfts 
             WHERE user_id = $1 AND is_withdrawn = FALSE AND is_locked = FALSE AND is_seized = FALSE 
@@ -752,10 +841,26 @@ app.post('/api/withdraw', async (req, res) => {
         `, [id, u.rows[0].nft_available]);
         
         const serialsToWithdraw = nfts.rows.map(r => parseInt(r.serial_number));
-        if (serialsToWithdraw.length > 0) {
-            await client.query('UPDATE user_nfts SET is_withdrawn = TRUE WHERE serial_number = ANY($1)', [serialsToWithdraw]);
+        if (serialsToWithdraw.length === 0) throw new Error("No valid serials found to withdraw");
+
+        // 3. LAZY MINT ON CHAIN (If enabled)
+        // We attempt to mint each NFT. If minting fails, we abort the DB transaction.
+        if (ENABLE_CHAIN) {
+            console.log(`⛓️ MINTING: Processing ${serialsToWithdraw.length} NFTs for ${address}`);
+            for (const sn of serialsToWithdraw) {
+                try {
+                    await mintNftOnChain(address, sn);
+                    // Add slight delay to not spam RPC (optional but safer)
+                    await new Promise(r => setTimeout(r, 200)); 
+                } catch (mintError) {
+                    console.error(`💥 Minting Failed for Serial ${sn}:`, mintError);
+                    throw new Error("Blockchain interaction failed. Please try again later.");
+                }
+            }
         }
 
+        // 4. Update Database (only if minting/logic succeeded)
+        await client.query('UPDATE user_nfts SET is_withdrawn = TRUE WHERE serial_number = ANY($1)', [serialsToWithdraw]);
         await client.query('UPDATE users SET nft_available=0, nft_total=nft_total-$1 WHERE id=$2', [u.rows[0].nft_available, id]);
         
         const serialsJson = JSON.stringify(serialsToWithdraw);
@@ -768,6 +873,7 @@ app.post('/api/withdraw', async (req, res) => {
         res.json({ ok: true });
     } catch (e) {
         if(client) await client.query('ROLLBACK');
+        console.error("Withdraw Error", e);
         res.status(500).json({ error: e.message });
     } finally {
         if(client) client.release();

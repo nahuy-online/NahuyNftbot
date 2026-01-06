@@ -19,7 +19,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   
   // History Modal State
   const [showHistory, setShowHistory] = useState(false);
-  // Added 'locked' to filter types
   const [historyFilter, setHistoryFilter] = useState<'assets' | 'bonus' | 'locked' | 'serials'>('assets');
   const [history, setHistory] = useState<NftTransaction[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -35,7 +34,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   useEffect(() => {
       if (showHistory) {
           document.body.style.overflow = 'hidden';
-          // Only load history from API if we are looking at transactions (assets/bonus), not vesting schedule or serials
           if (historyFilter !== 'locked' && historyFilter !== 'serials') {
             loadHistoryData();
           }
@@ -61,7 +59,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       const targetAddress = userFriendlyAddress || user.walletAddress;
 
       if (!targetAddress) {
-          // showAlert uses showPopup which requires v6.2
           if (window.Telegram?.WebApp?.isVersionAtLeast?.('6.2')) {
              window.Telegram.WebApp.showAlert(t('please_connect'));
           } else {
@@ -109,7 +106,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
         const shareText = t('share_text', { amount: user.nftBalance.total });
         const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(shareText)}`;
 
-        // openTelegramLink requires v6.1
         if (window.Telegram?.WebApp?.openTelegramLink && window.Telegram.WebApp.isVersionAtLeast?.('6.1')) {
             window.Telegram.WebApp.openTelegramLink(shareUrl);
         } else {
@@ -132,7 +128,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
 
   const handleDebugSeizure = async (assetType: 'nft' | 'dice') => {
       const label = assetType === 'nft' ? 'NFT' : 'DICE Attempts';
-      if (confirm(`👮 Simulate 'Stars Refund' for ${label}? This will seize the last locked purchase.`)) {
+      if (confirm(`👮 Simulate 'Chargeback' for ${label}? This will revoke assets from the last Stars purchase.`)) {
           try {
               const res = await debugSeizeAsset(assetType);
               if (res.ok) {
@@ -159,7 +155,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
-  // Helper to limit decimals for display (max 4)
   const formatCrypto = (val: number) => {
       if (!val) return 0;
       return parseFloat(val.toFixed(4));
@@ -173,7 +168,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           case 'referral_reward': 
           case 'referral': return '💎'; 
           case 'withdraw': return '📤';
-          case 'seizure': return '👮';
+          case 'seizure': return '🚫'; // Revoked/Banned icon
           default: return '📄';
       }
   };
@@ -188,22 +183,18 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   ];
   
   const filteredHistory = history.filter(tx => {
-      // Bonus History includes: Rewards (+) AND Purchases using currency (Spend -)
       const isBonusRelated = 
         tx.type === 'referral_reward' || 
         tx.type === 'referral' || 
-        (tx.type === 'purchase' && tx.assetType === 'currency'); // Spend from bonus
+        (tx.type === 'purchase' && tx.assetType === 'currency'); 
       
       if (historyFilter === 'bonus') return isBonusRelated;
-      
-      // Assets History: Everything else (NFT purchases, Dice purchases, Wins, Withdraws, Seizures)
       return !isBonusRelated; 
   });
 
   return (
     <>
     <div className="p-5 pb-24 space-y-6 animate-fade-in relative">
-      {/* Header */}
       <div className="flex items-center space-x-4 pb-2 border-b border-gray-800 justify-between">
         <div className="flex items-center space-x-4">
             <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 flex items-center justify-center text-2xl font-bold shadow-lg ring-2 ring-white/10">
@@ -221,7 +212,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
         </button>
       </div>
 
-      {/* Wallet & Lang */}
       <div className="space-y-3">
         <div className="bg-gray-800/60 backdrop-blur-md rounded-2xl p-4 border border-white/5">
             <div className="flex justify-between items-center mb-3">
@@ -239,7 +229,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
         </div>
       </div>
 
-      {/* Assets Dashboard */}
       <div>
         <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3 ml-1">{t('assets')}</h3>
         <div className="grid grid-cols-2 gap-3">
@@ -279,7 +268,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                 <button onClick={() => onUpdate()} className="text-xs bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg transition-colors text-gray-300">{t('available_btn')}</button>
             </div>
 
-            {/* RESERVED SERIALS - COMPACT VIEW */}
             {user.reservedSerials && user.reservedSerials.length > 0 && (
                 <div className="col-span-2 bg-gray-800/60 p-3 rounded-2xl border border-blue-500/20">
                      <div className="flex justify-between items-center mb-2">
@@ -321,7 +309,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           </button>
       </div>
 
-      {/* Referral Program */}
       <div className="pt-4 border-t border-gray-800 pb-safe">
           <div className="flex justify-between items-baseline mb-4">
              <h3 className="font-bold text-lg">{t('referral_bonus')}</h3>
@@ -359,7 +346,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           </div>
       </div>
 
-      {/* Debug */}
       <div className="mt-8 p-4 bg-red-900/20 border border-red-500/30 rounded-xl space-y-3">
           <div className="flex items-center gap-2 mb-2 border-b border-red-500/20 pb-2">
             <span className="text-red-500 text-lg">🛠️</span>
@@ -374,8 +360,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           <div className="flex flex-col gap-2">
             <button onClick={handleDebugReset} className="w-full text-xs font-bold text-white bg-red-600/80 hover:bg-red-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>⚠️</span> RESET DB</button>
             <div className="flex gap-2">
-                <button onClick={() => handleDebugSeizure('nft')} className="flex-1 text-xs font-bold text-white bg-orange-600/80 hover:bg-orange-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>👮</span> REFUND NFT</button>
-                <button onClick={() => handleDebugSeizure('dice')} className="flex-1 text-xs font-bold text-white bg-purple-600/80 hover:bg-purple-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>👮</span> REFUND DICE</button>
+                <button onClick={() => handleDebugSeizure('nft')} className="flex-1 text-xs font-bold text-white bg-orange-600/80 hover:bg-orange-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>👮</span> REVOKE NFT</button>
+                <button onClick={() => handleDebugSeizure('dice')} className="flex-1 text-xs font-bold text-white bg-purple-600/80 hover:bg-purple-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>👮</span> REVOKE DICE</button>
             </div>
           </div>
       </div>
@@ -385,7 +371,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
           <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] bg-gray-900 flex flex-col animate-fade-in">
               
               <div className="flex-none flex items-center justify-between px-5 pb-4 pt-20 bg-gray-900 border-b border-gray-800 z-50 shadow-xl">
-                  {/* Dynamic Header */}
                   <h2 className="text-xl font-bold flex items-center gap-3">
                       <span className={`p-2 rounded-xl flex items-center justify-center ${
                           historyFilter === 'bonus' ? 'bg-purple-500/20 text-purple-400' : 
@@ -411,8 +396,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
               </div>
               
               <div className="flex-1 overflow-y-auto overflow-x-hidden pb-safe">
-                  
-                  {/* === CONTENT: BONUS === */}
                   {historyFilter === 'bonus' && (
                       <div className="p-5 pb-0 grid grid-cols-1 gap-3 animate-fade-in">
                           <div className="p-4 rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 border border-white/5 flex items-center justify-between shadow-lg">
@@ -438,7 +421,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                       </div>
                   )}
 
-                  {/* === CONTENT: VESTING SCHEDULE === */}
                   {historyFilter === 'locked' && (
                       <div className="p-4 space-y-3 animate-fade-in">
                         {user.nftBalance.lockedDetails && user.nftBalance.lockedDetails.length > 0 ? (
@@ -453,11 +435,11 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                                             <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold ${
                                                 item.isSeized ? 'bg-red-500/20 text-red-500' : 'bg-yellow-500/20 text-yellow-500'
                                             }`}>
-                                                {item.isSeized ? '👮' : `#${idx+1}`}
+                                                {item.isSeized ? '🚫' : `#${idx+1}`}
                                             </div>
                                             <div>
                                                 <span className={`font-bold block ${item.isSeized ? 'text-red-400 line-through' : 'text-white'}`}>
-                                                    {item.isSeized ? 'SEIZED ASSET' : 'Locked NFT'}
+                                                    {item.isSeized ? 'REVOKED (Chargeback)' : 'Locked NFT'}
                                                 </span>
                                                 <span className="text-xs text-gray-500 font-mono">{formatDate(item.unlockDate)}</span>
                                             </div>
@@ -474,7 +456,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                                         </div>
                                     </div>
                                     
-                                    {/* SERIALS LIST FOR THIS BATCH */}
                                     {item.serials && item.serials.length > 0 && (
                                         <div className={`pt-2 border-t flex flex-wrap gap-1.5 ${item.isSeized ? 'border-red-500/10' : 'border-white/5'}`}>
                                             {item.serials.map(s => (
@@ -499,7 +480,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                       </div>
                   )}
 
-                  {/* === CONTENT: MY SERIALS (ALL) === */}
                   {historyFilter === 'serials' && (
                       <div className="p-4 animate-fade-in">
                           <div className="bg-gray-800 p-4 rounded-xl border border-white/5">
@@ -521,7 +501,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                       </div>
                   )}
 
-                  {/* === CONTENT: HISTORY LIST === */}
                   {historyFilter !== 'locked' && historyFilter !== 'serials' && (
                       <div className="p-4 space-y-3 pb-32">
                         {loadingHistory ? (
@@ -532,12 +511,10 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                                     {historyFilter === 'bonus' ? '💸' : '📂'}
                                 </div>
                                 <p className="font-medium">{t('no_tx')}</p>
-                                {historyFilter === 'bonus' && <p className="text-xs mt-2 opacity-50 max-w-[200px]">Invite friends to start earning bonus!</p>}
                             </div>
                         ) : (
                             filteredHistory.map((tx) => (
                                 <div key={tx.id} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex justify-between items-center active:scale-[0.99] transition-transform">
-                                    {/* LEFT SIDE: Icon + Text */}
                                     <div className="flex items-center gap-3 overflow-hidden">
                                         <div className={`w-12 h-12 rounded-xl flex-shrink-0 flex items-center justify-center text-xl shadow-inner ${
                                             tx.type === 'seizure' 
@@ -556,7 +533,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                                         </div>
                                     </div>
 
-                                    {/* RIGHT SIDE: Amount + Serials */}
                                     <div className="text-right flex flex-col items-end gap-1 flex-shrink-0 ml-2">
                                         <div className={`font-mono font-bold text-base flex items-center justify-end gap-1 ${
                                             tx.type === 'seizure' || tx.type === 'withdraw' || (tx.type === 'purchase' && tx.assetType === 'currency') 
@@ -577,7 +553,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                                             {tx.isLocked && <span className="text-yellow-500 text-sm ml-1">*</span>}
                                         </div>
                                         
-                                        {/* Serials in Right Column */}
                                         {tx.serials && tx.serials.length > 0 && (
                                             <div className="flex flex-wrap justify-end gap-1 max-w-[140px]">
                                                 {tx.serials.slice(0, 8).map(s => (
@@ -586,9 +561,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                                                     </span>
                                                 ))}
                                                 {tx.serials.length > 8 && (
-                                                    <span className="text-[10px] font-mono text-gray-500 px-1">
-                                                        ...
-                                                    </span>
+                                                    <span className="text-[10px] font-mono text-gray-500 px-1">...</span>
                                                 )}
                                             </div>
                                         )}
