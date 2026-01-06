@@ -15,6 +15,7 @@ export interface LockedNftItem {
   amount: number;
   unlockDate: number; // Timestamp
   serials?: number[]; // Specific NFT IDs involved in this lock batch
+  isSeized?: boolean; // If true, these assets were revoked (e.g. refund)
 }
 
 export type TransactionType = 'purchase' | 'win' | 'referral' | 'withdraw' | 'referral_reward' | 'seizure';

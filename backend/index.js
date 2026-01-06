@@ -99,13 +99,13 @@ const initDB = async () => {
                 `);
                 
                 // Specific NFT Items (The Reservation System)
-                // serial_number is the unique NFT ID #1, #2, etc.
                 await client.query(`
                     CREATE TABLE IF NOT EXISTS user_nfts (
                         serial_number BIGINT PRIMARY KEY,
                         user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
                         is_locked BOOLEAN DEFAULT FALSE,
                         is_withdrawn BOOLEAN DEFAULT FALSE,
+                        is_seized BOOLEAN DEFAULT FALSE,
                         unlock_date BIGINT DEFAULT 0,
                         source TEXT, -- 'shop', 'dice', 'seized'
                         created_at TIMESTAMP DEFAULT NOW()
@@ -122,7 +122,8 @@ const initDB = async () => {
                     "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT FALSE",
                     "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_refunded BOOLEAN DEFAULT FALSE",
                     "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS tx_hash TEXT UNIQUE",
-                    "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS serials JSONB DEFAULT '[]'::jsonb"
+                    "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS serials JSONB DEFAULT '[]'::jsonb",
+                    "ALTER TABLE user_nfts ADD COLUMN IF NOT EXISTS is_seized BOOLEAN DEFAULT FALSE"
                 ];
 
                 for (const q of alterQueries) {
@@ -183,10 +184,6 @@ if (BOT_TOKEN) {
             };
             bot.sendMessage(chatId, "Welcome! Tap below to enter.", opts).catch(e => console.error("SendMsg Error", e));
         });
-        
-        // --- REAL REFUND HANDLER (WEBHOOK SIMULATION) ---
-        // In a real production app, you would listen for 'pre_checkout_query' or specific update types
-        // regarding 'refunded_payment'. Since we are in a container, we just mock the logic in endpoints.
         
         app.locals.bot = bot;
         console.log("✅ Telegram Bot Initialized");
@@ -386,26 +383,26 @@ async function processSeizure(userId) {
 
         const tx = txRes.rows[0];
         const serials = tx.serials || [];
-        const amount = parseFloat(tx.amount); // NFT count
+        const amount = parseFloat(tx.amount);
 
         if (serials.length === 0) {
             await client.query('ROLLBACK');
             return { ok: false, message: "Transaction has no serials attached." };
         }
 
-        // 2. SEIZE: Transfer Ownership to Treasury (ID 0)
-        // We set user_id = 0, keep is_locked = true (or false depending on treasury policy), set source = 'seized'
+        // 2. SEIZE: Mark as seized but Keep ownership so it shows in "Seized" list
+        // We set is_seized = TRUE
         await client.query(`
             UPDATE user_nfts 
-            SET user_id = 0, source = 'seized' 
+            SET is_seized = TRUE, source = 'seized' 
             WHERE serial_number = ANY($1) AND user_id = $2
         `, [serials, userId]);
 
         // 3. Mark Transaction as Refunded
         await client.query(`UPDATE transactions SET is_refunded = TRUE WHERE id = $1`, [tx.id]);
 
-        // 4. Deduct Balance from Scammer
-        // Since they were bought with Stars, they were likely added to 'nft_locked' and 'nft_total'
+        // 4. Deduct Balance from User
+        // They effectively lose the asset from their "Balance" totals, but it remains in the DB linked to them for history
         await client.query(`
             UPDATE users 
             SET nft_total = GREATEST(0, nft_total - $1), 
@@ -479,16 +476,22 @@ app.post('/api/auth', async (req, res) => {
         const l2 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id = $1)', [id]);
         const l3 = await client.query('SELECT COUNT(*) FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id IN (SELECT id FROM users WHERE referrer_id = $1))', [id]);
         
-        // Get Locked Details from user_nfts (Aggregating Serials)
+        // Get Locked Details (Aggregating Serials), GROUP BY unlock_date AND is_seized to separate seized batches
         const locks = await client.query(`
-            SELECT COUNT(*) as amount, unlock_date, array_agg(serial_number) as serials 
+            SELECT COUNT(*) as amount, unlock_date, is_seized, array_agg(serial_number) as serials 
             FROM user_nfts 
             WHERE user_id = $1 AND is_locked = TRUE AND is_withdrawn = FALSE 
-            GROUP BY unlock_date
+            GROUP BY unlock_date, is_seized
         `, [id]);
         
-        // Get Reserved Serials (Limited to last 50)
-        const serials = await client.query('SELECT serial_number FROM user_nfts WHERE user_id = $1 AND is_withdrawn = FALSE ORDER BY serial_number DESC LIMIT 50', [id]);
+        // Get Reserved Serials (Active ones only, excluding seized)
+        const serials = await client.query(`
+            SELECT serial_number 
+            FROM user_nfts 
+            WHERE user_id = $1 AND is_withdrawn = FALSE AND is_seized = FALSE 
+            ORDER BY serial_number DESC 
+            LIMIT 500
+        `, [id]);
 
         res.json({
             id: String(user.id),
@@ -504,7 +507,8 @@ app.post('/api/auth', async (req, res) => {
                 lockedDetails: locks.rows.map(r => ({ 
                     amount: parseInt(r.amount), 
                     unlockDate: parseInt(r.unlock_date),
-                    serials: r.serials || [] 
+                    serials: r.serials || [],
+                    isSeized: r.is_seized || false
                 }))
             },
             reservedSerials: serials.rows.map(r => parseInt(r.serial_number)),
@@ -653,7 +657,7 @@ app.post('/api/withdraw', async (req, res) => {
         
         const nfts = await client.query(`
             SELECT serial_number FROM user_nfts 
-            WHERE user_id = $1 AND is_withdrawn = FALSE AND is_locked = FALSE 
+            WHERE user_id = $1 AND is_withdrawn = FALSE AND is_locked = FALSE AND is_seized = FALSE 
             LIMIT $2
             FOR UPDATE
         `, [id, u.rows[0].nft_available]);

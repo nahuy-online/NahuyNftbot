@@ -20,7 +20,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   // History Modal State
   const [showHistory, setShowHistory] = useState(false);
   // Added 'locked' to filter types
-  const [historyFilter, setHistoryFilter] = useState<'assets' | 'bonus' | 'locked'>('assets');
+  const [historyFilter, setHistoryFilter] = useState<'assets' | 'bonus' | 'locked' | 'serials'>('assets');
   const [history, setHistory] = useState<NftTransaction[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
@@ -35,8 +35,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   useEffect(() => {
       if (showHistory) {
           document.body.style.overflow = 'hidden';
-          // Only load history from API if we are looking at transactions (assets/bonus), not vesting schedule
-          if (historyFilter !== 'locked') {
+          // Only load history from API if we are looking at transactions (assets/bonus), not vesting schedule or serials
+          if (historyFilter !== 'locked' && historyFilter !== 'serials') {
             loadHistoryData();
           }
       } else {
@@ -278,21 +278,28 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                 <button onClick={() => onUpdate()} className="text-xs bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg transition-colors text-gray-300">{t('available_btn')}</button>
             </div>
 
-            {/* RESERVED SERIALS - EXPANDED VIEW */}
+            {/* RESERVED SERIALS - COMPACT VIEW */}
             {user.reservedSerials && user.reservedSerials.length > 0 && (
                 <div className="col-span-2 bg-gray-800/60 p-3 rounded-2xl border border-blue-500/20">
                      <div className="flex justify-between items-center mb-2">
                         <div className="text-xs font-bold text-blue-400 uppercase tracking-wider">{t('reserved_serials')}</div>
-                        <div className="text-[10px] text-gray-500 font-mono bg-black/20 px-2 py-0.5 rounded">Latest</div>
+                        <div className="text-[10px] text-gray-500 font-mono bg-black/20 px-2 py-0.5 rounded">
+                            {user.reservedSerials.length > 0 ? user.reservedSerials.length : 0} Total
+                        </div>
                      </div>
-                     <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto scrollbar-hide">
-                         {user.reservedSerials.sort((a,b)=>b-a).slice(0, 12).map((sn) => (
+                     <div className="flex flex-wrap gap-1.5 items-center">
+                         {user.reservedSerials.sort((a,b)=>b-a).slice(0, 10).map((sn) => (
                              <span key={sn} className="text-xs font-mono font-bold bg-blue-500/10 text-blue-300 px-2 py-1 rounded border border-blue-500/10">
                                  #{sn}
                              </span>
                          ))}
-                         {user.reservedSerials.length > 12 && (
-                             <span className="text-xs font-mono text-gray-500 px-2 py-1">...</span>
+                         {user.reservedSerials.length > 10 && (
+                             <button 
+                                onClick={() => { setHistoryFilter('serials'); setShowHistory(true); }}
+                                className="text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 px-3 py-1 rounded transition-colors"
+                             >
+                                 View All ({user.reservedSerials.length})
+                             </button>
                          )}
                      </div>
                 </div>
@@ -379,17 +386,20 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                       <span className={`p-2 rounded-xl flex items-center justify-center ${
                           historyFilter === 'bonus' ? 'bg-purple-500/20 text-purple-400' : 
                           historyFilter === 'locked' ? 'bg-yellow-500/20 text-yellow-500' :
+                          historyFilter === 'serials' ? 'bg-blue-500/20 text-blue-400' :
                           'bg-blue-500/20 text-blue-400'
                       }`}>
                         {historyFilter === 'bonus' ? (
                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
                         ) : historyFilter === 'locked' ? (
                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                        ) : historyFilter === 'serials' ? (
+                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
                         ) : (
                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
                         )}
                       </span>
-                      {historyFilter === 'bonus' ? t('bonus_balance') : historyFilter === 'locked' ? t('vesting_schedule') : t('tx_history')}
+                      {historyFilter === 'bonus' ? t('bonus_balance') : historyFilter === 'locked' ? t('vesting_schedule') : historyFilter === 'serials' ? t('reserved_serials') : t('tx_history')}
                   </h2>
                   <button onClick={() => setShowHistory(false)} className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-700 active:scale-95 transition-all border border-white/10">
                       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -429,31 +439,49 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                       <div className="p-4 space-y-3 animate-fade-in">
                         {user.nftBalance.lockedDetails && user.nftBalance.lockedDetails.length > 0 ? (
                             user.nftBalance.lockedDetails.sort((a,b) => a.unlockDate - b.unlockDate).map((item, idx) => (
-                                <div key={idx} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex flex-col gap-3 active:scale-[0.99] transition-transform">
+                                <div key={idx} className={`p-4 rounded-xl border flex flex-col gap-3 active:scale-[0.99] transition-transform ${
+                                    item.isSeized 
+                                        ? 'bg-red-900/10 border-red-500/20 opacity-80' 
+                                        : 'bg-gray-800 border-white/5'
+                                }`}>
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-xl bg-yellow-500/20 flex items-center justify-center text-sm font-bold text-yellow-500">#{idx+1}</div>
+                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold ${
+                                                item.isSeized ? 'bg-red-500/20 text-red-500' : 'bg-yellow-500/20 text-yellow-500'
+                                            }`}>
+                                                {item.isSeized ? '👮' : `#${idx+1}`}
+                                            </div>
                                             <div>
-                                                <span className="font-bold text-white block">{t('locked')} NFT</span>
+                                                <span className={`font-bold block ${item.isSeized ? 'text-red-400 line-through' : 'text-white'}`}>
+                                                    {item.isSeized ? 'SEIZED ASSET' : 'Locked NFT'}
+                                                </span>
                                                 <span className="text-xs text-gray-500 font-mono">{formatDate(item.unlockDate)}</span>
                                             </div>
                                         </div>
                                         <div className="text-right">
-                                            <div className="font-bold text-white text-lg">{item.amount} <span className="text-xs text-gray-400">NFT</span></div>
-                                            <span className="text-yellow-500 font-mono text-[10px] bg-yellow-500/10 px-2 py-0.5 rounded">{formatTimeLeft(item.unlockDate)}</span>
+                                            <div className={`font-bold text-lg ${item.isSeized ? 'text-red-500' : 'text-white'}`}>
+                                                {item.amount} <span className="text-xs text-gray-400">NFT</span>
+                                            </div>
+                                            {!item.isSeized && (
+                                                <span className="text-yellow-500 font-mono text-[10px] bg-yellow-500/10 px-2 py-0.5 rounded">
+                                                    {formatTimeLeft(item.unlockDate)}
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
                                     
                                     {/* SERIALS LIST FOR THIS BATCH */}
                                     {item.serials && item.serials.length > 0 && (
-                                        <div className="pt-2 border-t border-white/5">
-                                            <div className="flex flex-wrap gap-1.5">
-                                                {item.serials.map(s => (
-                                                    <span key={s} className="text-[10px] font-mono bg-yellow-500/10 text-yellow-200/70 px-1.5 py-0.5 rounded border border-yellow-500/10">
-                                                        #{s}
-                                                    </span>
-                                                ))}
-                                            </div>
+                                        <div className={`pt-2 border-t flex flex-wrap gap-1.5 ${item.isSeized ? 'border-red-500/10' : 'border-white/5'}`}>
+                                            {item.serials.map(s => (
+                                                <span key={s} className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                                                    item.isSeized 
+                                                        ? 'bg-red-500/10 text-red-400 border-red-500/10' 
+                                                        : 'bg-yellow-500/10 text-yellow-200/70 border-yellow-500/10'
+                                                }`}>
+                                                    #{s}
+                                                </span>
+                                            ))}
                                         </div>
                                     )}
                                 </div>
@@ -467,8 +495,30 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                       </div>
                   )}
 
+                  {/* === CONTENT: MY SERIALS (ALL) === */}
+                  {historyFilter === 'serials' && (
+                      <div className="p-4 animate-fade-in">
+                          <div className="bg-gray-800 p-4 rounded-xl border border-white/5">
+                              <p className="text-sm text-gray-400 mb-4">{t('reserved_serials')} (Owned & Active)</p>
+                              {user.reservedSerials && user.reservedSerials.length > 0 ? (
+                                  <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                                      {user.reservedSerials.sort((a,b)=>b-a).map(sn => (
+                                          <div key={sn} className="bg-blue-500/10 text-blue-300 font-mono font-bold text-center py-2 rounded border border-blue-500/20 text-xs">
+                                              #{sn}
+                                          </div>
+                                      ))}
+                                  </div>
+                              ) : (
+                                  <div className="text-center text-gray-500 py-10">
+                                      No NFTs owned yet.
+                                  </div>
+                              )}
+                          </div>
+                      </div>
+                  )}
+
                   {/* === CONTENT: HISTORY LIST === */}
-                  {historyFilter !== 'locked' && (
+                  {historyFilter !== 'locked' && historyFilter !== 'serials' && (
                       <div className="p-4 space-y-3 pb-32">
                         {loadingHistory ? (
                             <div className="flex justify-center pt-10"><div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"></div></div>

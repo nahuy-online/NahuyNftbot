@@ -230,7 +230,8 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                     user.nftBalance.lockedDetails.push({ 
                         amount: roll, 
                         unlockDate: Date.now() + (21 * 86400000),
-                        serials: rolledSerials // Capture Serials
+                        serials: rolledSerials,
+                        isSeized: false
                     });
                 } else {
                     user.nftBalance.available += roll; 
@@ -312,7 +313,8 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                      user.nftBalance.lockedDetails.push({ 
                          amount, 
                          unlockDate: Date.now() + (21 * 86400000),
-                         serials: acquiredSerials // Capture Serials
+                         serials: acquiredSerials, // Capture Serials
+                         isSeized: false
                      });
                  } else {
                      user.nftBalance.available += amount;
@@ -370,15 +372,21 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
              const amount = lastStarTx.amount;
              const serials = lastStarTx.serials || [];
              
-             // Remove Serials from user
+             // Remove Serials from reserved list (so they don't show in "My NFTs" or allow withdraw)
              if (user.reservedSerials) user.reservedSerials = user.reservedSerials.filter(s => !serials.includes(s));
              
              // Deduct Balances
              user.nftBalance.total = Math.max(0, user.nftBalance.total - amount);
              user.nftBalance.locked = Math.max(0, user.nftBalance.locked - amount);
-             // Also remove from LockedDetails
-             if (user.nftBalance.lockedDetails.length > 0) {
-                 user.nftBalance.lockedDetails.pop(); // Simple mock removal
+             
+             // UPDATE LockedDetails: Mark as Seized instead of removing
+             // We need to find the specific LockedDetail entry that matches these serials or mostly matches
+             const detailIdx = user.nftBalance.lockedDetails.findIndex(d => 
+                !d.isSeized && d.serials && d.serials.some(s => serials.includes(s))
+             );
+             
+             if (detailIdx !== -1) {
+                 user.nftBalance.lockedDetails[detailIdx].isSeized = true;
              }
 
              lastStarTx.description += " (Refunded)";
