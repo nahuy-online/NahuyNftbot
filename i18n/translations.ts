@@ -11,7 +11,7 @@ export const translations: Record<Language, Record<string, string>> = {
 
     // Shop
     "shop_title": "Genesis Drop",
-    "shop_subtitle": "Secure your spot in the ecosystem.",
+    "shop_subtitle": "Acquire a piece of the platform",
     "lazy_mint": "Lazy Mint",
     "collection_btn": "Collection on Getgems",
     "select_currency": "Select Currency",
@@ -95,7 +95,7 @@ export const translations: Record<Language, Record<string, string>> = {
 
     // Shop
     "shop_title": "Genesis Drop",
-    "shop_subtitle": "Займи свое место в экосистеме.",
+    "shop_subtitle": "Приобретите частицу платформы",
     "lazy_mint": "Lazy Mint",
     "collection_btn": "Коллекция на Getgems",
     "select_currency": "Выберите валюту",

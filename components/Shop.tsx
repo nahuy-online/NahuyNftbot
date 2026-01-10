@@ -124,16 +124,16 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
                 {t('lazy_mint')}
                 </div>
             </div>
-        </div>
-        
-        <div className="flex justify-center mt-5">
+
+            {/* Vertical Link to Collection */}
             <button 
                 onClick={openCollection}
-                className="flex items-center gap-2 text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors bg-blue-500/10 px-4 py-2 rounded-full border border-blue-500/20 hover:bg-blue-500/20 active:scale-95"
+                className="absolute -right-10 top-0 h-full flex flex-col items-center justify-center gap-2 text-blue-400 hover:text-blue-300 transition-colors active:scale-95 group opacity-80 hover:opacity-100"
             >
-                <span>💎</span>
-                {t('collection_btn')}
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                <div className="w-[1px] h-full bg-gradient-to-b from-transparent via-blue-500/30 to-transparent absolute left-[-4px]"></div>
+                <span className="text-[10px] font-bold uppercase tracking-widest whitespace-nowrap flex items-center gap-2" style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}>
+                    {t('collection_btn')} <span className="rotate-90 block">💎</span>
+                </span>
             </button>
         </div>
       </div>
