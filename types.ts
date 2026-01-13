@@ -35,6 +35,7 @@ export interface NftTransaction {
 export interface UserProfile {
   id: number;
   username: string;
+  isAdmin?: boolean; // NEW: Admin flag
   isNewUser?: boolean; // Trigger for Onboarding Screen
   referralCode?: string; // New Privacy-focused referral code
   referrerId?: number | null; // ID of the person who invited this user
@@ -62,7 +63,25 @@ export interface UserProfile {
   walletAddress?: string;
 }
 
-export type Tab = 'shop' | 'dice' | 'profile';
+export interface AdminStats {
+  totalUsers: number;
+  activeUsers: number; // Users who made a purchase
+  totalNftSold: number;
+  totalDicePlays: number; // Number of games played
+  totalNftWonInDice: number; // Total quantity of NFTs won
+  revenue: {
+    TON: number;
+    STARS: number;
+    USDT: number;
+  };
+  bonusStats: {
+    earned: { TON: number; STARS: number; USDT: number };
+    spent: { TON: number; STARS: number; USDT: number };
+  };
+  recentTransactions: NftTransaction[];
+}
+
+export type Tab = 'shop' | 'dice' | 'profile' | 'admin';
 
 // --- PAYMENT TYPES ---
 

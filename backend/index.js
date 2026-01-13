@@ -209,30 +209,24 @@ async function mintNftOnChain(destinationAddress, serialNumber) {
         return null;
     }
 
-    // Standard NFT Item Content Construction (Offchain URI)
-    // We assume the collection expects common_content + item_content
-    // Usually item content is just the suffix, e.g. "123.json"
     const itemContent = beginCell()
-        .storeUint(1, 8) // Offchain tag
+        .storeUint(1, 8) 
         .storeStringTail(`${serialNumber}.json`) 
         .endCell();
 
-    // Standard NFT Collection "Mint" Body
-    // OpCode: 1
     const body = beginCell()
         .storeUint(1, 32) // OpCode: Mint
         .storeUint(0, 64) // QueryID
-        .storeUint(serialNumber, 64) // Item Index (Using serial as index)
-        .storeCoins(toNano("0.02")) // Amount to pass to item (Gas for storage)
+        .storeUint(serialNumber, 64) 
+        .storeCoins(toNano("0.02")) 
         .storeRef(
              beginCell()
-             .storeAddress(internal(destinationAddress)) // Owner
-             .storeRef(itemContent) // Content
+             .storeAddress(internal(destinationAddress)) 
+             .storeRef(itemContent) 
              .endCell()
         )
         .endCell();
 
-    // Send transaction from Admin Wallet
     const contract = tonClient.open(adminWallet);
     const seqno = await contract.getSeqno();
     
@@ -242,16 +236,16 @@ async function mintNftOnChain(destinationAddress, serialNumber) {
         messages: [
             internal({
                 to: COLLECTION_ADDRESS,
-                value: "0.05", // Gas for minting logic
+                value: "0.05",
                 body: body,
-                bounce: false // Don't bounce if collection not ready (risky but standard for scripts)
+                bounce: false
             })
         ]
     });
     
     return seqno;
 }
-// Helper for nanocoins
+
 function toNano(amount) {
     return (parseFloat(amount) * 1e9).toFixed(0);
 }
@@ -282,7 +276,6 @@ if (BOT_TOKEN) {
             const assetType = match[3];
 
             bot.sendMessage(chatId, `⏳ Processing CHARGEBACK seizure for User ${targetUserId} (${assetType})...`);
-
             try {
                 const result = await processSeizure(targetUserId, assetType);
                 if (result.ok) {
@@ -666,10 +659,13 @@ app.post('/api/auth', async (req, res) => {
             ORDER BY serial_number DESC 
             LIMIT 500
         `, [id]);
+        
+        const isAdmin = ADMIN_IDS.includes(parseInt(id));
 
         res.json({
             id: String(user.id),
             username: user.username,
+            isAdmin: isAdmin,
             referralCode: user.referral_code,
             referrerId: user.referrer_id ? String(user.referrer_id) : null,
             referralDebug: debugInfo, 
@@ -710,191 +706,79 @@ app.post('/api/auth', async (req, res) => {
     }
 });
 
-app.post('/api/roll', async (req, res) => {
+app.post('/api/admin/stats', async (req, res) => {
+    const { id } = req.body;
+    if (!ADMIN_IDS.includes(parseInt(id))) return res.status(403).json({ error: "Access Denied" });
+
     let client;
     try {
-        const { id } = req.body;
         client = await pool.connect();
-        await client.query('BEGIN');
         
-        const u = await client.query('SELECT * FROM users WHERE id=$1 FOR UPDATE', [id]);
-        if (!u.rows[0]) throw new Error("User not found");
-        if (u.rows[0].dice_available <= 0) throw new Error("No dice");
-
-        const starsAttempts = u.rows[0].dice_stars_attempts || 0;
-        const isStars = starsAttempts > 0;
+        const usersCount = await client.query('SELECT count(*) FROM users');
+        const activeUsersCount = await client.query("SELECT count(DISTINCT user_id) FROM transactions WHERE type='purchase'");
         
-        const roll = Math.floor(Math.random() * 6) + 1;
-        const win = roll; 
+        const nftSold = await client.query("SELECT SUM(amount) FROM transactions WHERE type='purchase' AND asset_type='nft'");
+        
+        const dicePlays = await client.query("SELECT count(*) FROM transactions WHERE type='win'");
+        const diceNftWon = await client.query("SELECT SUM(amount) FROM transactions WHERE type='win' AND asset_type='nft'");
+        
+        // --- Revenue Calculation (Estimated based on quantities * current price) ---
+        // Ideally this should use historical price data from tx, but current schema doesn't store price snapshot.
+        const getQtySum = async (type, currency) => {
+             const res = await client.query("SELECT SUM(amount) FROM transactions WHERE type='purchase' AND asset_type=$1 AND currency=$2", [type, currency]);
+             return parseFloat(res.rows[0].sum || '0');
+        };
 
-        await client.query('UPDATE users SET dice_available=dice_available-1 WHERE id=$1', [id]);
-        if (isStars) {
-            await client.query('UPDATE users SET dice_stars_attempts=dice_stars_attempts-1 WHERE id=$1', [id]);
-        }
+        const nft_ton = await getQtySum('nft', 'TON');
+        const nft_stars = await getQtySum('nft', 'STARS');
+        const nft_usdt = await getQtySum('nft', 'USDT');
 
-        let reservedSerials = [];
-        if (win > 0) {
-            reservedSerials = await reserveNfts(client, id, win, isStars, 'dice');
+        const dice_ton = await getQtySum('dice', 'TON');
+        const dice_stars = await getQtySum('dice', 'STARS');
+        const dice_usdt = await getQtySum('dice', 'USDT');
 
-            if (isStars) {
-                await client.query('UPDATE users SET nft_total=nft_total+$1, nft_locked=nft_locked+$1 WHERE id=$2', [win, id]);
-            } else {
-                await client.query('UPDATE users SET nft_total=nft_total+$1, nft_available=nft_available+$1 WHERE id=$2', [win, id]);
-            }
-            
-            const serialsJson = JSON.stringify(reservedSerials);
-            await client.query(
-                "INSERT INTO transactions (user_id, type, asset_type, amount, description, is_locked, serials) VALUES ($1, 'win', 'nft', $2, $3, $4, $5)", 
-                [id, win, `Rolled ${roll}`, isStars, serialsJson]
-            );
-        }
-        await client.query('COMMIT');
-        res.json({ roll });
+        // BONUS STATS CALCULATION
+        const earnedRes = await client.query("SELECT currency, SUM(amount) as total FROM transactions WHERE type='referral_reward' GROUP BY currency");
+        const spentRes = await client.query("SELECT currency, SUM(amount) as total FROM transactions WHERE type='purchase' AND asset_type='currency' GROUP BY currency");
+
+        const formatStats = (rows) => {
+            const res = { TON: 0, STARS: 0, USDT: 0 };
+            rows.forEach(r => {
+                if (res[r.currency] !== undefined) res[r.currency] = parseFloat(r.total || 0);
+            });
+            return res;
+        };
+        const spent = formatStats(spentRes.rows);
+
+        // Revenue = (Sales * Price) - Bonuses Spent
+        const revenue = {
+            TON: Math.max(0, ((nft_ton * PRICES.nft.TON) + (dice_ton * PRICES.dice.TON)) - spent.TON),
+            STARS: Math.max(0, ((nft_stars * PRICES.nft.STARS) + (dice_stars * PRICES.dice.STARS)) - spent.STARS),
+            USDT: Math.max(0, ((nft_usdt * PRICES.nft.USDT) + (dice_usdt * PRICES.dice.USDT)) - spent.USDT)
+        };
+        
+        const recentTx = await client.query("SELECT * FROM transactions ORDER BY created_at DESC LIMIT 5");
+
+        res.json({
+            totalUsers: parseInt(usersCount.rows[0].count),
+            activeUsers: parseInt(activeUsersCount.rows[0].count),
+            totalNftSold: parseInt(nftSold.rows[0].sum || 0),
+            totalDicePlays: parseInt(dicePlays.rows[0].count || 0),
+            totalNftWonInDice: parseInt(diceNftWon.rows[0].sum || 0),
+            revenue: revenue,
+            bonusStats: {
+                earned: formatStats(earnedRes.rows),
+                spent: spent
+            },
+            recentTransactions: recentTx.rows.map(x => ({
+                id: x.id, type: x.type, amount: x.amount, description: x.description, 
+                timestamp: new Date(x.created_at).getTime(), currency: x.currency, assetType: x.asset_type
+            }))
+        });
+
     } catch (e) {
-        if(client) await client.query('ROLLBACK');
         res.status(500).json({ error: e.message });
     } finally {
         if(client) client.release();
     }
-});
-
-app.post('/api/payment/create', async (req, res) => {
-    try {
-        const { type, amount, currency } = req.body;
-        res.json({ ok: true, invoiceLink: "https://t.me/$" }); 
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.post('/api/payment/verify', async (req, res) => {
-    try {
-        const { id, type, amount, currency, useRewardBalance } = req.body;
-        
-        const client = await pool.connect();
-        const uRes = await client.query('SELECT ref_rewards_stars, ref_rewards_ton, ref_rewards_usdt FROM users WHERE id=$1', [id]);
-        client.release();
-        
-        const user = uRes.rows[0];
-        const priceConfig = type === 'nft' ? PRICES.nft : PRICES.dice;
-        const totalCost = priceConfig[currency] * amount;
-        
-        let paidFromRewards = 0;
-        let paidFromWallet = totalCost;
-
-        let balance = 0;
-        if (currency === 'STARS') balance = user.ref_rewards_stars;
-        else if (currency === 'TON') balance = parseFloat(user.ref_rewards_ton);
-        else balance = parseFloat(user.ref_rewards_usdt);
-
-        if (useRewardBalance) {
-            paidFromRewards = Math.min(balance, totalCost);
-            paidFromWallet = totalCost - paidFromRewards;
-        }
-
-        await handlePurchaseSuccess(id, type, amount, currency, `manual_${Date.now()}_${Math.random()}`, useRewardBalance, paidFromRewards, paidFromWallet);
-        res.json({ ok: true });
-    } catch(e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.get('/api/history', async (req, res) => {
-    try {
-        const { id } = req.query;
-        const client = await pool.connect();
-        try {
-            const r = await client.query('SELECT * FROM transactions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 20', [id]);
-            res.json(r.rows.map(x => ({
-                id: x.id, 
-                type: x.type, 
-                amount: x.amount, 
-                description: x.description, 
-                timestamp: new Date(x.created_at).getTime(), 
-                currency: x.currency, 
-                isLocked: x.is_locked, 
-                assetType: x.asset_type,
-                serials: x.serials || [] 
-            })));
-        } finally { client.release(); }
-    } catch (e) { res.json([]); }
-});
-
-app.post('/api/withdraw', async (req, res) => {
-    let client;
-    try {
-        const { id, address } = req.body;
-        
-        client = await pool.connect();
-        await client.query('BEGIN');
-        
-        // 1. Check Balance
-        const u = await client.query('SELECT nft_available FROM users WHERE id=$1 FOR UPDATE', [id]);
-        if (u.rows[0].nft_available <= 0) throw new Error("No funds");
-        
-        // 2. Lock & Get Serials to Withdraw
-        const nfts = await client.query(`
-            SELECT serial_number FROM user_nfts 
-            WHERE user_id = $1 AND is_withdrawn = FALSE AND is_locked = FALSE AND is_seized = FALSE 
-            LIMIT $2
-            FOR UPDATE
-        `, [id, u.rows[0].nft_available]);
-        
-        const serialsToWithdraw = nfts.rows.map(r => parseInt(r.serial_number));
-        if (serialsToWithdraw.length === 0) throw new Error("No valid serials found to withdraw");
-
-        // 3. LAZY MINT ON CHAIN (If enabled)
-        // We attempt to mint each NFT. If minting fails, we abort the DB transaction.
-        if (ENABLE_CHAIN) {
-            console.log(`⛓️ MINTING: Processing ${serialsToWithdraw.length} NFTs for ${address}`);
-            for (const sn of serialsToWithdraw) {
-                try {
-                    await mintNftOnChain(address, sn);
-                    // Add slight delay to not spam RPC (optional but safer)
-                    await new Promise(r => setTimeout(r, 200)); 
-                } catch (mintError) {
-                    console.error(`💥 Minting Failed for Serial ${sn}:`, mintError);
-                    throw new Error("Blockchain interaction failed. Please try again later.");
-                }
-            }
-        }
-
-        // 4. Update Database (only if minting/logic succeeded)
-        await client.query('UPDATE user_nfts SET is_withdrawn = TRUE WHERE serial_number = ANY($1)', [serialsToWithdraw]);
-        await client.query('UPDATE users SET nft_available=0, nft_total=nft_total-$1 WHERE id=$2', [u.rows[0].nft_available, id]);
-        
-        const serialsJson = JSON.stringify(serialsToWithdraw);
-        await client.query(
-            "INSERT INTO transactions (user_id, type, asset_type, amount, description, serials) VALUES ($1, 'withdraw', 'nft', $2, $3, $4, $5)", 
-            [id, u.rows[0].nft_available, `Withdraw to ${address}`, serialsJson]
-        );
-        
-        await client.query('COMMIT');
-        res.json({ ok: true });
-    } catch (e) {
-        if(client) await client.query('ROLLBACK');
-        console.error("Withdraw Error", e);
-        res.status(500).json({ error: e.message });
-    } finally {
-        if(client) client.release();
-    }
-});
-
-app.post('/api/debug/reset', async (req, res) => {
-    let client;
-    try {
-        client = await pool.connect();
-        await client.query('TRUNCATE users, transactions, user_nfts RESTART IDENTITY CASCADE');
-        res.json({ ok: true });
-    } catch(e) {
-        res.status(500).json({error: e.message});
-    } finally {
-        if(client) client.release();
-    }
-});
-
-app.post('/api/debug/seize', async (req, res) => {
-    const { id, assetType } = req.body;
-    const result = await processSeizure(id, assetType || 'nft');
-    res.json(result);
 });

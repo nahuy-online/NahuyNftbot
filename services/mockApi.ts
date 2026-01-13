@@ -1,5 +1,5 @@
 
-import { UserProfile, Currency, NftTransaction } from '../types';
+import { UserProfile, Currency, NftTransaction, AdminStats } from '../types';
 import { NFT_PRICES, DICE_ATTEMPT_PRICES } from '../constants';
 
 const API_BASE = '/api'; 
@@ -76,6 +76,7 @@ const getLocalState = (userId: number, username: string) => {
     const newUser: UserProfile = {
         id: userId,
         username: username,
+        isAdmin: true, // AUTO-ADMIN FOR MOCK
         referralCode: randomCode, 
         referrerId: null,
         referralDebug: "Mock: User Created",
@@ -210,6 +211,39 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                  }
              }
              return user;
+        }
+
+        // --- MOCK ADMIN ENDPOINTS ---
+        if (endpoint === '/admin/stats') {
+            // Mock Data
+            const grossRevenue = { TON: 12.5, STARS: 56000, USDT: 400 };
+            const bonusSpent = { TON: 1.2, STARS: 5000, USDT: 20 };
+            
+            return {
+                totalUsers: 142,
+                activeUsers: 53,
+                totalNftSold: 890,
+                totalDicePlays: 320,
+                totalNftWonInDice: 950,
+                revenue: { 
+                    TON: grossRevenue.TON - bonusSpent.TON, 
+                    STARS: grossRevenue.STARS - bonusSpent.STARS, 
+                    USDT: grossRevenue.USDT - bonusSpent.USDT 
+                },
+                bonusStats: {
+                    earned: { TON: 5.4, STARS: 25000, USDT: 120 },
+                    spent: bonusSpent
+                },
+                recentTransactions: getLocalHistory(userId).slice(0, 5)
+            };
+        }
+        
+        if (endpoint === '/admin/search') {
+            const { targetId } = payload;
+            if (targetId == userId) {
+                 return { found: true, user: { id: userId, username: user.username, nftTotal: user.nftBalance.total, nftAvailable: user.nftBalance.available, diceAvailable: user.diceBalance.available, rewards: user.referralStats.bonusBalance }};
+            }
+            return { found: false };
         }
 
         if (endpoint === '/roll') {
@@ -363,7 +397,10 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
         }
         
         if (endpoint === '/debug/seize') {
-             const { assetType = 'nft' } = payload;
+             const { assetType = 'nft', targetId } = payload;
+             // If searching for another user in mock, we can only really mock self unless we build complex mock lookup
+             if (targetId && String(targetId) !== String(userId)) return { ok: false, message: "Mock: Can only seize self" };
+
              const hist = getLocalHistory(userId);
              console.log(`🔍 DEBUG [Mock]: Seizing ${assetType}. History length: ${hist.length}`);
              
@@ -410,7 +447,6 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                          if (d.isSeized && d.serials) d.serials.forEach(s => alreadySeizedSerials.add(s));
                      });
 
-                     // Get updated history to check against locked wins (though hist variable is slightly stale regarding new seize events, it's fine for finding old wins)
                      const lockedWins = hist.filter(x => {
                          if (x.type !== 'win' || !x.isLocked) return false;
                          if (x.serials && x.serials.some(s => alreadySeizedSerials.has(s))) return false;
@@ -521,4 +557,8 @@ export const verifyPayment = async (type: 'nft' | 'dice', amount: number, curren
 export const rollDice = async () => { const data = await apiRequest('/roll', 'POST'); return data.roll; };
 export const withdrawNFTWithAddress = async (address: string) => apiRequest('/withdraw', 'POST', { address });
 export const debugResetDb = async () => apiRequest('/debug/reset', 'POST');
-export const debugSeizeAsset = async (assetType: 'nft' | 'dice' = 'nft') => apiRequest('/debug/seize', 'POST', { assetType });
+export const debugSeizeAsset = async (assetType: 'nft' | 'dice' = 'nft', targetId?: number) => apiRequest('/debug/seize', 'POST', { assetType, targetId });
+
+// New Admin Services
+export const fetchAdminStats = async () => apiRequest('/admin/stats', 'POST');
+export const searchAdminUser = async (targetId: number) => apiRequest('/admin/search', 'POST', { targetId });

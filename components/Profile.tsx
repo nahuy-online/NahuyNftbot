@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserProfile, NftTransaction, Currency } from '../types';
-import { withdrawNFTWithAddress, fetchNftHistory, debugResetDb, debugSeizeAsset } from '../services/mockApi';
+import { withdrawNFTWithAddress, fetchNftHistory, debugResetDb } from '../services/mockApi';
 import { TonConnectButton, useTonAddress } from '@tonconnect/ui-react';
 import { BOT_USERNAME } from '../constants';
 import { useTranslation } from '../i18n/LanguageContext';
@@ -22,9 +22,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   const [historyFilter, setHistoryFilter] = useState<'assets' | 'bonus' | 'locked' | 'serials'>('assets');
   const [history, setHistory] = useState<NftTransaction[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
-
-  // Debug State
-  const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param || "none";
 
   useEffect(() => {
       const interval = setInterval(() => setNow(Date.now()), 60000);
@@ -126,23 +123,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       }
   };
 
-  const handleDebugSeizure = async (assetType: 'nft' | 'dice') => {
-      const label = assetType === 'nft' ? 'NFT' : 'DICE Attempts';
-      if (confirm(`👮 Simulate 'Chargeback' for ${label}? This will revoke assets from the last Stars purchase.`)) {
-          try {
-              const res = await debugSeizeAsset(assetType);
-              if (res.ok) {
-                  alert(res.message);
-                  onUpdate();
-              } else {
-                  alert("Failed: " + res.message);
-              }
-          } catch (e: any) {
-              alert("Error: " + e.message);
-          }
-      }
-  };
-
   const formatTimeLeft = (target: number) => {
       const diff = target - now;
       if (diff <= 0) return t('ready');
@@ -204,6 +184,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                 <h2 className="text-xl font-bold text-white">@{user.username || 'User'}</h2>
                 <div className="flex gap-2 items-center">
                     <p className="text-xs text-gray-400 font-mono">ID: {user.id}</p>
+                    {user.isAdmin && <span className="bg-red-500/20 text-red-400 text-[10px] px-1.5 rounded border border-red-500/20">ADMIN</span>}
                 </div>
             </div>
         </div>
@@ -345,26 +326,14 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
              </div>
           </div>
       </div>
-
-      <div className="mt-8 p-4 bg-red-900/20 border border-red-500/30 rounded-xl space-y-3">
-          <div className="flex items-center gap-2 mb-2 border-b border-red-500/20 pb-2">
-            <span className="text-red-500 text-lg">🛠️</span>
-            <span className="text-xs font-bold text-red-400 uppercase tracking-widest">Debug Zone</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
-              <div className="text-gray-500">Start Param:</div><div className="text-white break-all">{startParam}</div>
-              <div className="text-gray-500">My Ref Code:</div><div className="text-green-400">{user.referralCode || "loading..."}</div>
-              <div className="text-gray-500">Referred By:</div><div className={`font-bold ${user.referrerId ? "text-green-400" : "text-red-500"}`}>{user.referrerId ? user.referrerId : "none"}</div>
-              <div className="text-gray-500 col-span-2 mt-1">Status:</div><div className="col-span-2 bg-black/30 p-1.5 rounded text-yellow-300 break-words">{user.referralDebug || "No debug info"}</div>
-          </div>
-          <div className="flex flex-col gap-2">
-            <button onClick={handleDebugReset} className="w-full text-xs font-bold text-white bg-red-600/80 hover:bg-red-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>⚠️</span> RESET DB</button>
-            <div className="flex gap-2">
-                <button onClick={() => handleDebugSeizure('nft')} className="flex-1 text-xs font-bold text-white bg-orange-600/80 hover:bg-orange-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>👮</span> REVOKE NFT</button>
-                <button onClick={() => handleDebugSeizure('dice')} className="flex-1 text-xs font-bold text-white bg-purple-600/80 hover:bg-purple-500 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><span>👮</span> REVOKE DICE</button>
-            </div>
-          </div>
+        
+      {/* Dev Reset Button - Kept discreetly */}
+      <div className="mt-8 pt-4 border-t border-gray-800 flex justify-center opacity-30 hover:opacity-100 transition-opacity">
+        <button onClick={handleDebugReset} className="text-[10px] text-red-500 uppercase tracking-widest hover:underline">
+            Reset Local DB
+        </button>
       </div>
+
     </div>
       
       {showHistory && (
