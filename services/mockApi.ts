@@ -1,5 +1,5 @@
 
-import { UserProfile, Currency, NftTransaction, AdminStats } from '../types';
+import { UserProfile, Currency, NftTransaction, AdminStats, UserSortField } from '../types';
 import { NFT_PRICES, DICE_ATTEMPT_PRICES } from '../constants';
 
 const API_BASE = '/api'; 
@@ -56,6 +56,7 @@ const getLocalState = (userId: number, username: string) => {
     
     if (stored) {
         const parsed = JSON.parse(stored);
+        // Migrations for existing mock data
         if (parsed.referralStats) {
             if (!parsed.referralStats.bonusBalance && (parsed.referralStats as any).earnings) {
                 parsed.referralStats.bonusBalance = (parsed.referralStats as any).earnings;
@@ -67,6 +68,12 @@ const getLocalState = (userId: number, username: string) => {
              parsed.referralStats = { level1: 0, level2: 0, level3: 0, bonusBalance: { STARS: 0, TON: 0, USDT: 0 } };
         }
         if (!parsed.reservedSerials) parsed.reservedSerials = [];
+        
+        // Mock IP/Time data if missing
+        if (!parsed.ip) parsed.ip = `192.168.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}`;
+        if (!parsed.joinedAt) parsed.joinedAt = Date.now() - Math.floor(Math.random() * 1000000000);
+        if (!parsed.lastActive) parsed.lastActive = Date.now();
+
         return parsed as UserProfile;
     }
 
@@ -80,6 +87,10 @@ const getLocalState = (userId: number, username: string) => {
         referralCode: randomCode, 
         referrerId: null,
         referralDebug: "Mock: User Created",
+        // New Fields
+        ip: `192.168.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}`,
+        joinedAt: Date.now(),
+        lastActive: Date.now(),
         nftBalance: { total: 0, available: 0, locked: 0, lockedDetails: [] },
         reservedSerials: [],
         diceBalance: { available: 2, starsAttempts: 0, used: 0 },
@@ -90,6 +101,8 @@ const getLocalState = (userId: number, username: string) => {
 };
 
 const updateLocalState = (user: UserProfile) => {
+    // Ensure Last Active is updated on state save if meaningful action happened
+    user.lastActive = Date.now();
     safeStorage.setItem(`mock_user_${user.id}`, JSON.stringify(user));
 };
 
@@ -240,10 +253,74 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
         
         if (endpoint === '/admin/search') {
             const { targetId } = payload;
-            if (targetId == userId) {
-                 return { found: true, user: { id: userId, username: user.username, nftTotal: user.nftBalance.total, nftAvailable: user.nftBalance.available, diceAvailable: user.diceBalance.available, rewards: user.referralStats.bonusBalance }};
+            const key = `mock_user_${targetId}`;
+            const stored = safeStorage.getItem(key);
+            
+            if (stored) {
+                 const u = JSON.parse(stored);
+                 // Need to fetch target history
+                 const targetHist = getLocalHistory(parseInt(targetId));
+                 
+                 // Ensure mock data for new fields exists if not present in old mock data
+                 const profile = {
+                     id: u.id, username: u.username, 
+                     nftTotal: u.nftBalance.total, 
+                     nftAvailable: u.nftBalance.available, 
+                     diceAvailable: u.diceBalance.available, 
+                     rewards: u.referralStats.bonusBalance,
+                     referralStats: u.referralStats, // NEW: Pass full referral stats
+                     ip: u.ip || '192.168.0.1',
+                     joinedAt: u.joinedAt || Date.now(),
+                     lastActive: u.lastActive || Date.now(),
+                     transactions: targetHist
+                 };
+                 return { found: true, user: profile };
             }
             return { found: false };
+        }
+        
+        if (endpoint === '/admin/users') {
+            const { sortBy, sortOrder, limit, offset } = payload;
+            // 1. Scan all users
+            const allUsers: any[] = [];
+            const len = safeStorage.length();
+            for (let i = 0; i < len; i++) {
+                const key = safeStorage.key(i);
+                if (key && key.startsWith('mock_user_')) {
+                    const raw = safeStorage.getItem(key);
+                    if (raw) allUsers.push(JSON.parse(raw));
+                }
+            }
+            
+            // 2. Sort
+            allUsers.sort((a, b) => {
+                let valA, valB;
+                switch (sortBy) {
+                    case 'joined_at': valA = a.joinedAt || 0; valB = b.joinedAt || 0; break;
+                    case 'last_active': valA = a.lastActive || 0; valB = b.lastActive || 0; break;
+                    case 'nft_total': valA = a.nftBalance?.total || 0; valB = b.nftBalance?.total || 0; break;
+                    case 'referrals': valA = a.referralStats?.level1 || 0; valB = b.referralStats?.level1 || 0; break;
+                    default: valA = a.id; valB = b.id;
+                }
+                return sortOrder === 'desc' ? valB - valA : valA - valB;
+            });
+            
+            // 3. Paginate
+            const paginated = allUsers.slice(offset, offset + limit);
+            
+            // 4. Map to summary
+            return {
+                users: paginated.map(u => ({
+                    id: u.id, 
+                    username: u.username, 
+                    ip: u.ip || '127.0.0.1',
+                    nftTotal: u.nftBalance?.total || 0,
+                    level1: u.referralStats?.level1 || 0,
+                    joinedAt: u.joinedAt || Date.now(),
+                    lastActive: u.lastActive || Date.now()
+                })),
+                hasMore: (offset + limit) < allUsers.length
+            };
         }
 
         if (endpoint === '/roll') {
@@ -562,3 +639,4 @@ export const debugSeizeAsset = async (assetType: 'nft' | 'dice' = 'nft', targetI
 // New Admin Services
 export const fetchAdminStats = async () => apiRequest('/admin/stats', 'POST');
 export const searchAdminUser = async (targetId: number) => apiRequest('/admin/search', 'POST', { targetId });
+export const fetchAdminUsers = async (sortBy: UserSortField, sortOrder: 'asc'|'desc', limit: number, offset: number) => apiRequest('/admin/users', 'POST', { sortBy, sortOrder, limit, offset });

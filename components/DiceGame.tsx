@@ -241,7 +241,8 @@ export const DiceGame: React.FC<DiceGameProps> = ({ user, onUpdate }) => {
                 </div>
 
                 <div className="grid grid-cols-3 gap-2">
-                    {(Object.values(Currency) as Currency[]).map((curr) => (
+                    {/* Forced Order: TON, USDT, STARS */}
+                    {([Currency.TON, Currency.USDT, Currency.STARS] as Currency[]).map((curr) => (
                         <button key={curr} onClick={() => { setSelectedCurrency(curr); setUseRewardBalance(false); }}
                         className={`py-3 rounded-xl text-sm font-bold border transition-all ${
                             selectedCurrency === curr ? 'bg-green-600 border-green-500 text-white shadow-lg' : 'bg-gray-800 border-gray-700 text-gray-400'

@@ -320,9 +320,9 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                  <svg className="opacity-50 group-hover:opacity-100 transition-opacity" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
              </div>
              <div className="flex gap-3 text-xs font-mono font-bold">
-                  <span className={`text-yellow-500 ${user.referralStats.bonusBalance.STARS > 0 ? 'animate-pulse' : ''}`}>{user.referralStats.bonusBalance.STARS} ★</span>
                   <span className="text-blue-400">{formatCrypto(user.referralStats.bonusBalance.TON)} T</span>
                   <span className="text-green-400">{formatCrypto(user.referralStats.bonusBalance.USDT)} $</span>
+                  <span className={`text-yellow-500 ${user.referralStats.bonusBalance.STARS > 0 ? 'animate-pulse' : ''}`}>{user.referralStats.bonusBalance.STARS} ★</span>
              </div>
           </div>
       </div>
@@ -367,15 +367,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
               <div className="flex-1 overflow-y-auto overflow-x-hidden pb-safe">
                   {historyFilter === 'bonus' && (
                       <div className="p-5 pb-0 grid grid-cols-1 gap-3 animate-fade-in">
-                          <div className="p-4 rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 border border-white/5 flex items-center justify-between shadow-lg">
-                              <div className="flex items-center gap-3">
-                                  <div className="w-10 h-10 rounded-full bg-yellow-500/20 text-yellow-500 flex items-center justify-center text-lg shadow-[0_0_10px_rgba(234,179,8,0.2)]">★</div>
-                                  <div>
-                                      <div className="text-xs text-gray-400 font-bold uppercase tracking-wider">Stars</div>
-                                      <div className="text-xl font-bold text-white">{user.referralStats.bonusBalance.STARS}</div>
-                                  </div>
-                              </div>
-                          </div>
                           <div className="grid grid-cols-2 gap-3">
                               <div className="p-4 rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 border border-white/5 flex flex-col justify-center shadow-lg">
                                   <div className="text-xs text-blue-400 font-bold uppercase mb-1">TON</div>
@@ -384,6 +375,15 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                               <div className="p-4 rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 border border-white/5 flex flex-col justify-center shadow-lg">
                                   <div className="text-xs text-green-400 font-bold uppercase mb-1">USDT</div>
                                   <div className="text-lg font-bold text-white">{formatCrypto(user.referralStats.bonusBalance.USDT)}</div>
+                              </div>
+                          </div>
+                          <div className="p-4 rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 border border-white/5 flex items-center justify-between shadow-lg">
+                              <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-full bg-yellow-500/20 text-yellow-500 flex items-center justify-center text-lg shadow-[0_0_10px_rgba(234,179,8,0.2)]">★</div>
+                                  <div>
+                                      <div className="text-xs text-gray-400 font-bold uppercase tracking-wider">Stars</div>
+                                      <div className="text-xl font-bold text-white">{user.referralStats.bonusBalance.STARS}</div>
+                                  </div>
                               </div>
                           </div>
                           <div className="h-px bg-gray-800 my-2"></div>

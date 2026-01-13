@@ -141,7 +141,8 @@ export const Shop: React.FC<ShopProps> = ({ onPurchaseComplete, userBalance }) =
       {/* Currency Selection - Compact */}
       <div className="space-y-3">
         <div className="grid grid-cols-3 gap-2">
-          {(Object.values(Currency) as Currency[]).map((curr) => (
+          {/* Forced Order: TON, USDT, STARS */}
+          {([Currency.TON, Currency.USDT, Currency.STARS] as Currency[]).map((curr) => (
             <button
               key={curr}
               onClick={() => { setSelectedCurrency(curr); setUseRewardBalance(false); }}

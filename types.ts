@@ -40,6 +40,9 @@ export interface UserProfile {
   referralCode?: string; // New Privacy-focused referral code
   referrerId?: number | null; // ID of the person who invited this user
   referralDebug?: string; // Debug info from backend about linking process
+  ip?: string; // NEW: User IP
+  joinedAt?: number; // NEW: Registration timestamp
+  lastActive?: number; // NEW: Last action timestamp
   nftBalance: {
     total: number;
     available: number;
@@ -80,6 +83,8 @@ export interface AdminStats {
   };
   recentTransactions: NftTransaction[];
 }
+
+export type UserSortField = 'joined_at' | 'last_active' | 'nft_total' | 'referrals';
 
 export type Tab = 'shop' | 'dice' | 'profile' | 'admin';
 

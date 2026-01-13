@@ -26,6 +26,9 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 app.use(cors());
+// Simple IP middleware since Express behind proxy (Docker/Nginx) often needs trust proxy config
+// For simplicity in this env:
+app.set('trust proxy', true);
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -109,6 +112,8 @@ const initDB = async () => {
                         ref_rewards_stars INT DEFAULT 0,
                         ref_rewards_ton NUMERIC(18, 9) DEFAULT 0,
                         ref_rewards_usdt NUMERIC(18, 2) DEFAULT 0,
+                        ip_address TEXT,
+                        last_active TIMESTAMP DEFAULT NOW(),
                         created_at TIMESTAMP DEFAULT NOW()
                     );
                 `);
@@ -152,6 +157,8 @@ const initDB = async () => {
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS ref_rewards_ton NUMERIC(18, 9) DEFAULT 0",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS ref_rewards_usdt NUMERIC(18, 2) DEFAULT 0",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS dice_stars_attempts INT DEFAULT 0",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS ip_address TEXT",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active TIMESTAMP DEFAULT NOW()",
                     "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT FALSE",
                     "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_refunded BOOLEAN DEFAULT FALSE",
                     "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS tx_hash TEXT UNIQUE",
@@ -606,6 +613,8 @@ app.post('/api/auth', async (req, res) => {
     try {
         const { id, username, startParam } = req.body;
         if (!id) throw new Error("No ID provided");
+        // Capture IP (behind Nginx/Docker usually X-Forwarded-For)
+        const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
         client = await pool.connect();
         await client.query('BEGIN');
@@ -617,11 +626,13 @@ app.post('/api/auth', async (req, res) => {
         if (!user) {
             isNew = true;
             const code = generateRefCode(); 
-            await client.query('INSERT INTO users (id, username, referral_code) VALUES ($1, $2, $3)', [id, username, code]);
+            await client.query('INSERT INTO users (id, username, referral_code, ip_address) VALUES ($1, $2, $3, $4)', [id, username, code, ip]);
             resUser = await client.query('SELECT * FROM users WHERE id = $1', [id]);
             user = resUser.rows[0];
             debugInfo = "User Created";
         } else {
+            // Update Activity
+            await client.query('UPDATE users SET last_active = NOW(), ip_address = $1 WHERE id = $2', [ip, id]);
             debugInfo = "User Exists";
         }
 
@@ -670,6 +681,9 @@ app.post('/api/auth', async (req, res) => {
             referrerId: user.referrer_id ? String(user.referrer_id) : null,
             referralDebug: debugInfo, 
             isNewUser: isNew,
+            ip: user.ip_address,
+            joinedAt: new Date(user.created_at).getTime(),
+            lastActive: new Date(user.last_active).getTime(),
             nftBalance: {
                 total: user.nft_total || 0,
                 available: user.nft_available || 0,
@@ -701,6 +715,56 @@ app.post('/api/auth', async (req, res) => {
     } catch (e) {
         if(client) await client.query('ROLLBACK');
         res.status(500).json({ error: String(e.message || e) });
+    } finally {
+        if(client) client.release();
+    }
+});
+
+// Admin: Get Users List
+app.post('/api/admin/users', async (req, res) => {
+    const { id, sortBy = 'joined_at', sortOrder = 'desc', limit = 20, offset = 0 } = req.body;
+    if (!ADMIN_IDS.includes(parseInt(id))) return res.status(403).json({ error: "Access Denied" });
+
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Sorting Map
+        const sortMap = {
+            'joined_at': 'created_at',
+            'last_active': 'last_active',
+            'nft_total': 'nft_total',
+            'referrals': 'referral_count' // Derived below
+        };
+        const dbSort = sortMap[sortBy] || 'created_at';
+        const dir = sortOrder === 'asc' ? 'ASC' : 'DESC';
+
+        // Complex Query to get Referral Count (Level 1)
+        const query = `
+            SELECT u.*, (SELECT COUNT(*) FROM users WHERE referrer_id = u.id) as referral_count
+            FROM users u
+            ORDER BY ${dbSort} ${dir}
+            LIMIT $1 OFFSET $2
+        `;
+        
+        const result = await client.query(query, [limit, offset]);
+        const totalRes = await client.query('SELECT count(*) FROM users');
+
+        res.json({
+            users: result.rows.map(u => ({
+                id: u.id,
+                username: u.username,
+                ip: u.ip_address,
+                nftTotal: u.nft_total,
+                level1: parseInt(u.referral_count || 0),
+                joinedAt: new Date(u.created_at).getTime(),
+                lastActive: new Date(u.last_active).getTime()
+            })),
+            hasMore: (offset + limit) < parseInt(totalRes.rows[0].count)
+        });
+
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     } finally {
         if(client) client.release();
     }
