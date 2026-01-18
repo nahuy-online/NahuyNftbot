@@ -1,20 +1,41 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# NFT Lottery Mini App
 
-# Run and deploy your AI Studio app
+Приложение для продажи NFT и проведения лотереи в Telegram.
 
-This contains everything you need to run your app locally.
+## ⚠️ Важное замечание о запуске
 
-View your app in AI Studio: https://ai.studio/apps/drive/1qTr-3_E5yDgU30zQUz0Xq6ZLjel34wdp
+Если при установке вы видите сообщение:
+`found 7 vulnerabilities (4 moderate, 1 high, 2 critical)`
+**Не пугайтесь.** Это стандартное сообщение аудита зависимостей. Оно **не мешает** запуску приложения в режиме разработки. Просто продолжайте выполнение команд.
 
-## Run Locally
+## Как запустить (Самый простой способ - Docker)
 
-**Prerequisites:**  Node.js
+Самый надежный способ запустить и фронтенд, и бэкенд, и базу данных одной командой:
 
+1. Убедитесь, что установлен [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+2. Запустите:
+   ```bash
+   docker-compose up --build
+   ```
+3. Откройте `http://localhost:80` (или `http://localhost:3000` в зависимости от настройки).
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Запуск вручную (Без Docker)
+
+Если вы хотите запустить только интерфейс (Frontend) для проверки верстки:
+
+1. Установите зависимости:
+   ```bash
+   npm install
+   ```
+2. Запустите:
+   ```bash
+   npm run dev
+   ```
+3. Приложение откроется на `http://localhost:3000`.
+   *Примечание: Без запущенного бэкенда и базы данных, приложение покажет экран ошибки подключения. Выберите "Enter Demo Mode (Offline)" на экране ошибки, чтобы протестировать интерфейс с мок-данными.*
+
+## Переменные окружения
+
+Создайте файл `.env` в корне (для локального запуска) или настройте переменные в `docker-compose.yml`:
+- `BOT_TOKEN`: Токен вашего Telegram бота.
+- `API_URL`: Адрес бэкенда (по умолчанию проксируется Vite).
