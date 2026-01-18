@@ -37,15 +37,8 @@ const safeStorage = {
     }
 };
 
-// --- MOCK LOGIC HELPERS (OMITTED FOR BREVITY - KEEPING EXISTING MOCK LOGIC SEPARATE) ---
-// Note: In a real refactor, mock logic should be moved to a separate file entirely.
-// For this update, I am focusing on the apiRequest security update.
-
-// ... (Mock helper functions getNextSerialBatch, getLocalState, etc. assumed to be here or imported) ...
-// To save space in this diff, assume the Mock Local Logic implementation remains exactly as is 
-// until we reach the apiRequest function.
-
-// RE-IMPLEMENTING MOCK HELPERS BRIEFLY TO ENSURE CODE INTEGRITY IF FILE IS REPLACED
+// --- MOCK LOGIC HELPERS ---
+// (Mock implementation details kept for explicit manual testing, but disabled by default)
 const getNextSerialBatch = (qty: number): number[] => {
     const key = 'mock_global_serial_max';
     const currentMax = parseInt(safeStorage.getItem(key) || '0');
@@ -68,7 +61,7 @@ const getLocalState = (userId: number, username: string) => {
         ip: '127.0.0.1', joinedAt: Date.now(), lastActive: Date.now(),
         nftBalance: { total: 0, available: 0, locked: 0, lockedDetails: [] },
         reservedSerials: [],
-        diceBalance: { available: 2, starsAttempts: 0, used: 0 },
+        diceBalance: { available: 5, starsAttempts: 0, used: 0 },
         referralStats: { level1: 0, level2: 0, level3: 0, bonusBalance: { STARS: 0, TON: 0, USDT: 0 } }
     };
     safeStorage.setItem(key, JSON.stringify(newUser));
@@ -89,7 +82,7 @@ const addLocalHistory = (userId: number, tx: NftTransaction) => {
 };
 
 let FORCED_MOCK = false;
-export const enableMockMode = () => { FORCED_MOCK = true; console.log("🛠️ Mock Mode Enabled"); };
+export const enableMockMode = () => { FORCED_MOCK = true; console.log("🛠️ Mock Mode Enabled Manually"); };
 
 // --- MAIN API REQUEST FUNCTION ---
 const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) => {
@@ -101,26 +94,22 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
   const userId = tgUser?.id || 99999; 
   const username = tgUser?.username || "Guest";
   
-  // 2. Attach Authorization Header
   const headers: HeadersInit = { 
       'Content-Type': 'application/json',
-      'Authorization': `tma ${initData}` // Sending signed data to backend
+      'Authorization': `tma ${initData}` 
   };
   
   let url = `${API_BASE}${endpoint}`;
   if (method === 'GET' && !url.includes('?')) {
-      url += `?id=${userId}`; // Legacy fallback for GET params
+      url += `?id=${userId}`; 
   }
 
   const payload = body ? { id: userId, ...body } : { id: userId };
 
   // --- MOCK HANDLER ---
   const runMock = async () => {
+        console.warn(`[MockApi] Executing ${method} ${endpoint} (Local Mode)`);
         const user = getLocalState(userId, username);
-        
-        // ... (Mock Logic for /auth, /roll, etc. kept from original file) ...
-        // Implementing a subset for brevity of the diff, but in production file 
-        // you would keep the full switch case from the previous version.
         
         if (endpoint === '/auth') return user;
         
@@ -157,41 +146,46 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
              updateLocalState(user);
              return { ok: true };
         }
+        
+        if (endpoint === '/payment/create') {
+            return { ok: true, internalId: 'mock_tx', transaction: null };
+        }
+        
+        if (endpoint === '/payment/verify') {
+             if (payload.type === 'dice') user.diceBalance.available += payload.amount;
+             else user.nftBalance.total += payload.amount;
+             updateLocalState(user);
+             return { ok: true };
+        }
 
-        // Default to Mock Success for others
         return { ok: true };
   };
 
+  // 🚨 CRITICAL CHANGE: NO AUTOMATIC FALLBACK
+  // Only run mock if explicitly enabled by user/dev
   if (FORCED_MOCK) return runMock();
 
   try {
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), 5000); // Increased timeout
-
     const response = await fetch(url, {
         method,
-        headers, // Including Auth Header
-        body: method !== 'GET' ? JSON.stringify(payload) : undefined,
-        signal: controller.signal
+        headers,
+        body: method !== 'GET' ? JSON.stringify(payload) : undefined
     });
     
-    clearTimeout(id);
     const responseText = await response.text();
     let responseJson: any = null;
     try { if (responseText) responseJson = JSON.parse(responseText); } catch (e) {}
 
     if (!response.ok) {
-        // If 401 Unauthorized, we can't fall back to Mock (security issue), just throw
-        if (response.status === 401) throw new Error("Unauthorized: Invalid Telegram Data");
         throw new Error(responseJson?.error || `Server Error ${response.status}`);
     }
     
     return responseJson || {};
   } catch (error: any) {
-    console.warn(`⚠️ Backend unavailable (${error.message}). Switching to Mock.`);
-    // Only fall back to mock if it's a network error, not an auth error
-    if (String(error.message).includes('Unauthorized')) throw error;
-    return runMock();
+    // ⚠️ Previously this silently swallowed errors and switched to Mock.
+    // Now we rethrow the error so the UI shows "Connection Error".
+    console.error(`[ApiRequest] Error: ${error.message}`);
+    throw error;
   }
 };
 
@@ -204,7 +198,7 @@ export const withdrawNFTWithAddress = async (address: string) => apiRequest('/wi
 export const debugResetDb = async () => apiRequest('/debug/reset', 'POST');
 export const debugSeizeAsset = async (assetType: 'nft' | 'dice' = 'nft', targetId?: number) => apiRequest('/debug/seize', 'POST', { assetType, targetId });
 
-// New Admin Services
+// Admin
 export const fetchAdminStats = async () => apiRequest('/admin/stats', 'POST');
 export const searchAdminUser = async (targetId: number) => apiRequest('/admin/search', 'POST', { targetId });
 export const fetchAdminUsers = async (sortBy: UserSortField, sortOrder: 'asc'|'desc', limit: number, offset: number) => apiRequest('/admin/users', 'POST', { sortBy, sortOrder, limit, offset });

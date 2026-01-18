@@ -1,3 +1,4 @@
+
 version: '3.8'
 
 services:
@@ -32,11 +33,10 @@ services:
       - DB_SSL=false
 
       # --- APP SETTINGS ---
-      # Ensure these are set in your .env file or deployment secrets
       - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_IDS=${ADMIN_IDS}
+      - RECEIVER_ADDRESS=${RECEIVER_ADDRESS}
       - PORT=8080
-      # - RECEIVER_TON_ADDRESS_TESTNET (Optional)
-      # - TONAPI_KEY (Optional)
     depends_on:
       - postgres
 

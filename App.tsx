@@ -39,6 +39,7 @@ const App: React.FC = () => {
       setUser(data);
     } catch (e: any) {
       console.error("Failed to load user", e);
+      // Clean error message
       setError(e.message || "Connection Failed");
     }
   };
@@ -55,17 +56,7 @@ const App: React.FC = () => {
         window.Telegram.WebApp.enableClosingConfirmation();
     }
     
-    // --- INFINITE LOADING FIX ---
-    const autoMockTimer = setTimeout(() => {
-        if (!user && !error) {
-            console.warn("⏳ Load timeout: Switching to Mock Mode automatically.");
-            switchToDemo();
-        }
-    }, 2500); 
-
     loadData();
-
-    return () => clearTimeout(autoMockTimer);
   }, [tonConnectUI]);
 
   useEffect(() => {
@@ -104,7 +95,7 @@ const App: React.FC = () => {
                     onClick={switchToDemo}
                     className="w-full px-6 py-3 bg-gray-800 border border-gray-700 rounded-xl hover:bg-gray-700 transition-colors text-sm font-bold text-gray-300"
                 >
-                    Enter Demo Mode
+                    Enter Demo Mode (Offline)
                 </button>
             </div>
         </div>
