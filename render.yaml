@@ -23,19 +23,22 @@ services:
     autoDeploy: true
 
   # FRONTEND SERVICE
-  - type: site
+  # Deployed as a web service using 'serve' because Blueprint static sites can be restrictive
+  - type: web
     name: nft-frontend
-    env: static
+    env: node
     plan: free
     rootDir: .
     buildCommand: npm install && npm run build
-    staticPublishPath: dist
+    startCommand: npm start
     envVars:
       - key: VITE_API_URL
         fromService:
           type: web
           name: nft-backend
           property: url
+      - key: PORT
+        value: 10000
     autoDeploy: true
 
 databases:
