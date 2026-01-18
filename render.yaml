@@ -1,12 +1,14 @@
 services:
-  # BACKEND SERVICE
+  # UNIFIED MONOLITH SERVICE (Backend + Frontend Static)
   - type: web
-    name: nft-backend
+    name: nft-miniapp-monolith
     env: node
     plan: free
-    rootDir: backend
-    buildCommand: npm install
-    startCommand: npm start
+    rootDir: .
+    # 1. Install Root Deps (Frontend) 2. Build Frontend 3. Install Backend Deps
+    buildCommand: npm install && npm run build && cd backend && npm install
+    # Start the backend (which now serves the frontend dist folder)
+    startCommand: node backend/index.js
     envVars:
       - key: PORT
         value: 10000
@@ -20,25 +22,6 @@ services:
         sync: false
       - key: RECEIVER_ADDRESS
         sync: false
-    autoDeploy: true
-
-  # FRONTEND SERVICE
-  # Deployed as a web service using 'serve' because Blueprint static sites can be restrictive
-  - type: web
-    name: nft-frontend
-    env: node
-    plan: free
-    rootDir: .
-    buildCommand: npm install && npm run build
-    startCommand: npm start
-    envVars:
-      - key: VITE_API_URL
-        fromService:
-          type: web
-          name: nft-backend
-          property: url
-      - key: PORT
-        value: 10000
     autoDeploy: true
 
 databases:

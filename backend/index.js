@@ -23,6 +23,10 @@ app.use(express.json());
 app.use(cors());
 app.set('trust proxy', true);
 
+// --- STATIC FRONTEND SERVING (Monolith Setup) ---
+// Serve static files from the 'dist' directory built by Vite
+app.use(express.static(path.resolve(__dirname, '../dist')));
+
 // --- CONFIG ---
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -531,6 +535,12 @@ app.post('/api/admin/search', validateTelegramData, isAdmin, async (req, res) =>
 app.post('/api/debug/seize', validateTelegramData, isAdmin, async (req, res) => {
     // Implement seizure logic
     res.json({ ok: true, message: 'Implemented in next update' });
+});
+
+// --- CATCH-ALL FOR SPA (React Router support) ---
+// This must be the LAST route
+app.get('*', (req, res) => {
+    res.sendFile(path.resolve(__dirname, '../dist/index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
