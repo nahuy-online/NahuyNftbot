@@ -23,7 +23,7 @@ services:
     autoDeploy: true
 
   # FRONTEND SERVICE
-  - type: static
+  - type: site
     name: nft-frontend
     env: static
     plan: free
@@ -36,7 +36,6 @@ services:
           type: web
           name: nft-backend
           property: url
-          envVarKey: VITE_API_URL 
     autoDeploy: true
 
 databases:
