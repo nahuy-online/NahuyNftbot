@@ -19,6 +19,7 @@ dotenv.config();
 
 const app = express();
 app.use(express.json());
+// Allow CORS for all origins in this demo setup to ensure frontend works seamlessly
 app.use(cors());
 app.set('trust proxy', true);
 
@@ -36,15 +37,34 @@ const tonClient = new TonClient({
     apiKey: TON_API_KEY 
 });
 
-const pool = new Pool({
-    user: process.env.DB_USER || 'user',
-    password: process.env.DB_PASSWORD || 'pass',
-    database: process.env.DB_NAME || 'nft_db',
-    host: process.env.DB_HOST || 'localhost', 
-    port: parseInt(process.env.DB_PORT || '5432'),
-    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
-    connectionTimeoutMillis: 5000, 
-});
+// --- DB CONFIGURATION (RENDER COMPATIBLE) ---
+const getDbConfig = () => {
+    // If DATABASE_URL is provided (Render/Heroku/Cloud), use it
+    if (process.env.DATABASE_URL) {
+        return {
+            connectionString: process.env.DATABASE_URL,
+            ssl: { rejectUnauthorized: false }, // Required for Render Postgres
+            connectionTimeoutMillis: 5000,
+        };
+    }
+
+    // Fallback to individual params (Local/Docker)
+    return {
+        user: process.env.DB_USER || 'user',
+        password: process.env.DB_PASSWORD || 'pass',
+        database: process.env.DB_NAME || 'nft_db',
+        host: process.env.DB_HOST || 'localhost', 
+        port: parseInt(process.env.DB_PORT || '5432'),
+        ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+        connectionTimeoutMillis: 5000, 
+    };
+};
+
+const pool = new Pool(getDbConfig());
+
+// --- HEALTH CHECK ---
+app.get('/health', (req, res) => res.status(200).send('OK'));
+app.get('/api/health', (req, res) => res.status(200).send('OK'));
 
 // --- DB INIT ---
 const initDB = async () => {

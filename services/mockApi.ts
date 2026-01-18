@@ -2,7 +2,14 @@
 import { UserProfile, Currency, NftTransaction, AdminStats, UserSortField } from '../types';
 import { NFT_PRICES, DICE_ATTEMPT_PRICES } from '../constants';
 
-const API_BASE = '/api'; 
+// Detect API Target
+// In development/docker, Vite proxies requests to /api
+// In Render production, the backend is on a different domain, so we must use the full URL provided in build env.
+// Use optional chaining to safely access VITE_API_URL even if import.meta.env is somehow undefined in certain contexts
+const ENV_API_URL = (import.meta as any).env?.VITE_API_URL; // e.g., "https://nft-backend.onrender.com"
+const API_BASE = ENV_API_URL ? `${ENV_API_URL}/api` : '/api';
+
+console.log(`[API Config] Base URL: ${API_BASE}`);
 
 // --- SAFE STORAGE WRAPPER ---
 const memoryStore: Record<string, string> = {};
@@ -100,7 +107,8 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
   };
   
   let url = `${API_BASE}${endpoint}`;
-  if (method === 'GET' && !url.includes('?')) {
+  // Append ID for local mock dev only if using basic Auth
+  if (method === 'GET' && !url.includes('?') && !initData) {
       url += `?id=${userId}`; 
   }
 
@@ -161,8 +169,6 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
         return { ok: true };
   };
 
-  // 🚨 CRITICAL CHANGE: NO AUTOMATIC FALLBACK
-  // Only run mock if explicitly enabled by user/dev
   if (FORCED_MOCK) return runMock();
 
   try {
@@ -182,9 +188,7 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
     
     return responseJson || {};
   } catch (error: any) {
-    // ⚠️ Previously this silently swallowed errors and switched to Mock.
-    // Now we rethrow the error so the UI shows "Connection Error".
-    console.error(`[ApiRequest] Error: ${error.message}`);
+    console.error(`[ApiRequest] Error connecting to ${url}: ${error.message}`);
     throw error;
   }
 };

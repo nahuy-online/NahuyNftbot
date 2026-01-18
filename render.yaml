@@ -1,0 +1,46 @@
+services:
+  # BACKEND SERVICE
+  - type: web
+    name: nft-backend
+    env: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nft-db
+          property: connectionString
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: RECEIVER_ADDRESS
+        sync: false
+    autoDeploy: true
+
+  # FRONTEND SERVICE
+  - type: static
+    name: nft-frontend
+    env: static
+    plan: free
+    rootDir: .
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: nft-backend
+          property: url
+          envVarKey: VITE_API_URL 
+    autoDeploy: true
+
+databases:
+  - name: nft-db
+    databaseName: nft_db
+    user: nft_user
+    plan: free
