@@ -5,9 +5,13 @@ services:
     env: node
     plan: free
     rootDir: .
-    # 1. Install Root Deps (Frontend) 2. Build Frontend 3. Install Backend Deps
+    # Build Steps:
+    # 1. npm install (Root/Frontend deps)
+    # 2. npm run build (Vite build -> ./dist)
+    # 3. cd backend && npm install (Backend deps)
     buildCommand: npm install && npm run build && cd backend && npm install
-    # Start the backend (which now serves the frontend dist folder)
+    # Start Command:
+    # Run the backend, which serves the ./dist folder as static assets
     startCommand: node backend/index.js
     envVars:
       - key: PORT

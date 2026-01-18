@@ -1,28 +1,22 @@
-// @ts-nocheck
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { fileURLToPath } from 'url';
+
+// Simulate __dirname in ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export default defineConfig(({ mode }) => {
   // Load env file based on `mode` in the current working directory.
-  const env = loadEnv(mode, process.cwd(), '');
+  // Cast process to any to avoid TS error 'Property cwd does not exist on type Process'
+  const env = loadEnv(mode, (process as any).cwd(), '');
 
-  // PRIORITIZE Docker Environment Variable (process.env) over .env file (env)
-  // Check if process.env.VITE_API_TARGET is actually defined and not empty string
-  let apiTarget = process.env.VITE_API_TARGET;
-  
-  if (!apiTarget) {
-     apiTarget = env.VITE_API_TARGET;
-  }
-  
-  // Default fallback
-  if (!apiTarget) {
-      apiTarget = 'http://localhost:8080';
-  }
+  // PRIORITIZE Docker/System Environment Variable over .env file
+  // Default to localhost for local dev if not set
+  const apiTarget = process.env.VITE_API_TARGET || env.VITE_API_TARGET || 'http://localhost:8080';
 
-  console.log(`[Config] Raw process.env.VITE_API_TARGET: '${process.env.VITE_API_TARGET}'`);
-  console.log(`[Config] .env file VITE_API_TARGET: '${env.VITE_API_TARGET}'`);
-  console.log(`[Vite Proxy] Final /api forwarding target: ${apiTarget}`);
+  console.log(`[Vite] Proxying /api requests to: ${apiTarget}`);
 
   return {
     plugins: [react()],
@@ -44,7 +38,7 @@ export default defineConfig(({ mode }) => {
       },
       allowedHosts: true
     },
-    // Production preview settings (Docker / npm run preview)
+    // Production preview settings
     preview: {
       port: 80, 
       host: true,
@@ -54,12 +48,6 @@ export default defineConfig(({ mode }) => {
           target: apiTarget,
           changeOrigin: true,
           secure: false,
-          // Handle proxy errors to prevent generic 500s masking the issue
-          configure: (proxy, options) => {
-            proxy.on('error', (err, _req, _res) => {
-              console.log('[Proxy Error] Connecting to backend:', err);
-            });
-          }
         }
       }
     }
