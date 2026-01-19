@@ -7,9 +7,13 @@ import { NFT_PRICES, DICE_ATTEMPT_PRICES } from '../constants';
 // In Render production, the backend is on a different domain, so we must use the full URL provided in build env.
 // Use optional chaining to safely access VITE_API_URL even if import.meta.env is somehow undefined in certain contexts
 const ENV_API_URL = (import.meta as any).env?.VITE_API_URL; // e.g., "https://nft-backend.onrender.com"
+
+// If ENV_API_URL is not set, we default to '/api'.
+// This indicates the frontend expects to be served by the same origin as the backend (Monolith setup).
 const API_BASE = ENV_API_URL ? `${ENV_API_URL}/api` : '/api';
 
-console.log(`[API Config] Base URL: ${API_BASE}`);
+console.log(`[API Config] Target: ${ENV_API_URL || 'Relative Path (Same Origin)'}`);
+console.log(`[API Config] Full Base URL: ${API_BASE}`);
 
 // --- SAFE STORAGE WRAPPER ---
 const memoryStore: Record<string, string> = {};
@@ -178,12 +182,16 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
         body: method !== 'GET' ? JSON.stringify(payload) : undefined
     });
     
+    // Parse response regardless of status to extract error details
     const responseText = await response.text();
     let responseJson: any = null;
     try { if (responseText) responseJson = JSON.parse(responseText); } catch (e) {}
 
     if (!response.ok) {
-        throw new Error(responseJson?.error || `Server Error ${response.status}`);
+        // Construct a very clear error message
+        const statusText = response.statusText ? `(${response.statusText})` : '';
+        const errorMessage = responseJson?.error || `Server Error ${response.status} ${statusText}`;
+        throw new Error(errorMessage);
     }
     
     return responseJson || {};

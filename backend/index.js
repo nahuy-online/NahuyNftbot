@@ -72,8 +72,10 @@ app.get('/api/health', (req, res) => res.status(200).send('OK'));
 
 // --- DB INIT ---
 const initDB = async () => {
-    const client = await pool.connect();
+    console.log(`[DB] Attempting connection to ${process.env.DATABASE_URL ? 'Cloud DB (URL masked)' : (process.env.DB_HOST || 'localhost')}...`);
+    let client;
     try {
+        client = await pool.connect();
         await client.query('BEGIN');
         
         // Users Table
@@ -136,10 +138,12 @@ const initDB = async () => {
         await client.query('COMMIT');
         console.log("✅ Database initialized successfully");
     } catch (e) {
-        await client.query('ROLLBACK');
-        console.error("❌ DB Init failed:", e);
+        if (client) await client.query('ROLLBACK');
+        console.error("❌ DB Init failed. Is the database running and credentials correct?");
+        console.error(`Error details: ${e.message}`);
+        // Do not exit process, let the health check live so logs can be read
     } finally {
-        client.release();
+        if (client) client.release();
     }
 };
 initDB();
@@ -153,7 +157,7 @@ const validateTelegramData = (req, res, next) => {
             req.user = { id: req.body.id || 99999, username: 'DevUser' };
             return next();
         }
-        return res.status(401).json({ error: 'Missing Authorization header' });
+        return res.status(401).json({ error: 'Missing Authorization header. Please open in Telegram.' });
     }
 
     const initData = authHeader.split(' ')[1];
@@ -287,7 +291,8 @@ app.post('/api/auth', validateTelegramData, async (req, res) => {
 
     } catch (e) {
         if (client) await client.query('ROLLBACK');
-        res.status(500).json({ error: e.message });
+        console.error("Auth Error:", e.message); // Helpful for logs
+        res.status(500).json({ error: `Database Error: ${e.message}` });
     } finally {
         if (client) client.release();
     }

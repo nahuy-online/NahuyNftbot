@@ -28,12 +28,15 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('shop');
   const [user, setUser] = useState<UserProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string>('');
+  const [showDebug, setShowDebug] = useState(false);
   const { t } = useTranslation();
   const [tonConnectUI] = useTonConnectUI();
 
   const loadData = async () => {
     try {
       setError(null);
+      setDebugInfo('');
       const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
       const data = await fetchUserProfile(startParam);
       setUser(data);
@@ -41,6 +44,7 @@ const App: React.FC = () => {
       console.error("Failed to load user", e);
       // Clean error message
       setError(e.message || "Connection Failed");
+      setDebugInfo(JSON.stringify(e, Object.getOwnPropertyNames(e)));
     }
   };
 
@@ -86,6 +90,22 @@ const App: React.FC = () => {
                 >
                     Retry Connection
                 </button>
+                
+                <button 
+                    onClick={() => setShowDebug(!showDebug)}
+                    className="text-xs text-gray-500 underline hover:text-gray-300"
+                >
+                    {showDebug ? 'Hide Details' : 'Show Technical Details'}
+                </button>
+
+                {showDebug && (
+                    <div className="text-[10px] text-left font-mono bg-black p-2 rounded text-green-400 overflow-x-auto max-w-xs border border-gray-700">
+                        <p>API: {window.location.origin}/api</p>
+                        <p>Platform: {window.Telegram?.WebApp?.platform || 'Web'}</p>
+                        <p className="mt-1 text-red-300 whitespace-pre-wrap">{debugInfo}</p>
+                    </div>
+                )}
+
                 <div className="flex items-center gap-2 px-2 opacity-50">
                     <div className="h-px bg-white/30 flex-1"></div>
                     <span className="text-[10px] uppercase">OR</span>
