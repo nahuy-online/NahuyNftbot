@@ -1,3 +1,4 @@
+
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -23,6 +24,27 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './'),
+      },
+    },
+    // Build optimizations to fix "Chunk size limit" warning
+    build: {
+      chunkSizeWarningLimit: 1600, // Increase limit to 1.6MB to silence warning
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            // Separate heavy dependencies into a 'vendor' chunk
+            if (id.includes('node_modules')) {
+              if (
+                id.includes('react') || 
+                id.includes('react-dom') || 
+                id.includes('@tonconnect') ||
+                id.includes('@ton')
+              ) {
+                return 'vendor';
+              }
+            }
+          },
+        },
       },
     },
     // Dev server settings (npm run dev)
