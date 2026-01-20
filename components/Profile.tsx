@@ -141,20 +141,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                 <div className="text-[9px] text-cyan-300/80 font-medium z-10">{t('unlocks_gradually')}</div>
             </div>
 
-            {/* 3. Withdrawn (New Card) */}
-             <div onClick={() => { setHistoryFilter('withdrawn'); setShowHistory(true); }}
-                className="bg-gray-800 p-3 rounded-2xl border border-white/5 flex items-center justify-between cursor-pointer hover:bg-gray-750 active:scale-95 transition-all">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gray-700 flex items-center justify-center text-xl text-gray-400">📤</div>
-                    <div>
-                        <div className="text-xs font-bold text-gray-500 uppercase">Withdrawn</div>
-                        <div className="text-lg font-bold text-gray-300 decoration-slice line-through decoration-red-500/50">{user.nftBalance.withdrawn} NFT</div>
-                    </div>
-                </div>
-            </div>
-
-            {/* 4. Dice Attempts */}
-            <div className="bg-gradient-to-r from-gray-800 to-gray-800/50 p-3 rounded-2xl border border-white/5 flex items-center justify-between">
+            {/* 3. Dice Attempts (Moved up, Withdrawn Card Removed) */}
+            <div className="col-span-2 bg-gradient-to-r from-gray-800 to-gray-800/50 p-3 rounded-2xl border border-white/5 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center text-xl">🎲</div>
                     <div>
