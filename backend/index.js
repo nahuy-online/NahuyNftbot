@@ -119,6 +119,18 @@ const initDB = async () => {
             );
         `);
 
+        // Locked Bonus Stars Table
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS bonus_locks (
+                id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                user_id BIGINT REFERENCES users(id),
+                amount INTEGER NOT NULL,
+                currency TEXT DEFAULT 'STARS',
+                unlock_date BIGINT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+        `);
+
         // Transactions
         await client.query(`
             CREATE TABLE IF NOT EXISTS transactions (
@@ -141,6 +153,7 @@ const initDB = async () => {
         await client.query(`CREATE INDEX IF NOT EXISTS idx_nfts_user ON user_nfts(user_id)`);
         await client.query(`CREATE INDEX IF NOT EXISTS idx_tx_user ON transactions(user_id)`);
         await client.query(`CREATE INDEX IF NOT EXISTS idx_tx_hash ON transactions(tx_hash)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_bonus_locks_user ON bonus_locks(user_id)`);
 
         await client.query('COMMIT');
         console.log("✅ Database initialized successfully");
@@ -241,7 +254,8 @@ async function distributeReferralRewards(client, buyerId, amountSpent, currency)
 
     const uplines = [l1Id, l2Id, l3Id].filter(id => !!id);
     const rewardField = currency === 'STARS' ? 'ref_rewards_stars' : currency === 'TON' ? 'ref_rewards_ton' : 'ref_rewards_usdt';
-    
+    const isStars = currency === 'STARS';
+
     for (let i = 0; i < uplines.length; i++) {
         const uplineId = uplines[i];
         const percent = REFERRAL_PERCENTAGES[i]; // 0.11, 0.09, 0.07
@@ -249,19 +263,29 @@ async function distributeReferralRewards(client, buyerId, amountSpent, currency)
         
         if (reward > 0) {
             // Update Balance
-            const roundedReward = currency === 'STARS' ? Math.floor(reward) : reward; // Stars are integers
+            const roundedReward = isStars ? Math.floor(reward) : reward; // Stars are integers
             
             if (roundedReward > 0) {
+                // 1. Add to total Ledger
                 await client.query(
                     `UPDATE users SET ${rewardField} = ${rewardField} + $1 WHERE id = $2`,
                     [roundedReward, uplineId]
                 );
 
-                // Log Transaction
+                // 2. If STARS, create a Lock record (Vesting)
+                if (isStars) {
+                    const unlockDate = Date.now() + (21 * 24 * 60 * 60 * 1000); // 21 Days
+                    await client.query(`
+                        INSERT INTO bonus_locks (user_id, amount, currency, unlock_date)
+                        VALUES ($1, $2, 'STARS', $3)
+                    `, [uplineId, roundedReward, unlockDate]);
+                }
+
+                // 3. Log Transaction
                 await client.query(`
-                    INSERT INTO transactions (user_id, type, asset_type, amount, currency, description)
-                    VALUES ($1, 'referral_reward', 'currency', $2, $3, $4)
-                `, [uplineId, roundedReward, currency, `Referral Reward (L${i+1}) from user ${buyerId}`]);
+                    INSERT INTO transactions (user_id, type, asset_type, amount, currency, description, is_locked)
+                    VALUES ($1, 'referral_reward', 'currency', $2, $3, $4, $5)
+                `, [uplineId, roundedReward, currency, `Referral Reward (L${i+1}) from user ${buyerId}`, isStars]);
             }
         }
     }
@@ -355,6 +379,16 @@ app.post('/api/auth', validateTelegramData, async (req, res) => {
         `, [id]);
         const l3Count = parseInt(l3CountRes.rows[0].count);
 
+        // --- CALCULATE LOCKED STARS ---
+        const lockedStarsRes = await client.query(`
+            SELECT SUM(amount) as locked_sum 
+            FROM bonus_locks 
+            WHERE user_id = $1 AND unlock_date > $2
+        `, [id, Date.now()]);
+        const lockedStars = parseInt(lockedStarsRes.rows[0].locked_sum || '0');
+        const totalStars = user.ref_rewards_stars || 0;
+        const availableStars = Math.max(0, totalStars - lockedStars);
+
         res.json({
             id: String(user.id),
             username: user.username,
@@ -375,7 +409,8 @@ app.post('/api/auth', validateTelegramData, async (req, res) => {
                 level1: l1Count,
                 level2: l2Count, 
                 level3: l3Count,
-                bonusBalance: { STARS: user.ref_rewards_stars, TON: parseFloat(user.ref_rewards_ton), USDT: parseFloat(user.ref_rewards_usdt) }
+                lockedStars: lockedStars, // NEW: Front end needs to know this
+                bonusBalance: { STARS: availableStars, TON: parseFloat(user.ref_rewards_ton), USDT: parseFloat(user.ref_rewards_usdt) }
             }
         });
 
@@ -431,16 +466,29 @@ app.post('/api/payment/verify', validateTelegramData, async (req, res) => {
              
              let balance = 0;
              let field = '';
-             if (currency === 'TON') { balance = parseFloat(user.ref_rewards_ton); field = 'ref_rewards_ton'; }
-             else if (currency === 'USDT') { balance = parseFloat(user.ref_rewards_usdt); field = 'ref_rewards_usdt'; }
-             else { balance = user.ref_rewards_stars; field = 'ref_rewards_stars'; }
+             let locked = 0;
+
+             if (currency === 'TON') { 
+                 balance = parseFloat(user.ref_rewards_ton); 
+                 field = 'ref_rewards_ton'; 
+             }
+             else if (currency === 'USDT') { 
+                 balance = parseFloat(user.ref_rewards_usdt); 
+                 field = 'ref_rewards_usdt'; 
+             }
+             else { 
+                 // STARS Logic with locking
+                 const totalStars = user.ref_rewards_stars;
+                 field = 'ref_rewards_stars';
+                 
+                 // Get locks
+                 const lockedRes = await client.query(`SELECT SUM(amount) as s FROM bonus_locks WHERE user_id=$1 AND unlock_date > $2`, [userId, Date.now()]);
+                 locked = parseInt(lockedRes.rows[0].s || '0');
+                 balance = totalStars - locked;
+             }
 
              if (balance < totalValue) {
-                 // Partial payment not supported in this simple version, fail if not enough
-                 // Or implement split logic. For now: Fail or Assume "Pay with Balance" means FULL payment
-                 // If balance is enough, deduct.
-                 // If the logic is "Discount", that's complex. Let's assume full coverage.
-                 throw new Error("Insufficient bonus balance");
+                 throw new Error("Insufficient available bonus balance");
              }
 
              // Deduct

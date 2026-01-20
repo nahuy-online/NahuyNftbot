@@ -78,7 +78,8 @@ const getLocalState = (userId: number, username: string) => {
             level1: 12, 
             level2: 5, 
             level3: 2, 
-            bonusBalance: { STARS: 1500, TON: 1.5, USDT: 45.0 } // Pre-filled bonus for demo
+            lockedStars: 500, // Mock locked stars
+            bonusBalance: { STARS: 1000, TON: 1.5, USDT: 45.0 } // Pre-filled bonus for demo (Available)
         }
     };
     safeStorage.setItem(key, JSON.stringify(newUser));
@@ -185,7 +186,11 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
              const cost = prices[payload.currency as Currency] * payload.amount;
              const mockReward = cost * 0.11; // 11%
 
-             if (payload.currency === 'STARS') user.referralStats.bonusBalance.STARS += Math.floor(mockReward);
+             if (payload.currency === 'STARS') {
+                 // Mock Locked Stars
+                 user.referralStats.lockedStars = (user.referralStats.lockedStars || 0) + Math.floor(mockReward);
+                 // Don't add to available
+             }
              else if (payload.currency === 'TON') user.referralStats.bonusBalance.TON += mockReward;
              else user.referralStats.bonusBalance.USDT += mockReward;
 
@@ -200,7 +205,8 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
              addLocalHistory(userId, {
                  id: `m_ref_${Date.now()}`, type: 'referral_reward', assetType: 'currency',
                  amount: parseFloat(mockReward.toFixed(4)), currency: payload.currency,
-                 description: `Simulated Ref Reward`, timestamp: Date.now()
+                 description: `Simulated Ref Reward`, timestamp: Date.now(),
+                 isLocked: payload.currency === 'STARS'
              });
 
              updateLocalState(user);

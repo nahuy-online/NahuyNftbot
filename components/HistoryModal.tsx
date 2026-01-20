@@ -125,7 +125,6 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                   {/* === SERIALS LISTS (3 STACKED CARDS) === */}
                   {filter === 'serials' && (
                       <div className="p-4 space-y-4 animate-fade-in">
-                          
                           {/* 1. AVAILABLE CARD */}
                           <div className="bg-gray-800 p-4 rounded-xl border border-green-500/20 animate-fade-in">
                                 <div className="text-xs text-green-400 font-bold uppercase mb-2 flex justify-between items-center">
@@ -140,18 +139,15 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                     </div>
                                 )}
                           </div>
-
                           {/* 2. LOCKED CARD */}
                           <div className="bg-gray-800 p-4 rounded-xl border border-cyan-500/20 animate-fade-in">
                                 <div className="text-xs text-cyan-400 font-bold uppercase mb-2 flex justify-between items-center">
                                     <span>{t('locked')}</span>
                                     <span className="bg-cyan-500/20 px-2 py-0.5 rounded-full text-[10px] text-cyan-400">{totalLockedSerials}</span>
                                 </div>
-                                
                                 <div className="text-[10px] text-cyan-400/70 mb-3 flex items-center gap-1">
                                     <span>❄️</span> {t('locked_policy')}
                                 </div>
-
                                 {(!user.nftBalance.lockedDetails || user.nftBalance.lockedDetails.length === 0) ? (
                                      <div className="text-xs text-gray-500 italic py-2 text-center">No locked assets</div>
                                 ) : (
@@ -173,7 +169,6 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                     </div>
                                 )}
                           </div>
-
                           {/* 3. WITHDRAWN CARD */}
                           <div className="bg-gray-800 p-4 rounded-xl border border-white/5 animate-fade-in">
                                 <div className="text-xs text-gray-400 font-bold uppercase mb-2 flex justify-between items-center">
@@ -186,11 +181,10 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                     <div className="text-xs text-gray-500 italic py-2 text-center">No withdrawn history</div>
                                 )}
                           </div>
-
                       </div>
                   )}
 
-                  {/* === LEGACY WITHDRAWN VIEW (Keep as fallback) === */}
+                  {/* === LEGACY WITHDRAWN VIEW === */}
                   {filter === 'withdrawn' && (
                       <div className="p-5 animate-fade-in">
                           <div className="bg-gray-800 p-4 rounded-xl border border-red-500/10">
@@ -220,15 +214,42 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                   <div className="text-lg font-bold text-white">{formatCrypto(user.referralStats.bonusBalance.USDT)}</div>
                               </div>
                           </div>
-                          {/* STARS Balance Card */}
-                          <div className="p-4 rounded-2xl bg-gray-800 border border-white/5 flex justify-between items-center">
-                              <div className="text-xs text-yellow-500 font-bold uppercase">STARS</div>
-                              <div className="text-lg font-bold text-white">{user.referralStats.bonusBalance.STARS} ★</div>
+                          
+                          {/* STARS Balance Card with Lock Breakdown */}
+                          <div className="p-4 rounded-2xl bg-gray-800 border border-white/5 space-y-3">
+                              <div className="flex justify-between items-center">
+                                  <div className="text-xs text-yellow-500 font-bold uppercase">STARS (Total)</div>
+                                  <div className="text-lg font-bold text-white">
+                                      {(user.referralStats.bonusBalance.STARS || 0) + (user.referralStats.lockedStars || 0)} ★
+                                  </div>
+                              </div>
+                              
+                              {/* Breakdown Bar */}
+                              <div className="w-full h-1.5 bg-gray-700 rounded-full flex overflow-hidden">
+                                  <div className="bg-yellow-500 h-full" style={{ width: `${((user.referralStats.bonusBalance.STARS || 0) / Math.max(1, (user.referralStats.bonusBalance.STARS || 0) + (user.referralStats.lockedStars || 0))) * 100}%` }}></div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                  <div>
+                                      <span className="text-gray-400 block mb-0.5">{t('available_btn')}</span>
+                                      <span className="text-yellow-500 font-bold">{user.referralStats.bonusBalance.STARS} ★</span>
+                                  </div>
+                                  <div className="text-right">
+                                      <span className="text-cyan-400 block mb-0.5">{t('locked')} ❄️</span>
+                                      <span className="text-white font-bold">{user.referralStats.lockedStars} ★</span>
+                                  </div>
+                              </div>
+                              
+                              {user.referralStats.lockedStars > 0 && (
+                                <div className="text-[9px] text-gray-500 bg-black/20 p-2 rounded border border-white/5">
+                                    {t('locked_policy')} (21 Days)
+                                </div>
+                              )}
                           </div>
                       </div>
                   )}
 
-                  {/* === LOCKED VIEW (Direct Access) === */}
+                  {/* === LOCKED VIEW === */}
                   {filter === 'locked' && (
                       <div className="p-4 space-y-3 animate-fade-in">
                         <div className="text-[10px] text-cyan-400 text-center mb-2 flex items-center justify-center gap-1">

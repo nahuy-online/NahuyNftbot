@@ -61,8 +61,9 @@ export interface UserProfile {
     level1: number;
     level2: number;
     level3: number;
+    lockedStars: number; // NEW: Track locked bonus stars
     bonusBalance: { // Renamed from earnings
-      [key in Currency]: number;
+      [key in Currency]: number; // Represents AVAILABLE balance
     };
   };
   walletAddress?: string;
