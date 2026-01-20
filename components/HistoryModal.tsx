@@ -13,7 +13,6 @@ interface HistoryModalProps {
 
 const SerialList = ({ serials }: { serials?: number[] }) => {
     if (!serials || serials.length === 0) return null;
-    // Show all, but scrollable container will handle overflow
     return (
         <div className="flex flex-wrap gap-1 mt-2">
             {serials.map(s => (
@@ -61,24 +60,65 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
         return !isBonus;
     });
 
+    const getTitle = () => {
+        switch(filter) {
+            case 'bonus': return t('bonus_balance');
+            case 'locked': return t('vesting_schedule');
+            case 'serials': return t('reserved_serials');
+            default: return t('tx_history'); // Assets maps to General History
+        }
+    };
+
+    const getIcon = () => {
+        switch(filter) {
+            case 'bonus': return '💎';
+            case 'locked': return '🔒';
+            case 'serials': return '🔢';
+            default: return '📂';
+        }
+    };
+
+    const getColorClass = () => {
+        switch(filter) {
+            case 'bonus': return 'bg-purple-500/20 text-purple-400';
+            case 'locked': return 'bg-yellow-500/20 text-yellow-500';
+            case 'serials': return 'bg-green-500/20 text-green-400';
+            default: return 'bg-blue-500/20 text-blue-400';
+        }
+    };
+
     return (
         <div className="fixed inset-0 z-[9999] bg-gray-900 flex flex-col animate-fade-in">
              <div className="flex-none flex items-center justify-between px-5 pb-4 pt-20 bg-gray-900 border-b border-gray-800 z-50 shadow-xl">
                   <h2 className="text-xl font-bold flex items-center gap-3">
-                      <span className={`p-2 rounded-xl flex items-center justify-center ${
-                          filter === 'bonus' ? 'bg-purple-500/20 text-purple-400' : 
-                          filter === 'locked' ? 'bg-yellow-500/20 text-yellow-500' :
-                          'bg-blue-500/20 text-blue-400'
-                      }`}>
-                        {filter === 'bonus' ? '💎' : filter === 'locked' ? '🔒' : '📂'}
+                      <span className={`p-2 rounded-xl flex items-center justify-center ${getColorClass()}`}>
+                        {getIcon()}
                       </span>
-                      {filter === 'bonus' ? t('bonus_balance') : filter === 'locked' ? t('vesting_schedule') : t('reserved_serials')}
+                      {getTitle()}
                   </h2>
                   <button onClick={onClose} className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white border border-white/10">✕</button>
               </div>
               
               <div className="flex-1 overflow-y-auto overflow-x-hidden pb-32">
-                  {/* BONUS VIEW */}
+                  
+                  {/* === SERIALS VIEW (Moved from Assets) === */}
+                  {filter === 'serials' && (
+                      <div className="p-5 animate-fade-in">
+                          <div className="bg-gray-800 p-4 rounded-xl border border-white/5">
+                            <div className="text-xs text-gray-400 font-bold uppercase mb-2 flex justify-between items-center">
+                                <span>{t('reserved_serials')}</span>
+                                <span className="bg-gray-700 px-2 py-0.5 rounded-full text-[10px] text-white">{user.reservedSerials?.length || 0}</span>
+                            </div>
+                            {user.reservedSerials && user.reservedSerials.length > 0 ? (
+                                <SerialList serials={user.reservedSerials} />
+                            ) : (
+                                <div className="text-xs text-gray-500 italic py-4 text-center">{t('no_tx')} (No NFTs)</div>
+                            )}
+                          </div>
+                      </div>
+                  )}
+
+                  {/* === BONUS VIEW === */}
                   {filter === 'bonus' && user.referralStats && (
                       <div className="p-5 pb-0 grid grid-cols-1 gap-3 animate-fade-in">
                           <div className="grid grid-cols-2 gap-3">
@@ -94,7 +134,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                       </div>
                   )}
 
-                  {/* LOCKED VIEW */}
+                  {/* === LOCKED VIEW === */}
                   {filter === 'locked' && (
                       <div className="p-4 space-y-3 animate-fade-in">
                         {user.nftBalance.lockedDetails?.map((item: any, idx: number) => (
@@ -121,31 +161,16 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                       </div>
                   )}
 
-                  {/* ASSETS / HISTORY VIEW */}
+                  {/* === ASSETS / GENERAL HISTORY VIEW === */}
                   {filter === 'assets' && (
-                      <>
-                        {/* 1. Reserved Serials List */}
-                        <div className="mx-4 mt-4 bg-gray-800 p-4 rounded-xl border border-white/5 animate-fade-in">
-                            <div className="text-xs text-gray-400 font-bold uppercase mb-2 flex justify-between items-center">
-                                <span>{t('reserved_serials')}</span>
-                                <span className="bg-gray-700 px-2 py-0.5 rounded-full text-[10px] text-white">{user.reservedSerials?.length || 0}</span>
-                            </div>
-                            
-                            {user.reservedSerials && user.reservedSerials.length > 0 ? (
-                                <div className="max-h-40 overflow-y-auto pr-1">
-                                    <SerialList serials={user.reservedSerials} />
-                                </div>
-                            ) : (
-                                <div className="text-xs text-gray-500 italic py-2 text-center">{t('no_tx')} (No NFTs)</div>
-                            )}
-                        </div>
-
-                        {/* 2. Transaction History */}
                         <div className="p-4 space-y-3">
-                            <h3 className="text-xs font-bold text-gray-500 uppercase ml-1">{t('tx_history')}</h3>
                             {loading ? <div className="text-center pt-5">Loading...</div> : 
                             filteredHistory.length === 0 ? <div className="text-center text-gray-500 pt-5">{t('no_tx')}</div> :
-                            filteredHistory.map((tx) => (
+                            filteredHistory.map((tx) => {
+                                // Determine if we should show Star/Lock indicator
+                                const isStarOrLocked = tx.isLocked || tx.currency === Currency.STARS;
+
+                                return (
                                     <div key={tx.id} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex flex-col gap-2">
                                         <div className="flex justify-between items-center w-full">
                                             <div className="flex items-center gap-3 overflow-hidden">
@@ -153,29 +178,54 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                                     {getTxIcon(tx.type, tx.assetType)}
                                                 </div>
                                                 <div className="min-w-0">
-                                                    <div className="font-bold text-sm text-white truncate">{tx.description}</div>
-                                                    <div className="text-[10px] text-gray-500 font-mono mt-0.5">{formatDate(tx.timestamp)}</div>
+                                                    <div className="font-bold text-sm text-white truncate flex items-center gap-1">
+                                                        {tx.description}
+                                                    </div>
+                                                    <div className="flex items-center gap-2 mt-0.5">
+                                                        <div className="text-[10px] text-gray-500 font-mono">{formatDate(tx.timestamp)}</div>
+                                                        {/* Currency Badge */}
+                                                        {tx.currency && (
+                                                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                                                                tx.currency === Currency.STARS ? 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20' :
+                                                                tx.currency === Currency.TON ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                                                                'bg-green-500/10 text-green-400 border border-green-500/20'
+                                                            }`}>
+                                                                {tx.currency}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <div className={`text-right ${tx.type === 'withdraw' || tx.type === 'seizure' ? 'text-red-400' : 'text-green-400'} font-mono font-bold`}>
+                                            <div className={`text-right ${tx.type === 'withdraw' || tx.type === 'seizure' ? 'text-red-400' : 'text-green-400'} font-mono font-bold flex items-center gap-0.5`}>
                                                 {tx.type === 'withdraw' || tx.type === 'seizure' ? '-' : '+'}{tx.amount}
+                                                {isStarOrLocked && <span className="text-yellow-500 text-sm mb-1 ml-0.5" title="Locked/Stars">*</span>}
                                             </div>
                                         </div>
                                         
-                                        {/* Serial Numbers for this transaction */}
+                                        {/* Optional: We can still show serials here if needed, but per request, moving Main serials to separate view. 
+                                            However, keeping transaction-specific serials in history is usually good UX. 
+                                            If strictly "moved", I can hide this, but I'll keep it as "Receipt context" 
+                                            while "My Serials" modal shows the full inventory. 
+                                        */}
                                         {tx.serials && tx.serials.length > 0 && (
-                                            <div className="pl-[60px]">
+                                            <div className="pl-[60px] opacity-70">
                                                  <SerialList serials={tx.serials} />
                                             </div>
                                         )}
                                     </div>
-                            ))
+                                );
+                            })
                             }
+                            
+                            {/* Star Footer Legend */}
+                            <div className="mt-4 flex items-center justify-center gap-2 text-[10px] text-gray-500">
+                                <span className="text-yellow-500 text-sm">*</span>
+                                <span>{t('locked_policy')}</span>
+                            </div>
                         </div>
-                      </>
                   )}
                   
-                  {/* BONUS HISTORY */}
+                  {/* === BONUS HISTORY === */}
                    {filter === 'bonus' && (
                       <div className="p-4 space-y-3">
                         {loading ? <div className="text-center pt-5">Loading...</div> : 

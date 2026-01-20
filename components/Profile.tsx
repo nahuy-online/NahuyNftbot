@@ -31,7 +31,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   useEffect(() => {
       if (showHistory) {
           document.body.style.overflow = 'hidden';
-          if (historyFilter !== 'locked' && historyFilter !== 'serials') loadHistoryData();
+          // Load history for asset-related views, but 'serials' relies on user object mostly
+          if (historyFilter !== 'serials') loadHistoryData();
       } else {
           document.body.style.overflow = '';
       }
@@ -150,13 +151,21 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
 
       <div className="glass-panel p-5 rounded-2xl">
           <div className="flex justify-between items-end mb-4">
-              <div>
-                <span className="text-gray-300 font-medium text-sm block mb-1">{t('available_withdraw')}</span>
+              <div 
+                className="cursor-pointer group select-none"
+                onClick={() => { setHistoryFilter('serials'); setShowHistory(true); }}
+              >
+                <div className="flex items-center gap-2">
+                    <span className="text-gray-300 font-medium text-sm block mb-1 group-hover:text-white transition-colors underline decoration-dotted decoration-gray-500 underline-offset-4">
+                        {t('available_withdraw')}
+                    </span>
+                    <span className="text-[10px] bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded-full group-hover:bg-gray-600 group-hover:text-white transition-all">?</span>
+                </div>
                 <span className="text-2xl font-bold text-green-400">{user.nftBalance.available} NFT</span>
               </div>
           </div>
           <button onClick={handleWithdraw} disabled={withdrawing || user.nftBalance.available === 0}
-            className={`w-full py-4 rounded-xl font-bold shadow-lg transition-transform active:scale-95 ${user.nftBalance.available > 0 ? 'bg-white text-black' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}>
+            className={`w-full py-4 rounded-xl font-bold shadow-lg transition-transform active:scale-95 ${user.nftBalance.available > 0 ? 'bg-white text-black hover:bg-gray-100' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}>
               {withdrawing ? t('withdraw_processing') : t('withdraw_btn')}
           </button>
       </div>
