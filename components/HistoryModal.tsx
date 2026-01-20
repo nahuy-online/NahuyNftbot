@@ -146,19 +146,28 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                             {loading ? <div className="text-center pt-5">Loading...</div> : 
                             filteredHistory.length === 0 ? <div className="text-center text-gray-500 pt-5">{t('no_tx')}</div> :
                             filteredHistory.map((tx) => (
-                                    <div key={tx.id} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex justify-between items-center">
-                                        <div className="flex items-center gap-3 overflow-hidden">
-                                            <div className="w-12 h-12 rounded-xl flex-shrink-0 flex items-center justify-center text-xl bg-gray-700/30">
-                                                {getTxIcon(tx.type, tx.assetType)}
+                                    <div key={tx.id} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex flex-col gap-2">
+                                        <div className="flex justify-between items-center w-full">
+                                            <div className="flex items-center gap-3 overflow-hidden">
+                                                <div className="w-12 h-12 rounded-xl flex-shrink-0 flex items-center justify-center text-xl bg-gray-700/30">
+                                                    {getTxIcon(tx.type, tx.assetType)}
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <div className="font-bold text-sm text-white truncate">{tx.description}</div>
+                                                    <div className="text-[10px] text-gray-500 font-mono mt-0.5">{formatDate(tx.timestamp)}</div>
+                                                </div>
                                             </div>
-                                            <div className="min-w-0">
-                                                <div className="font-bold text-sm text-white truncate">{tx.description}</div>
-                                                <div className="text-[10px] text-gray-500 font-mono mt-0.5">{formatDate(tx.timestamp)}</div>
+                                            <div className={`text-right ${tx.type === 'withdraw' || tx.type === 'seizure' ? 'text-red-400' : 'text-green-400'} font-mono font-bold`}>
+                                                {tx.type === 'withdraw' || tx.type === 'seizure' ? '-' : '+'}{tx.amount}
                                             </div>
                                         </div>
-                                        <div className={`text-right ${tx.type === 'withdraw' || tx.type === 'seizure' ? 'text-red-400' : 'text-green-400'} font-mono font-bold`}>
-                                            {tx.type === 'withdraw' || tx.type === 'seizure' ? '-' : '+'}{tx.amount}
-                                        </div>
+                                        
+                                        {/* Serial Numbers for this transaction */}
+                                        {tx.serials && tx.serials.length > 0 && (
+                                            <div className="pl-[60px]">
+                                                 <SerialList serials={tx.serials} />
+                                            </div>
+                                        )}
                                     </div>
                             ))
                             }
