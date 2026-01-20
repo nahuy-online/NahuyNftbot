@@ -83,6 +83,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
 
   const formatCrypto = (val: number) => (!val ? 0 : parseFloat(val.toFixed(4)));
 
+  const REF_PERCENTS = [11, 9, 7]; // Level 1, 2, 3
+
   return (
     <>
     <div className="p-5 pb-24 space-y-6 animate-fade-in relative">
@@ -141,7 +143,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                 <div className="text-[9px] text-cyan-300/80 font-medium z-10">{t('unlocks_gradually')}</div>
             </div>
 
-            {/* 3. Dice Attempts (Moved up, Withdrawn Card Removed) */}
+            {/* 3. Dice Attempts */}
             <div className="col-span-2 bg-gradient-to-r from-gray-800 to-gray-800/50 p-3 rounded-2xl border border-white/5 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center text-xl">🎲</div>
@@ -181,6 +183,25 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
              <button onClick={handleInvite} className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-full font-bold transition-colors flex items-center gap-1 active:bg-blue-700">
                 {t('invite_btn')}
              </button>
+          </div>
+          
+          <div className="grid grid-cols-3 gap-2 mb-4">
+               {[1, 2, 3].map((level, i) => (
+                   <div key={level} className="bg-gray-800 p-2 rounded-lg text-center border border-white/5 flex flex-col items-center justify-center relative overflow-hidden">
+                       <div className="text-[9px] text-gray-500 uppercase z-10">{t('level')} {level}</div>
+                       <div className="font-bold text-lg z-10">
+                           {(user.referralStats as any)[`level${level}`]}
+                       </div>
+                       {/* Percent Badge */}
+                       <div className={`text-[9px] font-bold px-1.5 rounded-full mt-1 z-10 ${
+                           i === 0 ? 'bg-green-500/20 text-green-400' : 
+                           i === 1 ? 'bg-blue-500/20 text-blue-400' : 
+                           'bg-purple-500/20 text-purple-400'
+                       }`}>
+                           {REF_PERCENTS[i]}%
+                       </div>
+                   </div>
+               ))}
           </div>
           
           <div onClick={() => { setHistoryFilter('bonus'); setShowHistory(true); }}

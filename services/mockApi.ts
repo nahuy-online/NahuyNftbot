@@ -65,7 +65,7 @@ const getLocalState = (userId: number, username: string) => {
     const stored = safeStorage.getItem(key);
     if (stored) return JSON.parse(stored) as UserProfile;
     
-    // Create new mock user
+    // Create new mock user with FAKE REFERRAL DATA to show off UI
     const randomHex = Math.floor(Math.random() * 0xffffff).toString(16).padEnd(6, '0');
     const newUser: UserProfile = {
         id: userId, username, isAdmin: true, referralCode: `ref_${randomHex}`, referrerId: null,
@@ -74,7 +74,12 @@ const getLocalState = (userId: number, username: string) => {
         reservedSerials: [],
         withdrawnSerials: [],
         diceBalance: { available: 5, starsAttempts: 0, used: 0 },
-        referralStats: { level1: 0, level2: 0, level3: 0, bonusBalance: { STARS: 0, TON: 0, USDT: 0 } }
+        referralStats: { 
+            level1: 12, 
+            level2: 5, 
+            level3: 2, 
+            bonusBalance: { STARS: 1500, TON: 1.5, USDT: 45.0 } // Pre-filled bonus for demo
+        }
     };
     safeStorage.setItem(key, JSON.stringify(newUser));
     return newUser;
@@ -170,8 +175,34 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
         }
         
         if (endpoint === '/payment/verify') {
+             // 1. Grant Asset
              if (payload.type === 'dice') user.diceBalance.available += payload.amount;
              else user.nftBalance.total += payload.amount;
+             
+             // 2. SIMULATE REFERRAL REWARD (Self-reward for testing visuals)
+             // In real app, this goes to upline. In mock, we give it to self to see the balance change.
+             const prices = payload.type === 'nft' ? NFT_PRICES : DICE_ATTEMPT_PRICES;
+             const cost = prices[payload.currency as Currency] * payload.amount;
+             const mockReward = cost * 0.11; // 11%
+
+             if (payload.currency === 'STARS') user.referralStats.bonusBalance.STARS += Math.floor(mockReward);
+             else if (payload.currency === 'TON') user.referralStats.bonusBalance.TON += mockReward;
+             else user.referralStats.bonusBalance.USDT += mockReward;
+
+             // Log purchase
+             addLocalHistory(userId, { 
+                id: `m_buy_${Date.now()}`, type: 'purchase', assetType: payload.type, 
+                amount: payload.amount, currency: payload.currency, 
+                description: `Mock Purchase`, timestamp: Date.now() 
+             });
+
+             // Log fake reward
+             addLocalHistory(userId, {
+                 id: `m_ref_${Date.now()}`, type: 'referral_reward', assetType: 'currency',
+                 amount: parseFloat(mockReward.toFixed(4)), currency: payload.currency,
+                 description: `Simulated Ref Reward`, timestamp: Date.now()
+             });
+
              updateLocalState(user);
              return { ok: true };
         }
