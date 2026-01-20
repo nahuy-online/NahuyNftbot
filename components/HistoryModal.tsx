@@ -61,6 +61,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
     });
 
     // Filter Available Serials: Owned - Locked
+    // Note: 'reservedSerials' from backend already excludes withdrawn, so we just filter locked.
     const getAvailableSerials = () => {
         if (!user.reservedSerials) return [];
         const lockedSet = new Set<number>();

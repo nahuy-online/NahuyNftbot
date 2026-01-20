@@ -234,12 +234,14 @@ app.post('/api/auth', validateTelegramData, async (req, res) => {
             const code = 'ref_' + crypto.randomBytes(4).toString('hex');
             let referrerId = null;
             
+            // Referral Logic
             if (startParam && startParam.startsWith('ref_')) {
                  const refCheck = await client.query('SELECT id FROM users WHERE referral_code = $1', [startParam]);
                  if (refCheck.rows.length > 0 && refCheck.rows[0].id !== id) {
                      referrerId = refCheck.rows[0].id;
                  }
             } else if (startParam && startParam.startsWith('ref_') === false && !isNaN(parseInt(startParam))) {
+                 // Try ID
                  const refIdInt = parseInt(startParam);
                  if (refIdInt !== id) referrerId = refIdInt;
             }
@@ -262,12 +264,12 @@ app.post('/api/auth', validateTelegramData, async (req, res) => {
             FROM user_nfts WHERE user_id = $1 AND is_locked = TRUE AND is_withdrawn = FALSE GROUP BY unlock_date, is_seized
         `, [id]);
         
-        // Active Serials (Owned)
+        // Owned Active Serials (excludes withdrawn)
         const serials = await client.query(`
             SELECT serial_number FROM user_nfts WHERE user_id = $1 AND is_withdrawn = FALSE AND is_seized = FALSE ORDER BY serial_number DESC LIMIT 500
         `, [id]);
 
-        // Withdrawn Serials (New)
+        // Withdrawn Serials (NEW)
         const withdrawnSerials = await client.query(`
             SELECT serial_number FROM user_nfts WHERE user_id = $1 AND is_withdrawn = TRUE ORDER BY serial_number DESC LIMIT 500
         `, [id]);
@@ -301,7 +303,7 @@ app.post('/api/auth', validateTelegramData, async (req, res) => {
 
     } catch (e) {
         if (client) await client.query('ROLLBACK');
-        console.error("Auth Error:", e.message); 
+        console.error("Auth Error:", e.message); // Helpful for logs
         res.status(500).json({ error: `Database Error: ${e.message}` });
     } finally {
         if (client) client.release();
@@ -310,7 +312,9 @@ app.post('/api/auth', validateTelegramData, async (req, res) => {
 
 // 2. PAYMENTS
 app.post('/api/payment/create', validateTelegramData, (req, res) => {
+    // Generate a unique payload for TON transfer comment
     const { type, amount, currency } = req.body;
+    // Format: "purchase:user_id:type:amount:random"
     const uniqueId = crypto.randomBytes(3).toString('hex');
     const comment = `buy:${req.user.id}:${type}:${amount}:${uniqueId}`;
     
@@ -318,11 +322,11 @@ app.post('/api/payment/create', validateTelegramData, (req, res) => {
         ok: true,
         currency,
         transaction: {
-            validUntil: Math.floor(Date.now() / 1000) + 600, 
+            validUntil: Math.floor(Date.now() / 1000) + 600, // 10 min
             messages: [{
                 address: RECEIVER_ADDRESS,
                 amount: "0", 
-                payload: comment 
+                payload: comment // Simple text comment
             }]
         },
         internalId: comment
@@ -338,30 +342,38 @@ app.post('/api/payment/verify', validateTelegramData, async (req, res) => {
         client = await pool.connect();
         await client.query('BEGIN');
 
+        // Logic A: Pay with Bonus Balance
         if (useRewardBalance) {
              const userRes = await client.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [userId]);
              // ... logic for deducting balance ...
         }
 
+        // Logic B: Real Blockchain Verification
+        // ...
+        
+        // Granting Assets Logic
         let grantedCount = 0;
         let assetName = 'items';
         let wonSerials = [];
         const isLocked = (currency === 'STARS');
 
         if (type === 'nft') {
-            grantedCount = amount; 
+            grantedCount = amount; // Pack size
             assetName = 'NFTs';
             wonSerials = await reserveNfts(client, userId, grantedCount, isLocked, 'purchase');
             
             const field = isLocked ? 'nft_locked' : 'nft_available';
             await client.query(`UPDATE users SET nft_total = nft_total + $1, ${field} = ${field} + $1 WHERE id = $2`, [grantedCount, userId]);
         } else {
-            grantedCount = amount;
+            grantedCount = amount; // Attempts
             assetName = 'Dice Attempts';
+            const field = isLocked ? 'dice_stars_attempts' : 'dice_available';
+            // dice_available is total, stars is subset
             await client.query(`UPDATE users SET dice_available = dice_available + $1, dice_stars_attempts = dice_stars_attempts + $2 WHERE id = $3`, 
                 [grantedCount, isLocked ? grantedCount : 0, userId]);
         }
 
+        // Log Transaction
         await client.query(`
             INSERT INTO transactions (user_id, type, asset_type, amount, currency, description, is_locked, serials)
             VALUES ($1, 'purchase', $2, $3, $4, $5, $6, $7)
@@ -395,13 +407,13 @@ app.post('/api/roll', validateTelegramData, async (req, res) => {
         }
 
         const isStarsRun = user.dice_stars_attempts > 0;
-        const roll = crypto.randomInt(1, 7); 
+        const roll = crypto.randomInt(1, 7); // Secure Random 1-6
         
         let q = `UPDATE users SET dice_available = dice_available - 1`;
         if (isStarsRun) q += `, dice_stars_attempts = dice_stars_attempts - 1`;
         
         let wonSerials = [];
-        if (roll > 0) { 
+        if (roll > 0) { // All rolls win NFT equal to face value in this mechanic
             wonSerials = await reserveNfts(client, userId, roll, isStarsRun, 'dice');
             const field = isStarsRun ? 'nft_locked' : 'nft_available';
             q += `, nft_total = nft_total + ${roll}, ${field} = ${field} + ${roll}`;
@@ -448,6 +460,7 @@ app.post('/api/withdraw', validateTelegramData, async (req, res) => {
         if (available <= 0) throw new Error("No funds");
         
         // Find serials to withdraw (FIFO or simple available ones)
+        // Ensure we don't pick already withdrawn or locked
         const serialsRes = await client.query(`
             SELECT serial_number FROM user_nfts 
             WHERE user_id = $1 AND is_withdrawn = FALSE AND is_locked = FALSE 
@@ -455,7 +468,9 @@ app.post('/api/withdraw', validateTelegramData, async (req, res) => {
         `, [userId, available]);
         const serials = serialsRes.rows.map(r => r.serial_number);
 
+        // Mark as withdrawn
         await client.query(`UPDATE user_nfts SET is_withdrawn = TRUE WHERE serial_number = ANY($1::int[])`, [serials]);
+        // Zero out available counter
         await client.query('UPDATE users SET nft_available = 0 WHERE id = $1', [userId]);
         
         await client.query('INSERT INTO transactions (user_id, type, asset_type, amount, description, serials) VALUES ($1, \'withdraw\', \'nft\', $2, $3, $4)', 
@@ -482,7 +497,7 @@ app.post('/api/admin/stats', validateTelegramData, isAdmin, async (req, res) => 
             totalNftSold: parseInt(sold.rows[0].sum || 0),
             totalDicePlays: parseInt(dice.rows[0].plays),
             totalNftWonInDice: parseInt(dice.rows[0].won || 0),
-            revenue: { TON: 0, USDT: 0, STARS: 0 }, 
+            revenue: { TON: 0, USDT: 0, STARS: 0 }, // Implement proper SUM query
             bonusStats: { earned: { TON: 0, STARS: 0, USDT: 0 }, spent: { TON: 0, STARS: 0, USDT: 0 } },
             recentTransactions: []
         });
@@ -491,6 +506,7 @@ app.post('/api/admin/stats', validateTelegramData, isAdmin, async (req, res) => 
 
 app.post('/api/admin/users', validateTelegramData, isAdmin, async (req, res) => {
     const { limit, offset, sortBy, sortOrder } = req.body;
+    // Map sortBy to SQL columns
     const order = sortOrder === 'asc' ? 'ASC' : 'DESC';
     let orderBy = 'joined_at'; 
     if(sortBy === 'nft_total') orderBy = 'nft_total';
@@ -500,7 +516,7 @@ app.post('/api/admin/users', validateTelegramData, isAdmin, async (req, res) => 
         users: result.rows.map(u => ({
             id: u.id, username: u.username, joinedAt: new Date(u.joined_at).getTime(),
             nftTotal: u.nft_total, lastActive: new Date(u.last_active).getTime(),
-            level1: 0 
+            level1: 0 // Fetch actual ref count if needed
         })),
         hasMore: result.rows.length === limit
     });
@@ -522,9 +538,12 @@ app.post('/api/admin/search', validateTelegramData, isAdmin, async (req, res) =>
 });
 
 app.post('/api/debug/seize', validateTelegramData, isAdmin, async (req, res) => {
+    // Implement seizure logic
     res.json({ ok: true, message: 'Implemented in next update' });
 });
 
+// --- CATCH-ALL FOR SPA (React Router support) ---
+// This must be the LAST route
 app.get('*', (req, res) => {
     res.sendFile(path.resolve(__dirname, '../dist/index.html'));
 });
