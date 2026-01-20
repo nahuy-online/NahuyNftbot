@@ -11,6 +11,20 @@ interface HistoryModalProps {
     user: any; // Passing partial user object for stats
 }
 
+const SerialList = ({ serials }: { serials?: number[] }) => {
+    if (!serials || serials.length === 0) return null;
+    // Show all, but scrollable container will handle overflow
+    return (
+        <div className="flex flex-wrap gap-1 mt-2">
+            {serials.map(s => (
+                <span key={s} className="text-[10px] font-mono font-bold bg-black/30 text-gray-300 px-1.5 py-0.5 rounded border border-white/5">
+                    #{s}
+                </span>
+            ))}
+        </div>
+    );
+};
+
 export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, history, loading, user }) => {
     const { t } = useTranslation();
 
@@ -43,6 +57,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
     const filteredHistory = history.filter(tx => {
         const isBonus = tx.type === 'referral_reward' || tx.type === 'referral' || (tx.type === 'purchase' && tx.assetType === 'currency');
         if (filter === 'bonus') return isBonus;
+        // Assets view shows transactions that aren't purely bonus-related (e.g. purchases, wins, withdrawals)
         return !isBonus;
     });
 
@@ -57,12 +72,13 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                       }`}>
                         {filter === 'bonus' ? '💎' : filter === 'locked' ? '🔒' : '📂'}
                       </span>
-                      {filter === 'bonus' ? t('bonus_balance') : filter === 'locked' ? t('vesting_schedule') : t('tx_history')}
+                      {filter === 'bonus' ? t('bonus_balance') : filter === 'locked' ? t('vesting_schedule') : t('reserved_serials')}
                   </h2>
                   <button onClick={onClose} className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white border border-white/10">✕</button>
               </div>
               
               <div className="flex-1 overflow-y-auto overflow-x-hidden pb-32">
+                  {/* BONUS VIEW */}
                   {filter === 'bonus' && user.referralStats && (
                       <div className="p-5 pb-0 grid grid-cols-1 gap-3 animate-fade-in">
                           <div className="grid grid-cols-2 gap-3">
@@ -78,6 +94,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                       </div>
                   )}
 
+                  {/* LOCKED VIEW */}
                   {filter === 'locked' && (
                       <div className="p-4 space-y-3 animate-fade-in">
                         {user.nftBalance.lockedDetails?.map((item: any, idx: number) => (
@@ -92,15 +109,68 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                     </div>
                                     {!item.isSeized && <span className="text-yellow-500 font-mono text-[10px] bg-yellow-500/10 px-2 py-0.5 rounded">{formatTimeLeft(item.unlockDate)}</span>}
                                 </div>
+                                
+                                {item.serials && item.serials.length > 0 && (
+                                     <div className="pt-2 border-t border-white/5">
+                                         <div className="text-[10px] text-gray-500 mb-1 uppercase">{t('reserved_serials')} ({item.serials.length})</div>
+                                         <SerialList serials={item.serials} />
+                                     </div>
+                                )}
                             </div>
                         ))}
                       </div>
                   )}
 
-                  {filter !== 'locked' && (
+                  {/* ASSETS / HISTORY VIEW */}
+                  {filter === 'assets' && (
+                      <>
+                        {/* 1. Reserved Serials List */}
+                        <div className="mx-4 mt-4 bg-gray-800 p-4 rounded-xl border border-white/5 animate-fade-in">
+                            <div className="text-xs text-gray-400 font-bold uppercase mb-2 flex justify-between items-center">
+                                <span>{t('reserved_serials')}</span>
+                                <span className="bg-gray-700 px-2 py-0.5 rounded-full text-[10px] text-white">{user.reservedSerials?.length || 0}</span>
+                            </div>
+                            
+                            {user.reservedSerials && user.reservedSerials.length > 0 ? (
+                                <div className="max-h-40 overflow-y-auto pr-1">
+                                    <SerialList serials={user.reservedSerials} />
+                                </div>
+                            ) : (
+                                <div className="text-xs text-gray-500 italic py-2 text-center">{t('no_tx')} (No NFTs)</div>
+                            )}
+                        </div>
+
+                        {/* 2. Transaction History */}
+                        <div className="p-4 space-y-3">
+                            <h3 className="text-xs font-bold text-gray-500 uppercase ml-1">{t('tx_history')}</h3>
+                            {loading ? <div className="text-center pt-5">Loading...</div> : 
+                            filteredHistory.length === 0 ? <div className="text-center text-gray-500 pt-5">{t('no_tx')}</div> :
+                            filteredHistory.map((tx) => (
+                                    <div key={tx.id} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex justify-between items-center">
+                                        <div className="flex items-center gap-3 overflow-hidden">
+                                            <div className="w-12 h-12 rounded-xl flex-shrink-0 flex items-center justify-center text-xl bg-gray-700/30">
+                                                {getTxIcon(tx.type, tx.assetType)}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className="font-bold text-sm text-white truncate">{tx.description}</div>
+                                                <div className="text-[10px] text-gray-500 font-mono mt-0.5">{formatDate(tx.timestamp)}</div>
+                                            </div>
+                                        </div>
+                                        <div className={`text-right ${tx.type === 'withdraw' || tx.type === 'seizure' ? 'text-red-400' : 'text-green-400'} font-mono font-bold`}>
+                                            {tx.type === 'withdraw' || tx.type === 'seizure' ? '-' : '+'}{tx.amount}
+                                        </div>
+                                    </div>
+                            ))
+                            }
+                        </div>
+                      </>
+                  )}
+                  
+                  {/* BONUS HISTORY */}
+                   {filter === 'bonus' && (
                       <div className="p-4 space-y-3">
-                        {loading ? <div className="text-center pt-10">Loading...</div> : 
-                         filteredHistory.length === 0 ? <div className="text-center text-gray-500 pt-10">{t('no_tx')}</div> :
+                        {loading ? <div className="text-center pt-5">Loading...</div> : 
+                         filteredHistory.length === 0 ? <div className="text-center text-gray-500 pt-5">{t('no_tx')}</div> :
                          filteredHistory.map((tx) => (
                                 <div key={tx.id} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex justify-between items-center">
                                     <div className="flex items-center gap-3 overflow-hidden">
@@ -112,8 +182,9 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                             <div className="text-[10px] text-gray-500 font-mono mt-0.5">{formatDate(tx.timestamp)}</div>
                                         </div>
                                     </div>
-                                    <div className={`text-right ${tx.type === 'withdraw' || tx.type === 'seizure' ? 'text-red-400' : 'text-green-400'} font-mono font-bold`}>
-                                        {tx.type === 'withdraw' || tx.type === 'seizure' ? '-' : '+'}{tx.amount}
+                                    <div className={`text-right text-green-400 font-mono font-bold`}>
+                                        +{tx.amount}
+                                        <span className="text-[10px] ml-1 opacity-70">{tx.currency}</span>
                                     </div>
                                 </div>
                          ))
