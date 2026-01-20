@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserProfile, NftTransaction } from '../types';
-import { withdrawNFTWithAddress, fetchNftHistory, debugResetDb } from '../services/mockApi';
+import { withdrawNFTWithAddress, fetchNftHistory } from '../services/mockApi';
 import { TonConnectButton, useTonAddress } from '@tonconnect/ui-react';
 import { BOT_USERNAME } from '../constants';
 import { useTranslation } from '../i18n/LanguageContext';
@@ -19,7 +19,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   const { t, language, setLanguage } = useTranslation();
   
   const [showHistory, setShowHistory] = useState(false);
-  const [historyFilter, setHistoryFilter] = useState<'assets' | 'bonus' | 'locked' | 'serials'>('assets');
+  const [historyFilter, setHistoryFilter] = useState<'assets' | 'bonus' | 'locked' | 'serials' | 'withdrawn'>('assets');
   const [history, setHistory] = useState<NftTransaction[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
@@ -31,8 +31,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   useEffect(() => {
       if (showHistory) {
           document.body.style.overflow = 'hidden';
-          // Load history for asset-related views, but 'serials' relies on user object mostly
-          if (historyFilter !== 'serials') loadHistoryData();
+          if (historyFilter !== 'serials' && historyFilter !== 'withdrawn') loadHistoryData();
       } else {
           document.body.style.overflow = '';
       }
@@ -123,6 +122,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       <div>
         <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3 ml-1">{t('assets')}</h3>
         <div className="grid grid-cols-2 gap-3">
+            {/* 1. Total Balance */}
             <div onClick={() => { setHistoryFilter('assets'); setShowHistory(true); }}
                 className="bg-gray-800 p-4 rounded-2xl border border-white/5 flex flex-col justify-between h-28 cursor-pointer hover:bg-gray-750 active:scale-95 transition-all relative group">
                 <div className="text-gray-400 text-xs font-bold uppercase">{t('total_balance')}</div>
@@ -130,14 +130,31 @@ export const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
                 <div className="w-full h-1 bg-gray-700 rounded-full overflow-hidden"><div className="h-full bg-blue-500 w-full"></div></div>
             </div>
             
+            {/* 2. Locked (Frozen / Ice Theme) */}
             <div onClick={() => { setHistoryFilter('locked'); setShowHistory(true); }}
-                className="bg-gray-800 p-4 rounded-2xl border border-yellow-500/20 flex flex-col justify-between h-28 cursor-pointer hover:bg-gray-750 active:scale-95 relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-16 h-16 bg-yellow-500/10 rounded-bl-full -mr-8 -mt-8"></div>
-                <div className="text-yellow-500/80 text-xs font-bold uppercase z-10">{t('locked')}</div>
-                <div className="text-3xl font-black text-yellow-500 z-10">{user.nftBalance.locked} <span className="text-sm font-medium text-yellow-500/50">NFT</span></div>
+                className="bg-gradient-to-br from-cyan-900/40 to-blue-900/40 p-4 rounded-2xl border border-cyan-400/30 flex flex-col justify-between h-28 cursor-pointer hover:bg-cyan-900/50 active:scale-95 relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-2 opacity-50">❄️</div>
+                <div className="text-cyan-300 text-xs font-bold uppercase z-10 flex items-center gap-1">
+                     {t('locked')} <span className="text-[10px]">*</span>
+                </div>
+                <div className="text-3xl font-black text-cyan-100 z-10 text-shadow-sm">{user.nftBalance.locked} <span className="text-sm font-medium text-cyan-300/60">NFT</span></div>
+                <div className="text-[9px] text-cyan-300/80 font-medium z-10">{t('unlocks_gradually')}</div>
             </div>
 
-            <div className="col-span-2 bg-gradient-to-r from-gray-800 to-gray-800/50 p-3 rounded-2xl border border-white/5 flex items-center justify-between">
+            {/* 3. Withdrawn (New Card) */}
+             <div onClick={() => { setHistoryFilter('withdrawn'); setShowHistory(true); }}
+                className="bg-gray-800 p-3 rounded-2xl border border-white/5 flex items-center justify-between cursor-pointer hover:bg-gray-750 active:scale-95 transition-all">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gray-700 flex items-center justify-center text-xl text-gray-400">📤</div>
+                    <div>
+                        <div className="text-xs font-bold text-gray-500 uppercase">Withdrawn</div>
+                        <div className="text-lg font-bold text-gray-300 decoration-slice line-through decoration-red-500/50">{user.nftBalance.withdrawn} NFT</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* 4. Dice Attempts */}
+            <div className="bg-gradient-to-r from-gray-800 to-gray-800/50 p-3 rounded-2xl border border-white/5 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center text-xl">🎲</div>
                     <div>

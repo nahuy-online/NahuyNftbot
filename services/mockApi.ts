@@ -70,8 +70,9 @@ const getLocalState = (userId: number, username: string) => {
     const newUser: UserProfile = {
         id: userId, username, isAdmin: true, referralCode: `ref_${randomHex}`, referrerId: null,
         ip: '127.0.0.1', joinedAt: Date.now(), lastActive: Date.now(),
-        nftBalance: { total: 0, available: 0, locked: 0, lockedDetails: [] },
+        nftBalance: { total: 0, available: 0, locked: 0, lockedDetails: [], withdrawn: 0 },
         reservedSerials: [],
+        withdrawnSerials: [],
         diceBalance: { available: 5, starsAttempts: 0, used: 0 },
         referralStats: { level1: 0, level2: 0, level3: 0, bonusBalance: { STARS: 0, TON: 0, USDT: 0 } }
     };
@@ -153,7 +154,12 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
              if (amt <= 0) throw new Error("No funds");
              user.nftBalance.available = 0;
              user.nftBalance.total -= amt;
-             if(user.reservedSerials) user.reservedSerials.splice(0, amt);
+             user.nftBalance.withdrawn = (user.nftBalance.withdrawn || 0) + amt;
+             if(user.reservedSerials) {
+                 const withdrawn = user.reservedSerials.splice(0, amt);
+                 if(!user.withdrawnSerials) user.withdrawnSerials = [];
+                 user.withdrawnSerials.push(...withdrawn);
+             }
              addLocalHistory(userId, { id: `m_wd_${Date.now()}`, type: 'withdraw', assetType: 'nft', amount: amt, description: `Withdraw`, timestamp: Date.now() });
              updateLocalState(user);
              return { ok: true };

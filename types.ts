@@ -48,8 +48,10 @@ export interface UserProfile {
     available: number;
     locked: number; // Summary count
     lockedDetails: LockedNftItem[]; // Specific items with dates
+    withdrawn: number; // NEW: Total withdrawn count
   };
-  reservedSerials?: number[]; // IDs of the NFTs user owns (e.g. 101, 102)
+  reservedSerials?: number[]; // IDs of the NFTs user currently owns
+  withdrawnSerials?: number[]; // NEW: IDs of withdrawn NFTs
   diceBalance: {
     available: number; // Total available
     starsAttempts: number; // Subset of available that was bought with Stars

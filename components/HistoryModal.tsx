@@ -5,18 +5,18 @@ import { useTranslation } from '../i18n/LanguageContext';
 
 interface HistoryModalProps {
     onClose: () => void;
-    filter: 'assets' | 'bonus' | 'locked' | 'serials';
+    filter: 'assets' | 'bonus' | 'locked' | 'serials' | 'withdrawn';
     history: NftTransaction[];
     loading: boolean;
     user: any; // Passing partial user object for stats
 }
 
-const SerialList = ({ serials }: { serials?: number[] }) => {
+const SerialList = ({ serials, isWithdrawn = false }: { serials?: number[], isWithdrawn?: boolean }) => {
     if (!serials || serials.length === 0) return null;
     return (
         <div className="flex flex-wrap gap-1 mt-2">
             {serials.map(s => (
-                <span key={s} className="text-[10px] font-mono font-bold bg-black/30 text-gray-300 px-1.5 py-0.5 rounded border border-white/5">
+                <span key={s} className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded border ${isWithdrawn ? 'bg-red-900/20 text-red-500/50 border-red-900/20 line-through' : 'bg-black/30 text-gray-300 border-white/5'}`}>
                     #{s}
                 </span>
             ))}
@@ -60,21 +60,17 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
         return !isBonus;
     });
 
-    // Filter Available Serials (Exclude currently locked ones)
+    // Filter Available Serials: Owned - Locked
     const getAvailableSerials = () => {
         if (!user.reservedSerials) return [];
-        
         const lockedSet = new Set<number>();
-        // Collect all currently active locks
         if (user.nftBalance.lockedDetails) {
             user.nftBalance.lockedDetails.forEach((item: any) => {
-                // If unlock date is in the future, these serials are hidden from "Available" list
                 if (item.unlockDate > Date.now() && item.serials) {
                     item.serials.forEach((s: number) => lockedSet.add(s));
                 }
             });
         }
-        
         return user.reservedSerials.filter((s: number) => !lockedSet.has(s));
     };
 
@@ -82,8 +78,9 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
     const getTitle = () => {
         switch(filter) {
             case 'bonus': return t('bonus_balance');
-            case 'locked': return t('vesting_schedule');
-            case 'serials': return t('available_withdraw'); // Changed title context slightly
+            case 'locked': return t('vesting_schedule'); // Frozen
+            case 'serials': return t('available_withdraw'); 
+            case 'withdrawn': return 'Withdrawn';
             default: return t('tx_history');
         }
     };
@@ -91,8 +88,9 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
     const getIcon = () => {
         switch(filter) {
             case 'bonus': return '💎';
-            case 'locked': return '🔒';
+            case 'locked': return '❄️';
             case 'serials': return '🔢';
+            case 'withdrawn': return '📤';
             default: return '📂';
         }
     };
@@ -100,13 +98,13 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
     const getColorClass = () => {
         switch(filter) {
             case 'bonus': return 'bg-purple-500/20 text-purple-400';
-            case 'locked': return 'bg-yellow-500/20 text-yellow-500';
+            case 'locked': return 'bg-cyan-500/20 text-cyan-400';
             case 'serials': return 'bg-green-500/20 text-green-400';
+            case 'withdrawn': return 'bg-gray-700 text-gray-400';
             default: return 'bg-blue-500/20 text-blue-400';
         }
     };
 
-    // Compute serials only if needed
     const availableSerials = filter === 'serials' ? getAvailableSerials() : [];
 
     return (
@@ -137,8 +135,22 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                 <div className="text-xs text-gray-500 italic py-4 text-center">{t('no_available')}</div>
                             )}
                           </div>
-                          <div className="mt-2 text-[10px] text-gray-500 text-center px-4">
-                              {t('locked_policy')}
+                      </div>
+                  )}
+
+                  {/* === WITHDRAWN VIEW === */}
+                  {filter === 'withdrawn' && (
+                      <div className="p-5 animate-fade-in">
+                          <div className="bg-gray-800 p-4 rounded-xl border border-red-500/10">
+                            <div className="text-xs text-gray-500 font-bold uppercase mb-2 flex justify-between items-center">
+                                <span>Withdrawn History</span>
+                                <span className="bg-gray-700 px-2 py-0.5 rounded-full text-[10px] text-white">{user.withdrawnSerials?.length || 0}</span>
+                            </div>
+                            {user.withdrawnSerials && user.withdrawnSerials.length > 0 ? (
+                                <SerialList serials={user.withdrawnSerials} isWithdrawn={true} />
+                            ) : (
+                                <div className="text-xs text-gray-500 italic py-4 text-center">No withdrawn items</div>
+                            )}
                           </div>
                       </div>
                   )}
@@ -159,25 +171,32 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                       </div>
                   )}
 
-                  {/* === LOCKED VIEW === */}
+                  {/* === LOCKED VIEW (FROZEN STYLE) === */}
                   {filter === 'locked' && (
                       <div className="p-4 space-y-3 animate-fade-in">
+                        {/* Header Note */}
+                        <div className="text-[10px] text-cyan-400 text-center mb-2 flex items-center justify-center gap-1">
+                            <span>❄️</span> {t('locked_policy')}
+                        </div>
+
                         {user.nftBalance.lockedDetails?.map((item: any, idx: number) => (
-                            <div key={idx} className={`p-4 rounded-xl border flex flex-col gap-3 ${item.isSeized ? 'bg-red-900/10 border-red-500/20' : 'bg-gray-800 border-white/5'}`}>
+                            <div key={idx} className={`p-4 rounded-xl border flex flex-col gap-3 ${item.isSeized ? 'bg-red-900/10 border-red-500/20' : 'bg-gradient-to-r from-gray-800 to-cyan-900/20 border-cyan-500/20'}`}>
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-xl bg-yellow-500/20 text-yellow-500 flex items-center justify-center font-bold">#{idx+1}</div>
+                                        <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-300 flex items-center justify-center font-bold border border-cyan-500/20">
+                                            #{idx+1}
+                                        </div>
                                         <div>
-                                            <span className="font-bold block">{item.amount} NFT</span>
+                                            <span className="font-bold block text-white">{item.amount} NFT <span className="text-cyan-400">*</span></span>
                                             <span className="text-xs text-gray-500">{formatDate(item.unlockDate)}</span>
                                         </div>
                                     </div>
-                                    {!item.isSeized && <span className="text-yellow-500 font-mono text-[10px] bg-yellow-500/10 px-2 py-0.5 rounded">{formatTimeLeft(item.unlockDate)}</span>}
+                                    {!item.isSeized && <span className="text-cyan-300 font-mono text-[10px] bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">{formatTimeLeft(item.unlockDate)}</span>}
                                 </div>
                                 
                                 {item.serials && item.serials.length > 0 && (
                                      <div className="pt-2 border-t border-white/5">
-                                         <div className="text-[10px] text-gray-500 mb-1 uppercase">{t('reserved_serials')} ({item.serials.length})</div>
+                                         <div className="text-[10px] text-cyan-500/70 mb-1 uppercase">{t('reserved_serials')} ({item.serials.length})</div>
                                          <SerialList serials={item.serials} />
                                      </div>
                                 )}
@@ -192,9 +211,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                             {loading ? <div className="text-center pt-5">Loading...</div> : 
                             filteredHistory.length === 0 ? <div className="text-center text-gray-500 pt-5">{t('no_tx')}</div> :
                             filteredHistory.map((tx) => {
-                                // Determine if we should show Star/Lock indicator
                                 const isStarOrLocked = tx.isLocked || tx.currency === Currency.STARS;
-
                                 return (
                                     <div key={tx.id} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex flex-col gap-2">
                                         <div className="flex justify-between items-center w-full">
@@ -208,7 +225,6 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                                     </div>
                                                     <div className="flex items-center gap-2 mt-0.5">
                                                         <div className="text-[10px] text-gray-500 font-mono">{formatDate(tx.timestamp)}</div>
-                                                        {/* Currency Badge */}
                                                         {tx.currency && (
                                                             <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
                                                                 tx.currency === Currency.STARS ? 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20' :
@@ -223,52 +239,14 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                             </div>
                                             <div className={`text-right ${tx.type === 'withdraw' || tx.type === 'seizure' ? 'text-red-400' : 'text-green-400'} font-mono font-bold flex items-center gap-0.5`}>
                                                 {tx.type === 'withdraw' || tx.type === 'seizure' ? '-' : '+'}{tx.amount}
-                                                {isStarOrLocked && <span className="text-yellow-500 text-sm mb-1 ml-0.5" title="Locked/Stars">*</span>}
+                                                {isStarOrLocked && <span className="text-cyan-400 text-sm mb-1 ml-0.5" title="Locked/Stars">*</span>}
                                             </div>
                                         </div>
-                                        
-                                        {tx.serials && tx.serials.length > 0 && (
-                                            <div className="pl-[60px] opacity-70">
-                                                 <SerialList serials={tx.serials} />
-                                            </div>
-                                        )}
                                     </div>
                                 );
                             })
                             }
-                            
-                            {/* Star Footer Legend */}
-                            <div className="mt-4 flex items-center justify-center gap-2 text-[10px] text-gray-500">
-                                <span className="text-yellow-500 text-sm">*</span>
-                                <span>{t('locked_policy')}</span>
-                            </div>
                         </div>
-                  )}
-                  
-                  {/* === BONUS HISTORY === */}
-                   {filter === 'bonus' && (
-                      <div className="p-4 space-y-3">
-                        {loading ? <div className="text-center pt-5">Loading...</div> : 
-                         filteredHistory.length === 0 ? <div className="text-center text-gray-500 pt-5">{t('no_tx')}</div> :
-                         filteredHistory.map((tx) => (
-                                <div key={tx.id} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex justify-between items-center">
-                                    <div className="flex items-center gap-3 overflow-hidden">
-                                        <div className="w-12 h-12 rounded-xl flex-shrink-0 flex items-center justify-center text-xl bg-gray-700/30">
-                                            {getTxIcon(tx.type, tx.assetType)}
-                                        </div>
-                                        <div className="min-w-0">
-                                            <div className="font-bold text-sm text-white truncate">{tx.description}</div>
-                                            <div className="text-[10px] text-gray-500 font-mono mt-0.5">{formatDate(tx.timestamp)}</div>
-                                        </div>
-                                    </div>
-                                    <div className={`text-right text-green-400 font-mono font-bold`}>
-                                        +{tx.amount}
-                                        <span className="text-[10px] ml-1 opacity-70">{tx.currency}</span>
-                                    </div>
-                                </div>
-                         ))
-                        }
-                      </div>
                   )}
               </div>
         </div>
