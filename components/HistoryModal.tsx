@@ -220,6 +220,11 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                   <div className="text-lg font-bold text-white">{formatCrypto(user.referralStats.bonusBalance.USDT)}</div>
                               </div>
                           </div>
+                          {/* STARS Balance Card */}
+                          <div className="p-4 rounded-2xl bg-gray-800 border border-white/5 flex justify-between items-center">
+                              <div className="text-xs text-yellow-500 font-bold uppercase">STARS</div>
+                              <div className="text-lg font-bold text-white">{user.referralStats.bonusBalance.STARS} ★</div>
+                          </div>
                       </div>
                   )}
 
