@@ -53,19 +53,38 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
         }
     };
 
+    // Filter History Items
     const filteredHistory = history.filter(tx => {
         const isBonus = tx.type === 'referral_reward' || tx.type === 'referral' || (tx.type === 'purchase' && tx.assetType === 'currency');
         if (filter === 'bonus') return isBonus;
-        // Assets view shows transactions that aren't purely bonus-related (e.g. purchases, wins, withdrawals)
         return !isBonus;
     });
 
+    // Filter Available Serials (Exclude currently locked ones)
+    const getAvailableSerials = () => {
+        if (!user.reservedSerials) return [];
+        
+        const lockedSet = new Set<number>();
+        // Collect all currently active locks
+        if (user.nftBalance.lockedDetails) {
+            user.nftBalance.lockedDetails.forEach((item: any) => {
+                // If unlock date is in the future, these serials are hidden from "Available" list
+                if (item.unlockDate > Date.now() && item.serials) {
+                    item.serials.forEach((s: number) => lockedSet.add(s));
+                }
+            });
+        }
+        
+        return user.reservedSerials.filter((s: number) => !lockedSet.has(s));
+    };
+
+    // Helper for Titles/Icons
     const getTitle = () => {
         switch(filter) {
             case 'bonus': return t('bonus_balance');
             case 'locked': return t('vesting_schedule');
-            case 'serials': return t('reserved_serials');
-            default: return t('tx_history'); // Assets maps to General History
+            case 'serials': return t('available_withdraw'); // Changed title context slightly
+            default: return t('tx_history');
         }
     };
 
@@ -87,6 +106,9 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
         }
     };
 
+    // Compute serials only if needed
+    const availableSerials = filter === 'serials' ? getAvailableSerials() : [];
+
     return (
         <div className="fixed inset-0 z-[9999] bg-gray-900 flex flex-col animate-fade-in">
              <div className="flex-none flex items-center justify-between px-5 pb-4 pt-20 bg-gray-900 border-b border-gray-800 z-50 shadow-xl">
@@ -101,19 +123,22 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
               
               <div className="flex-1 overflow-y-auto overflow-x-hidden pb-32">
                   
-                  {/* === SERIALS VIEW (Moved from Assets) === */}
+                  {/* === SERIALS VIEW (Filtered: Only Available) === */}
                   {filter === 'serials' && (
                       <div className="p-5 animate-fade-in">
                           <div className="bg-gray-800 p-4 rounded-xl border border-white/5">
-                            <div className="text-xs text-gray-400 font-bold uppercase mb-2 flex justify-between items-center">
-                                <span>{t('reserved_serials')}</span>
-                                <span className="bg-gray-700 px-2 py-0.5 rounded-full text-[10px] text-white">{user.reservedSerials?.length || 0}</span>
+                            <div className="text-xs text-green-400 font-bold uppercase mb-2 flex justify-between items-center">
+                                <span>{t('available_btn')} (Unlocked)</span>
+                                <span className="bg-green-500/20 px-2 py-0.5 rounded-full text-[10px] text-green-400">{availableSerials.length}</span>
                             </div>
-                            {user.reservedSerials && user.reservedSerials.length > 0 ? (
-                                <SerialList serials={user.reservedSerials} />
+                            {availableSerials.length > 0 ? (
+                                <SerialList serials={availableSerials} />
                             ) : (
-                                <div className="text-xs text-gray-500 italic py-4 text-center">{t('no_tx')} (No NFTs)</div>
+                                <div className="text-xs text-gray-500 italic py-4 text-center">{t('no_available')}</div>
                             )}
+                          </div>
+                          <div className="mt-2 text-[10px] text-gray-500 text-center px-4">
+                              {t('locked_policy')}
                           </div>
                       </div>
                   )}
@@ -202,11 +227,6 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                             </div>
                                         </div>
                                         
-                                        {/* Optional: We can still show serials here if needed, but per request, moving Main serials to separate view. 
-                                            However, keeping transaction-specific serials in history is usually good UX. 
-                                            If strictly "moved", I can hide this, but I'll keep it as "Receipt context" 
-                                            while "My Serials" modal shows the full inventory. 
-                                        */}
                                         {tx.serials && tx.serials.length > 0 && (
                                             <div className="pl-[60px] opacity-70">
                                                  <SerialList serials={tx.serials} />
