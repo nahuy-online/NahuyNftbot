@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React from 'react';
 import { NftTransaction, Currency } from '../types';
 import { useTranslation } from '../i18n/LanguageContext';
 
@@ -26,7 +26,6 @@ const SerialList = ({ serials, isWithdrawn = false }: { serials?: number[], isWi
 
 export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, history, loading, user }) => {
     const { t } = useTranslation();
-    const [serialTab, setSerialTab] = useState<'available' | 'locked' | 'withdrawn'>('available');
 
     const formatDate = (ts: number) => {
         return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -107,6 +106,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
     };
 
     const availableSerials = getAvailableSerials();
+    const totalLockedSerials = user.nftBalance.lockedDetails?.reduce((acc: number, item: any) => acc + (item.serials?.length || 0), 0) || 0;
 
     return (
         <div className="fixed inset-0 z-[9999] bg-gray-900 flex flex-col animate-fade-in">
@@ -122,102 +122,75 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
               
               <div className="flex-1 overflow-y-auto overflow-x-hidden pb-32">
                   
-                  {/* === SERIALS MANAGER (TABS) === */}
+                  {/* === SERIALS LISTS (3 STACKED CARDS) === */}
                   {filter === 'serials' && (
                       <div className="p-4 space-y-4 animate-fade-in">
                           
-                          {/* TABS HEADER */}
-                          <div className="grid grid-cols-3 gap-1 bg-gray-800 p-1 rounded-xl border border-white/5">
-                              <button 
-                                onClick={() => setSerialTab('available')}
-                                className={`py-2 rounded-lg text-xs font-bold transition-all ${serialTab === 'available' ? 'bg-green-500 text-white shadow-lg' : 'text-gray-400 hover:bg-white/5'}`}
-                              >
-                                {t('available_btn')}
-                              </button>
-                              <button 
-                                onClick={() => setSerialTab('locked')}
-                                className={`py-2 rounded-lg text-xs font-bold transition-all ${serialTab === 'locked' ? 'bg-cyan-600 text-white shadow-lg' : 'text-gray-400 hover:bg-white/5'}`}
-                              >
-                                {t('locked')}
-                              </button>
-                              <button 
-                                onClick={() => setSerialTab('withdrawn')}
-                                className={`py-2 rounded-lg text-xs font-bold transition-all ${serialTab === 'withdrawn' ? 'bg-gray-600 text-white shadow-lg' : 'text-gray-400 hover:bg-white/5'}`}
-                              >
-                                Withdrawn
-                              </button>
-                          </div>
-
-                          {/* TAB CONTENT: AVAILABLE */}
-                          {serialTab === 'available' && (
-                              <div className="bg-gray-800 p-4 rounded-xl border border-green-500/20 animate-fade-in">
+                          {/* 1. AVAILABLE CARD */}
+                          <div className="bg-gray-800 p-4 rounded-xl border border-green-500/20 animate-fade-in">
                                 <div className="text-xs text-green-400 font-bold uppercase mb-2 flex justify-between items-center">
-                                    <span>Unlocked Assets</span>
+                                    <span>{t('available_btn')}</span>
                                     <span className="bg-green-500/20 px-2 py-0.5 rounded-full text-[10px] text-green-400">{availableSerials.length}</span>
                                 </div>
                                 {availableSerials.length > 0 ? (
                                     <SerialList serials={availableSerials} />
                                 ) : (
-                                    <div className="text-xs text-gray-500 italic py-8 text-center border-2 border-dashed border-gray-700 rounded-lg">
+                                    <div className="text-xs text-gray-500 italic py-2 text-center">
                                         {t('no_available')}
                                     </div>
                                 )}
-                              </div>
-                          )}
+                          </div>
 
-                          {/* TAB CONTENT: LOCKED */}
-                          {serialTab === 'locked' && (
-                              <div className="space-y-3 animate-fade-in">
-                                <div className="text-[10px] text-cyan-400 text-center flex items-center justify-center gap-1 bg-cyan-900/20 p-2 rounded-lg border border-cyan-500/10">
-                                    <span>❄️</span> {t('locked_policy')}
+                          {/* 2. LOCKED CARD */}
+                          <div className="bg-gray-800 p-4 rounded-xl border border-cyan-500/20 animate-fade-in">
+                                <div className="text-xs text-cyan-400 font-bold uppercase mb-2 flex justify-between items-center">
+                                    <span>{t('locked')}</span>
+                                    <span className="bg-cyan-500/20 px-2 py-0.5 rounded-full text-[10px] text-cyan-400">{totalLockedSerials}</span>
                                 </div>
                                 
-                                {(!user.nftBalance.lockedDetails || user.nftBalance.lockedDetails.length === 0) ? (
-                                     <div className="text-xs text-gray-500 italic py-8 text-center border-2 border-dashed border-gray-700 rounded-lg">No locked assets</div>
-                                ) : (
-                                    user.nftBalance.lockedDetails.map((item: any, idx: number) => (
-                                        <div key={idx} className={`p-4 rounded-xl border flex flex-col gap-3 ${item.isSeized ? 'bg-red-900/10 border-red-500/20' : 'bg-gradient-to-r from-gray-800 to-cyan-900/20 border-cyan-500/20'}`}>
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-300 flex items-center justify-center font-bold border border-cyan-500/20">
-                                                        #{idx+1}
-                                                    </div>
-                                                    <div>
-                                                        <span className="font-bold block text-white">{item.amount} NFT</span>
-                                                        <span className="text-xs text-gray-500">{formatDate(item.unlockDate)}</span>
-                                                    </div>
-                                                </div>
-                                                {!item.isSeized && <span className="text-cyan-300 font-mono text-[10px] bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">{formatTimeLeft(item.unlockDate)}</span>}
-                                            </div>
-                                            {item.serials && item.serials.length > 0 && (
-                                                <div className="pt-2 border-t border-white/5">
-                                                    <SerialList serials={item.serials} />
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))
-                                )}
-                              </div>
-                          )}
+                                <div className="text-[10px] text-cyan-400/70 mb-3 flex items-center gap-1">
+                                    <span>❄️</span> {t('locked_policy')}
+                                </div>
 
-                          {/* TAB CONTENT: WITHDRAWN */}
-                          {serialTab === 'withdrawn' && (
-                              <div className="bg-gray-800 p-4 rounded-xl border border-white/5 animate-fade-in">
+                                {(!user.nftBalance.lockedDetails || user.nftBalance.lockedDetails.length === 0) ? (
+                                     <div className="text-xs text-gray-500 italic py-2 text-center">No locked assets</div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {user.nftBalance.lockedDetails.map((item: any, idx: number) => (
+                                            <div key={idx} className={`p-3 rounded-lg border flex flex-col gap-2 ${item.isSeized ? 'bg-red-900/10 border-red-500/20' : 'bg-black/20 border-white/5'}`}>
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-bold text-sm text-white">{item.amount} NFT</span>
+                                                        <span className="text-[10px] text-gray-500">{formatDate(item.unlockDate)}</span>
+                                                    </div>
+                                                    {!item.isSeized && <span className="text-cyan-300 font-mono text-[10px] bg-cyan-500/10 px-2 py-0.5 rounded">{formatTimeLeft(item.unlockDate)}</span>}
+                                                </div>
+                                                {item.serials && item.serials.length > 0 && (
+                                                     <SerialList serials={item.serials} />
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                          </div>
+
+                          {/* 3. WITHDRAWN CARD */}
+                          <div className="bg-gray-800 p-4 rounded-xl border border-white/5 animate-fade-in">
                                 <div className="text-xs text-gray-400 font-bold uppercase mb-2 flex justify-between items-center">
-                                    <span>Sent to Wallet</span>
+                                    <span>Withdrawn</span>
                                     <span className="bg-gray-700 px-2 py-0.5 rounded-full text-[10px] text-white">{user.withdrawnSerials?.length || 0}</span>
                                 </div>
                                 {user.withdrawnSerials && user.withdrawnSerials.length > 0 ? (
                                     <SerialList serials={user.withdrawnSerials} isWithdrawn={true} />
                                 ) : (
-                                    <div className="text-xs text-gray-500 italic py-8 text-center border-2 border-dashed border-gray-700 rounded-lg">No withdrawn history</div>
+                                    <div className="text-xs text-gray-500 italic py-2 text-center">No withdrawn history</div>
                                 )}
-                              </div>
-                          )}
+                          </div>
+
                       </div>
                   )}
 
-                  {/* === LEGACY WITHDRAWN VIEW (Keep as fallback if accessed directly) === */}
+                  {/* === LEGACY WITHDRAWN VIEW (Keep as fallback) === */}
                   {filter === 'withdrawn' && (
                       <div className="p-5 animate-fade-in">
                           <div className="bg-gray-800 p-4 rounded-xl border border-red-500/10">
