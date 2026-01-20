@@ -213,6 +213,45 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
              return { ok: true };
         }
 
+        if (endpoint === '/debug/seize') {
+            const { assetType, targetId } = payload;
+            const targetUser = getLocalState(targetId, 'User');
+            
+            if (assetType === 'dice') {
+                targetUser.diceBalance.available = 0;
+            } else {
+                targetUser.nftBalance.locked = 0;
+                // Simplified mock seize
+            }
+            
+            updateLocalState(targetUser);
+            addLocalHistory(targetId, {
+                id: `m_seize_${Date.now()}`, type: 'seizure', assetType, amount: 0,
+                description: `Seized ${assetType}`, timestamp: Date.now()
+            });
+            return { ok: true, message: `Mock seized ${assetType}` };
+        }
+        
+        if (endpoint === '/admin/search') {
+            // Mock Search by ID or Username
+            const targetId = payload.targetId;
+            // In Mock, we only have the current user in session + whatever is in localstorage
+            // We just return current user for testing if ID matches or 99999
+            if (targetId == userId || targetId == 99999) {
+                return {
+                    found: true,
+                    user: {
+                        id: user.id, username: user.username, nftTotal: user.nftBalance.total,
+                        nftAvailable: user.nftBalance.available, diceAvailable: user.diceBalance.available,
+                        transactions: getLocalHistory(user.id),
+                        rewards: user.referralStats.bonusBalance,
+                        referralStats: { level1: 0, level2: 0, level3: 0 }
+                    }
+                };
+            }
+            return { found: false };
+        }
+
         return { ok: true };
   };
 
@@ -255,5 +294,5 @@ export const debugSeizeAsset = async (assetType: 'nft' | 'dice' = 'nft', targetI
 
 // Admin
 export const fetchAdminStats = async () => apiRequest('/admin/stats', 'POST');
-export const searchAdminUser = async (targetId: number) => apiRequest('/admin/search', 'POST', { targetId });
+export const searchAdminUser = async (targetId: number | string) => apiRequest('/admin/search', 'POST', { targetId });
 export const fetchAdminUsers = async (sortBy: UserSortField, sortOrder: 'asc'|'desc', limit: number, offset: number) => apiRequest('/admin/users', 'POST', { sortBy, sortOrder, limit, offset });

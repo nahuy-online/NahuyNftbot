@@ -74,7 +74,7 @@ export const AdminPanel: React.FC = () => {
     setSearchError('');
     setFoundUser(null);
     try {
-        const res = await searchAdminUser(parseInt(id));
+        const res = await searchAdminUser(id as any); // Type cast as API now handles strings
         if (res.found && res.user) {
             setFoundUser(res.user);
             setShowDetailModal(true);
@@ -222,8 +222,8 @@ export const AdminPanel: React.FC = () => {
               <div className="bg-gray-800/50 p-4 rounded-2xl border border-white/10">
                   <div className="flex gap-2">
                       <input 
-                          type="number" 
-                          placeholder={t('admin_search_ph')}
+                          type="text" 
+                          placeholder={t('admin_search_ph') + " or Username"}
                           className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
                           value={searchId}
                           onChange={(e) => setSearchId(e.target.value)}
@@ -302,7 +302,7 @@ export const AdminPanel: React.FC = () => {
         )}
       </div>
 
-      {/* USER DETAIL MODAL - Outside the animated container to fix position */}
+      {/* USER DETAIL MODAL */}
       {showDetailModal && foundUser && (
           <div className="fixed top-0 left-0 right-0 bottom-[64px] z-40 bg-gray-900 flex flex-col animate-fade-in p-5 overflow-y-auto w-full">
               <div className="flex justify-between items-center mb-6">
