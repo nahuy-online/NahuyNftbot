@@ -35,6 +35,13 @@ const RECEIVER_ADDRESS = process.env.RECEIVER_ADDRESS || 'UQD___________________
 const TON_ENDPOINT = process.env.TON_ENDPOINT || 'https://toncenter.com/api/v2/json';
 const TON_API_KEY = process.env.TON_API_KEY || ''; // Optional but recommended
 
+// --- CONSTANTS (Must match frontend constants.ts for validation) ---
+const PRICES = {
+    NFT: { STARS: 2000, TON: 0.011, USDT: 36.6 },
+    DICE: { STARS: 6666, TON: 0.0366, USDT: 121 }
+};
+const REFERRAL_PERCENTAGES = [0.11, 0.09, 0.07]; // Level 1, 2, 3
+
 // --- TON CLIENT ---
 const tonClient = new TonClient({ 
     endpoint: TON_ENDPOINT, 
@@ -211,6 +218,55 @@ async function reserveNfts(client, userId, quantity, isLocked, source) {
     return serialList;
 }
 
+// Recursively find uplines and distribute rewards
+async function distributeReferralRewards(client, buyerId, amountSpent, currency) {
+    // 1. Find chain of referrers: User -> L1 -> L2 -> L3
+    // We only need 3 levels up
+    
+    // Level 1
+    const l1Res = await client.query('SELECT referrer_id FROM users WHERE id = $1', [buyerId]);
+    const l1Id = l1Res.rows[0]?.referrer_id;
+    if (!l1Id) return; // No referrer
+
+    // Level 2
+    const l2Res = await client.query('SELECT referrer_id FROM users WHERE id = $1', [l1Id]);
+    const l2Id = l2Res.rows[0]?.referrer_id;
+
+    // Level 3
+    let l3Id = null;
+    if (l2Id) {
+        const l3Res = await client.query('SELECT referrer_id FROM users WHERE id = $1', [l2Id]);
+        l3Id = l3Res.rows[0]?.referrer_id;
+    }
+
+    const uplines = [l1Id, l2Id, l3Id].filter(id => !!id);
+    const rewardField = currency === 'STARS' ? 'ref_rewards_stars' : currency === 'TON' ? 'ref_rewards_ton' : 'ref_rewards_usdt';
+    
+    for (let i = 0; i < uplines.length; i++) {
+        const uplineId = uplines[i];
+        const percent = REFERRAL_PERCENTAGES[i]; // 0.11, 0.09, 0.07
+        const reward = amountSpent * percent;
+        
+        if (reward > 0) {
+            // Update Balance
+            const roundedReward = currency === 'STARS' ? Math.floor(reward) : reward; // Stars are integers
+            
+            if (roundedReward > 0) {
+                await client.query(
+                    `UPDATE users SET ${rewardField} = ${rewardField} + $1 WHERE id = $2`,
+                    [roundedReward, uplineId]
+                );
+
+                // Log Transaction
+                await client.query(`
+                    INSERT INTO transactions (user_id, type, asset_type, amount, currency, description)
+                    VALUES ($1, 'referral_reward', 'currency', $2, $3, $4)
+                `, [uplineId, roundedReward, currency, `Referral Reward (L${i+1}) from user ${buyerId}`]);
+            }
+        }
+    }
+}
+
 // --- API ROUTES ---
 
 // 1. AUTH
@@ -264,19 +320,40 @@ app.post('/api/auth', validateTelegramData, async (req, res) => {
             FROM user_nfts WHERE user_id = $1 AND is_locked = TRUE AND is_withdrawn = FALSE GROUP BY unlock_date, is_seized
         `, [id]);
         
-        // Owned Active Serials (excludes withdrawn)
+        // Owned Active Serials
         const serials = await client.query(`
             SELECT serial_number FROM user_nfts WHERE user_id = $1 AND is_withdrawn = FALSE AND is_seized = FALSE ORDER BY serial_number DESC LIMIT 500
         `, [id]);
 
-        // Withdrawn Serials (NEW)
+        // Withdrawn Serials
         const withdrawnSerials = await client.query(`
             SELECT serial_number FROM user_nfts WHERE user_id = $1 AND is_withdrawn = TRUE ORDER BY serial_number DESC LIMIT 500
         `, [id]);
         
         const withdrawnCount = parseInt(withdrawnSerials.rowCount || '0');
 
-        const refCounts = await client.query(`SELECT COUNT(*) FROM users WHERE referrer_id = $1`, [id]);
+        // REFERRAL COUNTS (L1, L2, L3)
+        // L1: Direct
+        const l1CountRes = await client.query(`SELECT COUNT(*) FROM users WHERE referrer_id = $1`, [id]);
+        const l1Count = parseInt(l1CountRes.rows[0].count);
+
+        // L2: Children of L1
+        const l2CountRes = await client.query(`
+            SELECT COUNT(*) FROM users WHERE referrer_id IN (
+                SELECT id FROM users WHERE referrer_id = $1
+            )
+        `, [id]);
+        const l2Count = parseInt(l2CountRes.rows[0].count);
+
+        // L3: Children of L2
+        const l3CountRes = await client.query(`
+            SELECT COUNT(*) FROM users WHERE referrer_id IN (
+                SELECT id FROM users WHERE referrer_id IN (
+                    SELECT id FROM users WHERE referrer_id = $1
+                )
+            )
+        `, [id]);
+        const l3Count = parseInt(l3CountRes.rows[0].count);
 
         res.json({
             id: String(user.id),
@@ -295,15 +372,16 @@ app.post('/api/auth', validateTelegramData, async (req, res) => {
             withdrawnSerials: withdrawnSerials.rows.map(r => parseInt(r.serial_number)),
             diceBalance: { available: user.dice_available, starsAttempts: user.dice_stars_attempts },
             referralStats: {
-                level1: parseInt(refCounts.rows[0].count),
-                level2: 0, level3: 0,
+                level1: l1Count,
+                level2: l2Count, 
+                level3: l3Count,
                 bonusBalance: { STARS: user.ref_rewards_stars, TON: parseFloat(user.ref_rewards_ton), USDT: parseFloat(user.ref_rewards_usdt) }
             }
         });
 
     } catch (e) {
         if (client) await client.query('ROLLBACK');
-        console.error("Auth Error:", e.message); // Helpful for logs
+        console.error("Auth Error:", e.message); 
         res.status(500).json({ error: `Database Error: ${e.message}` });
     } finally {
         if (client) client.release();
@@ -312,9 +390,7 @@ app.post('/api/auth', validateTelegramData, async (req, res) => {
 
 // 2. PAYMENTS
 app.post('/api/payment/create', validateTelegramData, (req, res) => {
-    // Generate a unique payload for TON transfer comment
     const { type, amount, currency } = req.body;
-    // Format: "purchase:user_id:type:amount:random"
     const uniqueId = crypto.randomBytes(3).toString('hex');
     const comment = `buy:${req.user.id}:${type}:${amount}:${uniqueId}`;
     
@@ -322,11 +398,11 @@ app.post('/api/payment/create', validateTelegramData, (req, res) => {
         ok: true,
         currency,
         transaction: {
-            validUntil: Math.floor(Date.now() / 1000) + 600, // 10 min
+            validUntil: Math.floor(Date.now() / 1000) + 600, 
             messages: [{
                 address: RECEIVER_ADDRESS,
                 amount: "0", 
-                payload: comment // Simple text comment
+                payload: comment 
             }]
         },
         internalId: comment
@@ -342,16 +418,42 @@ app.post('/api/payment/verify', validateTelegramData, async (req, res) => {
         client = await pool.connect();
         await client.query('BEGIN');
 
-        // Logic A: Pay with Bonus Balance
+        // --- 1. CALCULATE PRICE & VALUE ---
+        const priceMap = type === 'nft' ? PRICES.NFT : PRICES.DICE;
+        const unitPrice = priceMap[currency];
+        if (!unitPrice) throw new Error("Invalid currency/type");
+        const totalValue = unitPrice * amount;
+
+        // --- 2. PAYMENT DEDUCTION LOGIC ---
         if (useRewardBalance) {
              const userRes = await client.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [userId]);
-             // ... logic for deducting balance ...
+             const user = userRes.rows[0];
+             
+             let balance = 0;
+             let field = '';
+             if (currency === 'TON') { balance = parseFloat(user.ref_rewards_ton); field = 'ref_rewards_ton'; }
+             else if (currency === 'USDT') { balance = parseFloat(user.ref_rewards_usdt); field = 'ref_rewards_usdt'; }
+             else { balance = user.ref_rewards_stars; field = 'ref_rewards_stars'; }
+
+             if (balance < totalValue) {
+                 // Partial payment not supported in this simple version, fail if not enough
+                 // Or implement split logic. For now: Fail or Assume "Pay with Balance" means FULL payment
+                 // If balance is enough, deduct.
+                 // If the logic is "Discount", that's complex. Let's assume full coverage.
+                 throw new Error("Insufficient bonus balance");
+             }
+
+             // Deduct
+             await client.query(`UPDATE users SET ${field} = ${field} - $1 WHERE id = $2`, [totalValue, userId]);
+             
+             // Log Deduction
+             await client.query(`
+                INSERT INTO transactions (user_id, type, asset_type, amount, currency, description)
+                VALUES ($1, 'purchase', 'currency', $2, $3, $4)
+            `, [userId, -totalValue, currency, `Used Bonus Balance for ${type}`]);
         }
 
-        // Logic B: Real Blockchain Verification
-        // ...
-        
-        // Granting Assets Logic
+        // --- 3. GRANT ASSETS ---
         let grantedCount = 0;
         let assetName = 'items';
         let wonSerials = [];
@@ -367,13 +469,17 @@ app.post('/api/payment/verify', validateTelegramData, async (req, res) => {
         } else {
             grantedCount = amount; // Attempts
             assetName = 'Dice Attempts';
-            const field = isLocked ? 'dice_stars_attempts' : 'dice_available';
-            // dice_available is total, stars is subset
             await client.query(`UPDATE users SET dice_available = dice_available + $1, dice_stars_attempts = dice_stars_attempts + $2 WHERE id = $3`, 
                 [grantedCount, isLocked ? grantedCount : 0, userId]);
         }
 
-        // Log Transaction
+        // --- 4. DISTRIBUTE REFERRAL REWARDS (If not paid with balance) ---
+        // Typically rewards are only on fresh money injection, not recycling bonuses.
+        if (!useRewardBalance) {
+            await distributeReferralRewards(client, userId, totalValue, currency);
+        }
+
+        // --- 5. LOG TRANSACTION ---
         await client.query(`
             INSERT INTO transactions (user_id, type, asset_type, amount, currency, description, is_locked, serials)
             VALUES ($1, 'purchase', $2, $3, $4, $5, $6, $7)
@@ -459,8 +565,6 @@ app.post('/api/withdraw', validateTelegramData, async (req, res) => {
         const available = userRes.rows[0].nft_available;
         if (available <= 0) throw new Error("No funds");
         
-        // Find serials to withdraw (FIFO or simple available ones)
-        // Ensure we don't pick already withdrawn or locked
         const serialsRes = await client.query(`
             SELECT serial_number FROM user_nfts 
             WHERE user_id = $1 AND is_withdrawn = FALSE AND is_locked = FALSE 
@@ -468,9 +572,7 @@ app.post('/api/withdraw', validateTelegramData, async (req, res) => {
         `, [userId, available]);
         const serials = serialsRes.rows.map(r => r.serial_number);
 
-        // Mark as withdrawn
         await client.query(`UPDATE user_nfts SET is_withdrawn = TRUE WHERE serial_number = ANY($1::int[])`, [serials]);
-        // Zero out available counter
         await client.query('UPDATE users SET nft_available = 0 WHERE id = $1', [userId]);
         
         await client.query('INSERT INTO transactions (user_id, type, asset_type, amount, description, serials) VALUES ($1, \'withdraw\', \'nft\', $2, $3, $4)', 
@@ -497,7 +599,7 @@ app.post('/api/admin/stats', validateTelegramData, isAdmin, async (req, res) => 
             totalNftSold: parseInt(sold.rows[0].sum || 0),
             totalDicePlays: parseInt(dice.rows[0].plays),
             totalNftWonInDice: parseInt(dice.rows[0].won || 0),
-            revenue: { TON: 0, USDT: 0, STARS: 0 }, // Implement proper SUM query
+            revenue: { TON: 0, USDT: 0, STARS: 0 }, 
             bonusStats: { earned: { TON: 0, STARS: 0, USDT: 0 }, spent: { TON: 0, STARS: 0, USDT: 0 } },
             recentTransactions: []
         });
@@ -506,7 +608,6 @@ app.post('/api/admin/stats', validateTelegramData, isAdmin, async (req, res) => 
 
 app.post('/api/admin/users', validateTelegramData, isAdmin, async (req, res) => {
     const { limit, offset, sortBy, sortOrder } = req.body;
-    // Map sortBy to SQL columns
     const order = sortOrder === 'asc' ? 'ASC' : 'DESC';
     let orderBy = 'joined_at'; 
     if(sortBy === 'nft_total') orderBy = 'nft_total';
@@ -516,7 +617,7 @@ app.post('/api/admin/users', validateTelegramData, isAdmin, async (req, res) => 
         users: result.rows.map(u => ({
             id: u.id, username: u.username, joinedAt: new Date(u.joined_at).getTime(),
             nftTotal: u.nft_total, lastActive: new Date(u.last_active).getTime(),
-            level1: 0 // Fetch actual ref count if needed
+            level1: 0 
         })),
         hasMore: result.rows.length === limit
     });
@@ -538,12 +639,9 @@ app.post('/api/admin/search', validateTelegramData, isAdmin, async (req, res) =>
 });
 
 app.post('/api/debug/seize', validateTelegramData, isAdmin, async (req, res) => {
-    // Implement seizure logic
     res.json({ ok: true, message: 'Implemented in next update' });
 });
 
-// --- CATCH-ALL FOR SPA (React Router support) ---
-// This must be the LAST route
 app.get('*', (req, res) => {
     res.sendFile(path.resolve(__dirname, '../dist/index.html'));
 });
