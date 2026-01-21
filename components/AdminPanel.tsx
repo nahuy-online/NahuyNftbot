@@ -313,12 +313,13 @@ export const AdminPanel: React.FC = () => {
               </div>
               
               <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 space-y-4">
-                  <div className="flex justify-between items-center pb-4 border-b border-white/5">
+                  {/* CHANGED: items-start for vertical control and mt-4 for the right block */}
+                  <div className="flex justify-between items-start pb-4 border-b border-white/5">
                       <div>
                           <div className="text-2xl font-bold">@{foundUser.username}</div>
                           <div className="text-xs text-gray-400 font-mono">ID: {foundUser.id}</div>
                       </div>
-                      <div className="text-right text-[10px] text-gray-500 font-mono">
+                      <div className="text-right text-[10px] text-gray-500 font-mono mt-4">
                           <div>{t('user_ip')}: {foundUser.ip || 'Unknown'}</div>
                           <div>{t('user_joined')}: {formatDate(foundUser.joinedAt)}</div>
                       </div>
