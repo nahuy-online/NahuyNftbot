@@ -313,15 +313,25 @@ export const AdminPanel: React.FC = () => {
               </div>
               
               <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 space-y-4">
-                  {/* CHANGED: items-start for vertical control and mt-4 for the right block */}
-                  <div className="flex justify-between items-start pb-4 border-b border-white/5">
-                      <div>
-                          <div className="text-2xl font-bold">@{foundUser.username}</div>
-                          <div className="text-xs text-gray-400 font-mono">ID: {foundUser.id}</div>
+                  {/* RESTRUCTURED HEADER: Info Block moved BELOW Username */}
+                  <div className="pb-4 border-b border-white/5">
+                      <div className="flex justify-between items-start mb-2">
+                          <div>
+                              <div className="text-2xl font-bold break-all">@{foundUser.username}</div>
+                              <div className="text-xs text-gray-400 font-mono">ID: {foundUser.id}</div>
+                          </div>
                       </div>
-                      <div className="text-right text-[10px] text-gray-500 font-mono mt-4">
-                          <div>{t('user_ip')}: {foundUser.ip || 'Unknown'}</div>
-                          <div>{t('user_joined')}: {formatDate(foundUser.joinedAt)}</div>
+                      
+                      {/* MOVED: Info block is now separate row below name, preventing overlap */}
+                      <div className="bg-gray-900/50 p-2 rounded-lg border border-white/5 flex flex-col gap-1 text-[10px] text-gray-500 font-mono">
+                          <div className="flex justify-between">
+                              <span>{t('user_ip')}:</span>
+                              <span className="text-gray-300">{foundUser.ip || 'Unknown'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                              <span>{t('user_joined')}:</span>
+                              <span className="text-gray-300">{formatDate(foundUser.joinedAt)}</span>
+                          </div>
                       </div>
                   </div>
 
