@@ -672,6 +672,60 @@ app.post('/api/admin/users', validateTelegramData, isAdmin, async (req, res) => 
     });
 });
 
+app.post('/api/admin/transactions', validateTelegramData, isAdmin, async (req, res) => {
+    const { limit, offset, currency, assetType, status } = req.body;
+    
+    let query = `
+        SELECT t.*, u.username, u.id as user_id
+        FROM transactions t
+        JOIN users u ON t.user_id = u.id
+        WHERE t.type != 'seizure' 
+    `;
+    
+    const params = [];
+    let paramIdx = 1;
+
+    // Filter by Currency
+    if (currency && currency !== 'ALL') {
+        query += ` AND t.currency = $${paramIdx}`;
+        params.push(currency);
+        paramIdx++;
+    }
+
+    // Filter by Asset Type (nft, dice)
+    if (assetType && assetType !== 'ALL') {
+        query += ` AND t.asset_type = $${paramIdx}`;
+        params.push(assetType);
+        paramIdx++;
+    }
+
+    // Filter by Status (active/revoked)
+    if (status === 'REVOKED') {
+        query += ` AND t.is_revoked = TRUE`;
+    } else if (status === 'ACTIVE') {
+        query += ` AND t.is_revoked = FALSE`;
+    }
+    
+    query += ` ORDER BY t.created_at DESC LIMIT $${paramIdx} OFFSET $${paramIdx+1}`;
+    params.push(limit || 20, offset || 0);
+
+    try {
+        const result = await pool.query(query, params);
+        res.json({
+            transactions: result.rows.map(x => ({
+                id: x.id, type: x.type, amount: parseFloat(x.amount), description: x.description,
+                serials: x.serials, assetType: x.asset_type, currency: x.currency,
+                timestamp: new Date(x.created_at).getTime(),
+                isLocked: x.is_locked, isRevoked: x.is_revoked,
+                username: x.username, userId: x.user_id
+            })),
+            hasMore: result.rows.length === limit
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/api/admin/search', validateTelegramData, isAdmin, async (req, res) => {
     const { targetId } = req.body;
     

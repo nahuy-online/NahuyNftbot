@@ -259,6 +259,26 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
             return { found: false };
         }
         
+        if (endpoint === '/admin/transactions') {
+            // MOCK: Generate 5 random transactions for UI testing if user has no history
+            const hist = getLocalHistory(userId).map(t => ({...t, username: 'Me', userId: userId}));
+            // Add some fakes
+            if(hist.length < 5) {
+                hist.push({id: 'mk1', type: 'purchase', assetType: 'nft', amount: 3, currency: Currency.TON, description: 'Fake Purchase', timestamp: Date.now(), username: 'whale_user', userId: 888, isLocked: false});
+                hist.push({id: 'mk2', type: 'purchase', assetType: 'dice', amount: 5, currency: Currency.STARS, description: 'Fake Dice', timestamp: Date.now()-10000, username: 'star_boy', userId: 777, isLocked: true});
+            }
+            
+            // Filter
+            let filtered = hist;
+            if (payload.currency && payload.currency !== 'ALL') filtered = filtered.filter((t:any) => t.currency === payload.currency);
+            if (payload.assetType && payload.assetType !== 'ALL') filtered = filtered.filter((t:any) => t.assetType === payload.assetType);
+            
+            return {
+                transactions: filtered,
+                hasMore: false
+            };
+        }
+
         if (endpoint === '/debug/reset') {
             // Clear all mock storage
             safeStorage.removeItem(`mock_user_${userId}`);
@@ -311,3 +331,4 @@ export const debugSeizeAsset = async (assetType: 'nft' | 'dice' = 'nft', targetI
 export const fetchAdminStats = async () => apiRequest('/admin/stats', 'POST');
 export const searchAdminUser = async (targetId: number | string) => apiRequest('/admin/search', 'POST', { targetId });
 export const fetchAdminUsers = async (sortBy: UserSortField, sortOrder: 'asc'|'desc', limit: number, offset: number) => apiRequest('/admin/users', 'POST', { sortBy, sortOrder, limit, offset });
+export const fetchAdminTransactions = async (filters: any) => apiRequest('/admin/transactions', 'POST', filters);

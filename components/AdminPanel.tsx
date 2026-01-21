@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { AdminStats, UserSortField, NftTransaction, Currency } from '../types';
-import { fetchAdminStats, searchAdminUser, debugSeizeAsset, fetchAdminUsers, debugResetDb } from '../services/mockApi';
+import { fetchAdminStats, searchAdminUser, debugSeizeAsset, fetchAdminUsers, debugResetDb, fetchAdminTransactions } from '../services/mockApi';
 import { useTranslation } from '../i18n/LanguageContext';
 
 export const AdminPanel: React.FC = () => {
@@ -26,6 +26,18 @@ export const AdminPanel: React.FC = () => {
   const [searchLoading, setSearchLoading] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   
+  // Global Transactions (Revenue) Modal State
+  const [showRevenueModal, setShowRevenueModal] = useState(false);
+  const [globalTx, setGlobalTx] = useState<any[]>([]);
+  const [txLoading, setTxLoading] = useState(false);
+  const [txPage, setTxPage] = useState(0);
+  const [txHasMore, setTxHasMore] = useState(true);
+  
+  // Filters for Global Tx
+  const [filterCurrency, setFilterCurrency] = useState<'ALL' | 'TON' | 'USDT' | 'STARS'>('ALL');
+  const [filterAsset, setFilterAsset] = useState<'ALL' | 'nft' | 'dice'>('ALL');
+  const [filterStatus, setFilterStatus] = useState<'ALL' | 'ACTIVE' | 'REVOKED'>('ALL');
+
   // Actions
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -37,6 +49,11 @@ export const AdminPanel: React.FC = () => {
   useEffect(() => {
      if (activeTab === 'users') loadUsers(true);
   }, [sortBy, sortOrder]);
+
+  // Reload tx when filters change
+  useEffect(() => {
+      if (showRevenueModal) loadGlobalTransactions(true);
+  }, [filterCurrency, filterAsset, filterStatus]);
 
   const loadStats = async () => {
     try {
@@ -66,6 +83,35 @@ export const AdminPanel: React.FC = () => {
           console.error("Load users error", e);
       } finally {
           setUsersLoading(false);
+      }
+  };
+
+  const loadGlobalTransactions = async (reset = false) => {
+      setTxLoading(true);
+      try {
+          const currentPage = reset ? 0 : txPage;
+          const limit = 20;
+          const offset = currentPage * limit;
+          const res = await fetchAdminTransactions({
+              currency: filterCurrency,
+              assetType: filterAsset,
+              status: filterStatus,
+              limit,
+              offset
+          });
+
+          if (reset) {
+              setGlobalTx(res.transactions);
+              setTxPage(1);
+          } else {
+              setGlobalTx(prev => [...prev, ...res.transactions]);
+              setTxPage(prev => prev + 1);
+          }
+          setTxHasMore(res.hasMore);
+      } catch (e) {
+          console.error("Load global tx error", e);
+      } finally {
+          setTxLoading(false);
       }
   };
 
@@ -113,35 +159,18 @@ export const AdminPanel: React.FC = () => {
       }
   };
   
-  const handleRevokeTransaction = async (txId: string, assetType: string) => {
-      if (!foundUser) return;
-      
+  const handleRevokeTransaction = async (txId: string, assetType: string, userId: number) => {
+      // Logic for revoking from Global list OR User Detail list
       const confirmMsg = `Are you sure you want to REVOKE transaction ${txId.slice(0, 8)}...? This mimics a Refund.`;
       if (window.confirm(confirmMsg)) {
           setActionLoading(true);
           try {
-              // We reuse debugSeizeAsset but pass extra param via custom request in real app,
-              // here we assume mockApi needs update or we just pass it in body
-              // Since debugSeizeAsset is typed, we might need to extend it or make a direct call.
-              // For now, let's assume debugSeizeAsset handles 'transactionId' in payload
-              
-              // We'll call the API directly here to ensure transactionId is passed
-              const payload = { 
-                  assetType: assetType, 
-                  targetId: foundUser.id, 
-                  transactionId: txId 
-              };
-              
-              // Using fetch directly as mockApi wrapper might not have this signature yet
-              // But consistent with previous pattern, we should use the API logic.
-              // Let's rely on the updated backend handling this.
-              
-              // HACK: Casting to any to pass extra param
-              const res = await (debugSeizeAsset as any)(assetType, foundUser.id, txId);
-              
+              const res = await debugSeizeAsset(assetType as 'nft' | 'dice', userId, txId);
               if (res.ok) {
                   alert("REVOKED!");
-                  handleSearch(String(foundUser.id));
+                  // Refresh current view
+                  if (showRevenueModal) loadGlobalTransactions(true);
+                  if (showDetailModal && foundUser) handleSearch(String(foundUser.id));
               } else {
                   alert("Failed: " + res.message);
               }
@@ -220,11 +249,15 @@ export const AdminPanel: React.FC = () => {
                       </div>
                   </div>
 
-                  {/* Revenue */}
-                  <div className="bg-gray-800 p-4 rounded-xl border border-white/5">
+                  {/* Revenue - CLICKABLE NOW */}
+                  <div 
+                    onClick={() => { setShowRevenueModal(true); loadGlobalTransactions(true); }}
+                    className="bg-gray-800 p-4 rounded-xl border border-white/5 cursor-pointer hover:bg-gray-750 active:scale-95 transition-all group relative"
+                  >
+                      <div className="absolute top-2 right-2 text-gray-500 opacity-50 group-hover:opacity-100">↗</div>
                       <div className="text-gray-400 text-xs font-bold uppercase flex justify-between">
                           {t('admin_revenue')}
-                          <span className="text-[9px] opacity-50 cursor-help" title="Based on current prices">ⓘ</span>
+                          <span className="text-[9px] opacity-50 cursor-help" title="Click to view details">ⓘ</span>
                       </div>
                       <div className="flex flex-col text-xs font-mono font-bold">
                           <span className="text-blue-300">{stats.revenue.TON.toFixed(2)} T</span>
@@ -496,7 +529,7 @@ export const AdminPanel: React.FC = () => {
                                       {/* Action Button for Revoke (Only for purchases) */}
                                       {!isRevoked && tx.type === 'purchase' && (
                                           <button 
-                                              onClick={() => handleRevokeTransaction(tx.id, tx.assetType)}
+                                              onClick={() => handleRevokeTransaction(tx.id, tx.assetType, foundUser.id)}
                                               className="mt-1 bg-red-900/30 text-red-400 border border-red-900/50 hover:bg-red-900/50 text-[9px] px-2 py-0.5 rounded transition-colors uppercase font-bold"
                                               title="Simulate Refund / Seize Assets"
                                           >
@@ -524,6 +557,119 @@ export const AdminPanel: React.FC = () => {
                           <div className="text-center text-gray-500 text-xs py-4">No transactions</div>
                       )}
                   </div>
+              </div>
+          </div>
+      )}
+
+      {/* REVENUE / GLOBAL TX MODAL */}
+      {showRevenueModal && (
+          <div className="fixed top-0 left-0 right-0 bottom-[64px] z-40 bg-gray-900 flex flex-col animate-fade-in p-5 overflow-y-auto w-full">
+              <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-bold flex items-center gap-2">
+                      <span className="text-green-400">💰</span> Revenue History
+                  </h3>
+                  <button onClick={() => setShowRevenueModal(false)} className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center border border-white/10 hover:bg-gray-700 transition-colors">
+                      ✕
+                  </button>
+              </div>
+
+              {/* Filters */}
+              <div className="space-y-2 mb-4">
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                      {['ALL', 'TON', 'USDT', 'STARS'].map((c) => (
+                          <button key={c}
+                              onClick={() => setFilterCurrency(c as any)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border ${filterCurrency === c ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-white/10 text-gray-400'}`}>
+                              {c}
+                          </button>
+                      ))}
+                  </div>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                      {['ALL', 'nft', 'dice'].map((a) => (
+                          <button key={a}
+                              onClick={() => setFilterAsset(a as any)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border ${filterAsset === a ? 'bg-purple-600 border-purple-500 text-white' : 'bg-gray-800 border-white/10 text-gray-400'}`}>
+                              {a.toUpperCase()}
+                          </button>
+                      ))}
+                  </div>
+                   <div className="flex gap-2 overflow-x-auto pb-1">
+                      {['ALL', 'ACTIVE', 'REVOKED'].map((s) => (
+                          <button key={s}
+                              onClick={() => setFilterStatus(s as any)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border ${filterStatus === s ? 'bg-red-600 border-red-500 text-white' : 'bg-gray-800 border-white/10 text-gray-400'}`}>
+                              {s}
+                          </button>
+                      ))}
+                  </div>
+              </div>
+
+              {/* Transaction List */}
+              <div className="space-y-2 pb-10">
+                  {txLoading && txPage === 0 ? (
+                      <div className="text-center py-10">Loading...</div>
+                  ) : globalTx.length === 0 ? (
+                      <div className="text-center text-gray-500 py-10">No transactions found</div>
+                  ) : (
+                      globalTx.map((tx) => {
+                          const isRevoked = tx.isRevoked || false;
+                          return (
+                              <div key={tx.id} className={`bg-gray-800 p-3 rounded-lg text-xs border ${isRevoked ? 'border-red-900 opacity-60' : 'border-white/5'} flex justify-between items-start relative`}>
+                                  
+                                  {isRevoked && <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                                      <div className="bg-red-900/80 text-white font-bold px-2 py-0.5 rounded text-[10px] transform -rotate-12 border border-red-500">REFUNDED</div>
+                                  </div>}
+
+                                  <div className="max-w-[60%]">
+                                      <div className="text-[9px] text-gray-400 font-bold mb-0.5 flex items-center gap-1">
+                                          @{tx.username || 'Unknown'} <span className="text-gray-600">#{tx.userId}</span>
+                                      </div>
+                                      <div className={`font-bold ${isRevoked ? 'text-gray-500 line-through' : 'text-gray-300'}`}>
+                                          {tx.description}
+                                          {tx.currency && (
+                                              <span className={`ml-1 text-[9px] px-1 py-0.5 rounded ${
+                                                  tx.currency === 'STARS' ? 'bg-yellow-500/20 text-yellow-500' :
+                                                  tx.currency === 'TON' ? 'bg-blue-500/20 text-blue-400' :
+                                                  'bg-green-500/20 text-green-400'
+                                              }`}>
+                                                  {tx.currency}
+                                              </span>
+                                          )}
+                                      </div>
+                                      <div className="text-[10px] text-gray-600 mt-0.5">{formatDate(tx.timestamp)}</div>
+                                      <div className="text-[8px] text-gray-700 font-mono mt-0.5">{tx.id.slice(0,8)}...</div>
+                                  </div>
+
+                                  <div className={`text-right flex flex-col items-end`}>
+                                      <div className={`${tx.type === 'withdraw' || tx.type === 'seizure' ? 'text-red-400' : 'text-green-400'} font-bold text-sm ${isRevoked ? 'line-through opacity-50' : ''}`}>
+                                          {tx.type === 'withdraw' || tx.type === 'seizure' ? '-' : '+'}{tx.amount}
+                                          <span className="text-[10px] opacity-70 ml-1 font-normal">
+                                              {tx.assetType === 'nft' ? 'NFT' : tx.assetType === 'dice' ? 'Dice' : tx.currency}
+                                          </span>
+                                      </div>
+                                      
+                                      {!isRevoked && tx.type === 'purchase' && (
+                                          <button 
+                                              onClick={() => handleRevokeTransaction(tx.id, tx.assetType, tx.userId)}
+                                              className="mt-2 bg-red-900/30 text-red-400 border border-red-900/50 hover:bg-red-900/50 text-[9px] px-2 py-1 rounded transition-colors uppercase font-bold"
+                                          >
+                                              REVOKE
+                                          </button>
+                                      )}
+                                  </div>
+                              </div>
+                          );
+                      })
+                  )}
+
+                  {!txLoading && txHasMore && (
+                      <button 
+                          onClick={() => loadGlobalTransactions(false)}
+                          className="w-full py-3 bg-gray-800 rounded-xl text-xs font-bold hover:bg-gray-700 transition-colors"
+                      >
+                          {t('load_more')}
+                      </button>
+                  )}
               </div>
           </div>
       )}
