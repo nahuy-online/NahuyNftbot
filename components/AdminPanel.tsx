@@ -206,6 +206,12 @@ export const AdminPanel: React.FC = () => {
   const renderTransactionItem = (tx: any, showUser: boolean) => {
       const isRevoked = tx.isRevoked || false;
       const isPurchase = tx.type === 'purchase';
+
+      const getSerialStyle = (revoked: boolean, type: string) => {
+          if (revoked) return 'bg-red-900/20 border-red-900/30 text-red-500 line-through';
+          if (type === 'withdraw') return 'bg-green-500/10 border-green-500/20 text-green-400';
+          return 'bg-black/30 border-white/5 text-gray-400';
+      };
       
       return (
           <div key={tx.id} className={`bg-gray-800 p-3 rounded-lg text-xs border ${isRevoked ? 'border-red-900 opacity-60' : 'border-white/5'} flex justify-between items-start relative`}>
@@ -247,7 +253,7 @@ export const AdminPanel: React.FC = () => {
                   {tx.serials && tx.serials.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
                           {tx.serials.slice(0, 10).map((s: number) => (
-                              <span key={s} className={`text-[9px] font-mono px-1 rounded border ${isRevoked ? 'bg-red-900/20 border-red-900/30 text-red-500 line-through' : 'bg-black/30 border-white/5 text-gray-400'}`}>
+                              <span key={s} className={`text-[9px] font-mono px-1 rounded border ${getSerialStyle(isRevoked, tx.type)}`}>
                                   #{s}
                               </span>
                           ))}

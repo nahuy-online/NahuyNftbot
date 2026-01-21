@@ -11,12 +11,22 @@ interface HistoryModalProps {
     user: any; // Passing partial user object for stats
 }
 
-const SerialList = ({ serials, isWithdrawn = false }: { serials?: number[], isWithdrawn?: boolean }) => {
+type SerialStatus = 'default' | 'withdrawn' | 'seized';
+
+const SerialList = ({ serials, status = 'default' }: { serials?: number[], status?: SerialStatus }) => {
     if (!serials || serials.length === 0) return null;
+
+    let colorClass = 'bg-black/30 text-gray-300 border-white/5';
+    if (status === 'withdrawn') {
+        colorClass = 'bg-green-500/10 text-green-400 border-green-500/20';
+    } else if (status === 'seized') {
+        colorClass = 'bg-red-900/20 text-red-500/60 border-red-900/20 line-through';
+    }
+
     return (
         <div className="flex flex-wrap gap-1 mt-2">
             {serials.map(s => (
-                <span key={s} className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded border ${isWithdrawn ? 'bg-red-900/20 text-red-500/50 border-red-900/20 line-through' : 'bg-black/30 text-gray-300 border-white/5'}`}>
+                <span key={s} className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded border ${colorClass}`}>
                     #{s}
                 </span>
             ))}
@@ -132,7 +142,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                     <span className="bg-green-500/20 px-2 py-0.5 rounded-full text-[10px] text-green-400">{availableSerials.length}</span>
                                 </div>
                                 {availableSerials.length > 0 ? (
-                                    <SerialList serials={availableSerials} />
+                                    <SerialList serials={availableSerials} status="default" />
                                 ) : (
                                     <div className="text-xs text-gray-500 italic py-2 text-center">
                                         {t('no_available')}
@@ -162,7 +172,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                                     {!item.isSeized && <span className="text-cyan-300 font-mono text-[10px] bg-cyan-500/10 px-2 py-0.5 rounded">{formatTimeLeft(item.unlockDate)}</span>}
                                                 </div>
                                                 {item.serials && item.serials.length > 0 && (
-                                                     <SerialList serials={item.serials} />
+                                                     <SerialList serials={item.serials} status={item.isSeized ? 'seized' : 'default'} />
                                                 )}
                                             </div>
                                         ))}
@@ -176,7 +186,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                     <span className="bg-gray-700 px-2 py-0.5 rounded-full text-[10px] text-white">{user.withdrawnSerials?.length || 0}</span>
                                 </div>
                                 {user.withdrawnSerials && user.withdrawnSerials.length > 0 ? (
-                                    <SerialList serials={user.withdrawnSerials} isWithdrawn={true} />
+                                    <SerialList serials={user.withdrawnSerials} status="withdrawn" />
                                 ) : (
                                     <div className="text-xs text-gray-500 italic py-2 text-center">No withdrawn history</div>
                                 )}
@@ -193,7 +203,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                 <span className="bg-gray-700 px-2 py-0.5 rounded-full text-[10px] text-white">{user.withdrawnSerials?.length || 0}</span>
                             </div>
                             {user.withdrawnSerials && user.withdrawnSerials.length > 0 ? (
-                                <SerialList serials={user.withdrawnSerials} isWithdrawn={true} />
+                                <SerialList serials={user.withdrawnSerials} status="withdrawn" />
                             ) : (
                                 <div className="text-xs text-gray-500 italic py-4 text-center">No withdrawn items</div>
                             )}
@@ -271,7 +281,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                 </div>
                                 {item.serials && item.serials.length > 0 && (
                                      <div className="pt-2 border-t border-white/5">
-                                         <SerialList serials={item.serials} />
+                                         <SerialList serials={item.serials} status={item.isSeized ? 'seized' : 'default'} />
                                      </div>
                                 )}
                             </div>
@@ -287,6 +297,11 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                             filteredHistory.map((tx) => {
                                 const isStarOrLocked = tx.isLocked || tx.currency === Currency.STARS;
                                 const isPurchase = tx.type === 'purchase';
+                                
+                                let serialStatus: SerialStatus = 'default';
+                                if (tx.type === 'withdraw') serialStatus = 'withdrawn';
+                                if (tx.type === 'seizure' || tx.isRevoked) serialStatus = 'seized';
+
                                 return (
                                     <div key={tx.id} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex flex-col gap-2">
                                         <div className="flex justify-between items-center w-full">
@@ -327,7 +342,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                         {/* Display Serial Numbers if present */}
                                         {tx.serials && tx.serials.length > 0 && (
                                             <div className="pt-2 border-t border-white/5 mt-1">
-                                                <SerialList serials={tx.serials} isWithdrawn={tx.type === 'withdraw'} />
+                                                <SerialList serials={tx.serials} status={serialStatus} />
                                             </div>
                                         )}
                                     </div>
