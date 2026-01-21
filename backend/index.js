@@ -54,6 +54,15 @@ const tonClient = new TonClient({
 // In high-load production, use Webhooks via express route.
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
+// Prevent polling errors from crashing the app or spamming logs
+bot.on('polling_error', (error) => {
+    if (error.code === 'ETELEGRAM' && error.message.includes('409 Conflict')) {
+        console.warn('⚠️ Telegram Polling Conflict: Another instance is running (Local vs Prod?). Ignoring.');
+        return;
+    }
+    console.error(`[polling_error] ${error.code}: ${error.message}`);
+});
+
 // --- DB CONFIGURATION (RENDER COMPATIBLE) ---
 const getDbConfig = () => {
     // If DATABASE_URL is provided (Render/Heroku/Cloud), use it
