@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { AdminStats, UserSortField, NftTransaction, Currency } from '../types';
-import { fetchAdminStats, searchAdminUser, debugSeizeAsset, fetchAdminUsers } from '../services/mockApi';
+import { fetchAdminStats, searchAdminUser, debugSeizeAsset, fetchAdminUsers, debugResetDb } from '../services/mockApi';
 import { useTranslation } from '../i18n/LanguageContext';
 
 export const AdminPanel: React.FC = () => {
@@ -25,6 +25,9 @@ export const AdminPanel: React.FC = () => {
   const [searchError, setSearchError] = useState('');
   const [searchLoading, setSearchLoading] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  
+  // Actions
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     if (activeTab === 'dashboard') loadStats();
@@ -93,7 +96,7 @@ export const AdminPanel: React.FC = () => {
       
       const confirmMsg = t('admin_confirm_seize', { id: foundUser.id });
       if (window.confirm(confirmMsg)) {
-          setSearchLoading(true);
+          setActionLoading(true);
           try {
               const res = await debugSeizeAsset(assetType, foundUser.id);
               if (res.ok) {
@@ -105,8 +108,65 @@ export const AdminPanel: React.FC = () => {
           } catch(e: any) {
               alert("Error: " + e.message);
           } finally {
-              setSearchLoading(false);
+              setActionLoading(false);
           }
+      }
+  };
+  
+  const handleRevokeTransaction = async (txId: string, assetType: string) => {
+      if (!foundUser) return;
+      
+      const confirmMsg = `Are you sure you want to REVOKE transaction ${txId.slice(0, 8)}...? This mimics a Refund.`;
+      if (window.confirm(confirmMsg)) {
+          setActionLoading(true);
+          try {
+              // We reuse debugSeizeAsset but pass extra param via custom request in real app,
+              // here we assume mockApi needs update or we just pass it in body
+              // Since debugSeizeAsset is typed, we might need to extend it or make a direct call.
+              // For now, let's assume debugSeizeAsset handles 'transactionId' in payload
+              
+              // We'll call the API directly here to ensure transactionId is passed
+              const payload = { 
+                  assetType: assetType, 
+                  targetId: foundUser.id, 
+                  transactionId: txId 
+              };
+              
+              // Using fetch directly as mockApi wrapper might not have this signature yet
+              // But consistent with previous pattern, we should use the API logic.
+              // Let's rely on the updated backend handling this.
+              
+              // HACK: Casting to any to pass extra param
+              const res = await (debugSeizeAsset as any)(assetType, foundUser.id, txId);
+              
+              if (res.ok) {
+                  alert("REVOKED!");
+                  handleSearch(String(foundUser.id));
+              } else {
+                  alert("Failed: " + res.message);
+              }
+          } catch (e: any) {
+              alert("Error: " + e.message);
+          } finally {
+              setActionLoading(false);
+          }
+      }
+  };
+
+  const handleResetDb = async () => {
+      const confirm1 = window.confirm("⚠️ DANGER: RESET DATABASE?");
+      if (!confirm1) return;
+      const confirm2 = window.confirm("⚠️ ARE YOU REALLY SURE? ALL DATA WILL BE LOST.");
+      if (!confirm2) return;
+
+      setActionLoading(true);
+      try {
+          await debugResetDb();
+          alert("Database Cleared.");
+          window.location.reload();
+      } catch (e) {
+          alert("Error: " + String(e));
+          setActionLoading(false);
       }
   };
 
@@ -238,6 +298,17 @@ export const AdminPanel: React.FC = () => {
                   </div>
                   {searchError && <div className="text-red-400 text-sm mt-2">{searchError}</div>}
               </div>
+
+              {/* DANGER ZONE: RESET DB */}
+              <div className="pt-8 flex justify-center">
+                  <button 
+                      onClick={handleResetDb}
+                      disabled={actionLoading}
+                      className="bg-red-600 hover:bg-red-500 text-white font-black py-4 px-8 rounded-xl shadow-lg active:scale-95 transition-all border border-red-400"
+                  >
+                      ⚠️ RESET DATABASE
+                  </button>
+              </div>
             </div>
         )}
 
@@ -313,7 +384,6 @@ export const AdminPanel: React.FC = () => {
               </div>
               
               <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 space-y-4">
-                  {/* RESTRUCTURED HEADER: Info Block moved BELOW Username */}
                   <div className="pb-4 border-b border-white/5">
                       <div className="flex justify-between items-start mb-2">
                           <div>
@@ -322,7 +392,6 @@ export const AdminPanel: React.FC = () => {
                           </div>
                       </div>
                       
-                      {/* MOVED: Info block is now separate row below name, preventing overlap */}
                       <div className="bg-gray-900/50 p-2 rounded-lg border border-white/5 flex flex-col gap-1 text-[10px] text-gray-500 font-mono">
                           <div className="flex justify-between">
                               <span>{t('user_ip')}:</span>
@@ -365,54 +434,92 @@ export const AdminPanel: React.FC = () => {
                   <div className="grid grid-cols-2 gap-2 pt-2">
                       <button 
                         onClick={() => handleSeize('nft')}
+                        disabled={actionLoading}
                         className="bg-red-900/40 border border-red-500/30 text-red-200 py-3 rounded-lg text-xs font-bold hover:bg-red-900/60 transition-colors"
                       >
-                          {t('admin_seize_nft')}
+                          {t('admin_seize_nft')} (All Locked)
                       </button>
                       <button 
                         onClick={() => handleSeize('dice')}
+                        disabled={actionLoading}
                         className="bg-orange-900/40 border border-orange-500/30 text-orange-200 py-3 rounded-lg text-xs font-bold hover:bg-orange-900/60 transition-colors"
                       >
-                          {t('admin_seize_dice')}
+                          {t('admin_seize_dice')} (All)
                       </button>
                   </div>
               </div>
 
               {/* Transactions in Detail Modal */}
-              <div className="mt-4">
+              <div className="mt-4 pb-20">
                   <h4 className="text-sm font-bold text-gray-400 uppercase mb-3">{t('user_history')}</h4>
                   <div className="space-y-2">
                       {foundUser.transactions && foundUser.transactions.length > 0 ? (
-                          foundUser.transactions.slice(0, 10).map((tx: NftTransaction) => (
-                              <div key={tx.id} className="bg-gray-800 p-3 rounded-lg text-xs border border-white/5 flex justify-between items-start">
-                                  <div className="max-w-[60%]">
-                                      <div className="text-gray-300 font-bold">{tx.description}</div>
-                                      <div className="text-[10px] text-gray-600">{formatDate(tx.timestamp)}</div>
+                          foundUser.transactions.slice(0, 50).map((tx: any) => {
+                             // "any" used because tx interface in frontend might lag behind backend extended response
+                             const isRevoked = tx.isRevoked || false; 
+                             return (
+                              <div key={tx.id} className={`bg-gray-800 p-3 rounded-lg text-xs border ${isRevoked ? 'border-red-900 opacity-60' : 'border-white/5'} flex justify-between items-start relative`}>
+                                  
+                                  {/* Revoked Overlay Line */}
+                                  {isRevoked && <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                                      <div className="bg-red-900/80 text-white font-bold px-2 py-0.5 rounded text-[10px] transform -rotate-12 border border-red-500">REFUNDED</div>
+                                  </div>}
+
+                                  <div className="max-w-[55%]">
+                                      <div className={`font-bold ${isRevoked ? 'text-gray-500 line-through' : 'text-gray-300'}`}>
+                                          {tx.description}
+                                          {tx.currency && (
+                                              <span className={`ml-1 text-[9px] px-1 py-0.5 rounded ${
+                                                  tx.currency === 'STARS' ? 'bg-yellow-500/20 text-yellow-500' :
+                                                  tx.currency === 'TON' ? 'bg-blue-500/20 text-blue-400' :
+                                                  'bg-green-500/20 text-green-400'
+                                              }`}>
+                                                  {tx.currency}
+                                              </span>
+                                          )}
+                                          {(tx.isLocked || (tx.currency === 'STARS' && tx.assetType === 'nft')) && (
+                                              <span className="ml-1 text-cyan-400" title="Locked">*</span>
+                                          )}
+                                      </div>
+                                      <div className="text-[10px] text-gray-600 mt-0.5">{formatDate(tx.timestamp)}</div>
+                                      <div className="text-[8px] text-gray-700 font-mono mt-0.5">{tx.id.slice(0,8)}...</div>
                                   </div>
-                                  <div className={`text-right flex flex-col items-end ${tx.type === 'withdraw' || tx.type === 'seizure' ? 'text-red-400' : 'text-green-400'}`}>
-                                      <div>
+
+                                  <div className={`text-right flex flex-col items-end`}>
+                                      <div className={`${tx.type === 'withdraw' || tx.type === 'seizure' ? 'text-red-400' : 'text-green-400'} ${isRevoked ? 'line-through opacity-50' : ''}`}>
                                         {tx.type === 'withdraw' || tx.type === 'seizure' ? '-' : '+'}{tx.amount}
                                         <span className="text-[10px] opacity-70 ml-1">
                                             {tx.assetType === 'nft' ? 'NFT' : tx.assetType === 'dice' ? 'Dice' : tx.currency}
                                         </span>
                                       </div>
                                       
-                                      {/* Serials moved to right */}
+                                      {/* Action Button for Revoke (Only for purchases) */}
+                                      {!isRevoked && tx.type === 'purchase' && (
+                                          <button 
+                                              onClick={() => handleRevokeTransaction(tx.id, tx.assetType)}
+                                              className="mt-1 bg-red-900/30 text-red-400 border border-red-900/50 hover:bg-red-900/50 text-[9px] px-2 py-0.5 rounded transition-colors uppercase font-bold"
+                                              title="Simulate Refund / Seize Assets"
+                                          >
+                                              REVOKE
+                                          </button>
+                                      )}
+
+                                      {/* Serials */}
                                       {tx.serials && tx.serials.length > 0 && (
                                           <div className="flex flex-wrap gap-1 mt-1 justify-end max-w-[120px]">
-                                              {tx.serials.slice(0, 8).map(s => (
-                                                  <span key={s} className="text-[9px] font-mono text-blue-300 bg-blue-500/10 px-1 rounded border border-blue-500/20">
+                                              {tx.serials.slice(0, 5).map((s: number) => (
+                                                  <span key={s} className={`text-[9px] font-mono px-1 rounded border ${isRevoked ? 'text-gray-600 border-gray-700 line-through' : 'text-blue-300 bg-blue-500/10 border-blue-500/20'}`}>
                                                       #{s}
                                                   </span>
                                               ))}
-                                              {tx.serials.length > 8 && (
+                                              {tx.serials.length > 5 && (
                                                   <span className="text-[9px] text-gray-500 self-center">...</span>
                                               )}
                                           </div>
                                       )}
                                   </div>
                               </div>
-                          ))
+                          )})
                       ) : (
                           <div className="text-center text-gray-500 text-xs py-4">No transactions</div>
                       )}

@@ -181,7 +181,6 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
              else user.nftBalance.total += payload.amount;
              
              // 2. SIMULATE REFERRAL REWARD (Self-reward for testing visuals)
-             // In real app, this goes to upline. In mock, we give it to self to see the balance change.
              const prices = payload.type === 'nft' ? NFT_PRICES : DICE_ATTEMPT_PRICES;
              const cost = prices[payload.currency as Currency] * payload.amount;
              const mockReward = cost * 0.11; // 11%
@@ -189,7 +188,6 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
              if (payload.currency === 'STARS') {
                  // Mock Locked Stars
                  user.referralStats.lockedStars = (user.referralStats.lockedStars || 0) + Math.floor(mockReward);
-                 // Don't add to available
              }
              else if (payload.currency === 'TON') user.referralStats.bonusBalance.TON += mockReward;
              else user.referralStats.bonusBalance.USDT += mockReward;
@@ -214,14 +212,26 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
         }
 
         if (endpoint === '/debug/seize') {
-            const { assetType, targetId } = payload;
+            const { assetType, targetId, transactionId } = payload;
             const targetUser = getLocalState(targetId, 'User');
             
+            // Handle Transaction Specific
+            if (transactionId) {
+                // Find and mark revoked in history
+                const hist = getLocalHistory(targetId);
+                const txIndex = hist.findIndex(t => t.id === transactionId);
+                if (txIndex >= 0) {
+                    hist[txIndex].description = "[REVOKED] " + hist[txIndex].description;
+                    // In real app, backend adds is_revoked flag, mock just renames
+                    safeStorage.setItem(`mock_history_${targetId}`, JSON.stringify(hist));
+                }
+                return { ok: true, message: `Mock revoked tx ${transactionId}` };
+            }
+
             if (assetType === 'dice') {
                 targetUser.diceBalance.available = 0;
             } else {
                 targetUser.nftBalance.locked = 0;
-                // Simplified mock seize
             }
             
             updateLocalState(targetUser);
@@ -233,10 +243,7 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
         }
         
         if (endpoint === '/admin/search') {
-            // Mock Search by ID or Username
             const targetId = payload.targetId;
-            // In Mock, we only have the current user in session + whatever is in localstorage
-            // We just return current user for testing if ID matches or 99999
             if (targetId == userId || targetId == 99999) {
                 return {
                     found: true,
@@ -250,6 +257,13 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                 };
             }
             return { found: false };
+        }
+        
+        if (endpoint === '/debug/reset') {
+            // Clear all mock storage
+            safeStorage.removeItem(`mock_user_${userId}`);
+            safeStorage.removeItem(`mock_history_${userId}`);
+            return { ok: true };
         }
 
         return { ok: true };
@@ -290,7 +304,8 @@ export const verifyPayment = async (type: 'nft' | 'dice', amount: number, curren
 export const rollDice = async () => { const data = await apiRequest('/roll', 'POST'); return data.roll; };
 export const withdrawNFTWithAddress = async (address: string) => apiRequest('/withdraw', 'POST', { address });
 export const debugResetDb = async () => apiRequest('/debug/reset', 'POST');
-export const debugSeizeAsset = async (assetType: 'nft' | 'dice' = 'nft', targetId?: number) => apiRequest('/debug/seize', 'POST', { assetType, targetId });
+// Modified signature to allow transactionId
+export const debugSeizeAsset = async (assetType: 'nft' | 'dice' = 'nft', targetId?: number, transactionId?: string) => apiRequest('/debug/seize', 'POST', { assetType, targetId, transactionId });
 
 // Admin
 export const fetchAdminStats = async () => apiRequest('/admin/stats', 'POST');

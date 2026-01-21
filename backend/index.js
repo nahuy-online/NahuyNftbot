@@ -143,6 +143,7 @@ const initDB = async () => {
                 description TEXT,
                 created_at TIMESTAMP DEFAULT NOW(),
                 is_locked BOOLEAN DEFAULT FALSE,
+                is_revoked BOOLEAN DEFAULT FALSE,
                 serials JSONB DEFAULT '[]'::jsonb,
                 tx_hash TEXT UNIQUE 
             );
@@ -689,7 +690,7 @@ app.post('/api/admin/search', validateTelegramData, isAdmin, async (req, res) =>
     const resUser = await pool.query(query, params);
     if (resUser.rows.length === 0) return res.json({ found: false });
     const u = resUser.rows[0];
-    const tx = await pool.query('SELECT * FROM transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 10', [u.id]);
+    const tx = await pool.query('SELECT * FROM transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50', [u.id]);
     
     // Referral Counts for Admin Detail
     const l1 = await pool.query('SELECT COUNT(*) FROM users WHERE referrer_id = $1', [u.id]);
@@ -701,7 +702,12 @@ app.post('/api/admin/search', validateTelegramData, isAdmin, async (req, res) =>
         user: {
             id: u.id, username: u.username, nftTotal: u.nft_total, nftAvailable: u.nft_available, diceAvailable: u.dice_available,
             ip: u.ip_address, joinedAt: new Date(u.joined_at).getTime(),
-            transactions: tx.rows.map(x => ({ id: x.id, type: x.type, amount: parseFloat(x.amount), description: x.description, serials: x.serials, assetType: x.asset_type, currency: x.currency, timestamp: new Date(x.created_at).getTime() })),
+            transactions: tx.rows.map(x => ({ 
+                id: x.id, type: x.type, amount: parseFloat(x.amount), description: x.description, 
+                serials: x.serials, assetType: x.asset_type, currency: x.currency, 
+                timestamp: new Date(x.created_at).getTime(),
+                isLocked: x.is_locked, isRevoked: x.is_revoked
+            })),
             rewards: { TON: parseFloat(u.ref_rewards_ton), USDT: parseFloat(u.ref_rewards_usdt), STARS: parseInt(u.ref_rewards_stars) },
             referralStats: {
                 level1: parseInt(l1.rows[0].count),
@@ -712,24 +718,95 @@ app.post('/api/admin/search', validateTelegramData, isAdmin, async (req, res) =>
     });
 });
 
+app.post('/api/debug/reset', validateTelegramData, isAdmin, async (req, res) => {
+    let client;
+    try {
+        client = await pool.connect();
+        await client.query('BEGIN');
+        await client.query('TRUNCATE TABLE transactions, user_nfts, bonus_locks, users RESTART IDENTITY CASCADE');
+        await client.query('COMMIT');
+        res.json({ ok: true });
+    } catch (e) {
+        if (client) await client.query('ROLLBACK');
+        res.status(500).json({ error: e.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 app.post('/api/debug/seize', validateTelegramData, isAdmin, async (req, res) => {
-    const { assetType, targetId } = req.body;
+    const { assetType, targetId, transactionId } = req.body;
     
     let client;
     try {
         client = await pool.connect();
         await client.query('BEGIN');
         
-        // Lock user to prevent race conditions
+        // Lock user
         const userRes = await client.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [targetId]);
         if (userRes.rows.length === 0) throw new Error("User not found");
         const user = userRes.rows[0];
 
+        // LOGIC FOR TRANSACTION SPECIFIC SEIZURE
+        if (transactionId) {
+             const txRes = await client.query('SELECT * FROM transactions WHERE id = $1 AND user_id = $2', [transactionId, targetId]);
+             if (txRes.rows.length === 0) throw new Error("Transaction not found");
+             const tx = txRes.rows[0];
+             
+             if (tx.is_revoked) throw new Error("Transaction already revoked");
+
+             if (tx.asset_type === 'nft') {
+                 const serials = tx.serials; // JSONB array
+                 if (!serials || serials.length === 0) throw new Error("No serials in transaction");
+                 
+                 // Mark serials seized
+                 await client.query('UPDATE user_nfts SET is_seized = TRUE WHERE serial_number = ANY($1::int[])', [serials]);
+                 
+                 // Update Balances
+                 // Determine if they were locked or available
+                 // We can check the transaction is_locked flag, or check the nfts themselves. 
+                 // Simple approach: deduct from total. Deduct from locked if tx was locked.
+                 
+                 const qty = parseInt(tx.amount);
+                 const lockedDed = tx.is_locked ? qty : 0;
+                 const availDed = tx.is_locked ? 0 : qty;
+                 
+                 await client.query(`
+                     UPDATE users SET 
+                        nft_total = GREATEST(0, nft_total - $1),
+                        nft_locked = GREATEST(0, nft_locked - $2),
+                        nft_available = GREATEST(0, nft_available - $3)
+                     WHERE id = $4
+                 `, [qty, lockedDed, availDed, targetId]);
+
+             } else if (tx.asset_type === 'dice') {
+                 // Revoke attempts
+                 const qty = parseInt(tx.amount);
+                 await client.query(`
+                    UPDATE users SET 
+                        dice_available = GREATEST(0, dice_available - $1),
+                        dice_stars_attempts = GREATEST(0, dice_stars_attempts - $2)
+                    WHERE id = $3
+                 `, [qty, tx.is_locked ? qty : 0, targetId]);
+             }
+             
+             // Mark transaction as revoked
+             await client.query('UPDATE transactions SET is_revoked = TRUE WHERE id = $1', [transactionId]);
+             
+             // Log Seizure
+             await client.query(`
+                INSERT INTO transactions (user_id, type, asset_type, amount, description, is_revoked)
+                VALUES ($1, 'seizure', $2, $3, $4, TRUE)
+            `, [targetId, tx.asset_type, tx.amount, `Refund/Revoke Tx ${transactionId.slice(0,6)}`]);
+
+             await client.query('COMMIT');
+             return res.json({ ok: true, message: "Transaction revoked successfully" });
+        }
+
+        // --- LEGACY BULK SEIZURE (KEEP FOR COMPATIBILITY) ---
         if (assetType === 'dice') {
-            // Revoke Dice Attempts
             const available = user.dice_available || 0;
             if (available <= 0) throw new Error("No dice attempts to seize");
-            
             await client.query('UPDATE users SET dice_available = 0, dice_stars_attempts = 0 WHERE id = $1', [targetId]);
             await client.query(`
                 INSERT INTO transactions (user_id, type, asset_type, amount, description)
@@ -737,32 +814,15 @@ app.post('/api/debug/seize', validateTelegramData, isAdmin, async (req, res) => 
             `, [targetId, available]);
         } 
         else if (assetType === 'nft') {
-            // Revoke Locked NFTs (Prioritize items bought with Stars/Refunded)
-            // 1. Find all locked NFTs that are not seized and not withdrawn
             const lockedRes = await client.query(`
                 SELECT serial_number FROM user_nfts 
                 WHERE user_id = $1 AND is_locked = TRUE AND is_seized = FALSE AND is_withdrawn = FALSE
             `, [targetId]);
-            
             const count = lockedRes.rowCount;
             if (count === 0) throw new Error("No locked NFTs found to seize");
             const serials = lockedRes.rows.map(r => r.serial_number);
-
-            // 2. Mark as Seized in user_nfts
-            await client.query(`
-                UPDATE user_nfts SET is_seized = TRUE 
-                WHERE serial_number = ANY($1::int[])
-            `, [serials]);
-
-            // 3. Update User Balance (Remove from Locked and Total)
-            await client.query(`
-                UPDATE users SET 
-                    nft_total = GREATEST(0, nft_total - $1), 
-                    nft_locked = GREATEST(0, nft_locked - $1) 
-                WHERE id = $2
-            `, [count, targetId]);
-
-            // 4. Log Transaction
+            await client.query(`UPDATE user_nfts SET is_seized = TRUE WHERE serial_number = ANY($1::int[])`, [serials]);
+            await client.query(`UPDATE users SET nft_total = GREATEST(0, nft_total - $1), nft_locked = GREATEST(0, nft_locked - $1) WHERE id = $2`, [count, targetId]);
             await client.query(`
                 INSERT INTO transactions (user_id, type, asset_type, amount, description, serials)
                 VALUES ($1, 'seizure', 'nft', $2, 'Revoked Locked NFTs (Admin Action)', $3)
