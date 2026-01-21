@@ -323,6 +323,13 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                                 {isStarOrLocked && <span className="text-cyan-400 text-sm mb-1 ml-0.5" title="Locked/Stars">*</span>}
                                             </div>
                                         </div>
+                                        
+                                        {/* Display Serial Numbers if present */}
+                                        {tx.serials && tx.serials.length > 0 && (
+                                            <div className="pt-2 border-t border-white/5 mt-1">
+                                                <SerialList serials={tx.serials} isWithdrawn={tx.type === 'withdraw'} />
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })

@@ -242,6 +242,20 @@ export const AdminPanel: React.FC = () => {
 
                   <div className="text-[10px] text-gray-600 mt-1">{formatDate(tx.timestamp)}</div>
                   <div className="text-[8px] text-gray-700 font-mono mt-0.5">{tx.id.slice(0,8)}...</div>
+                  
+                  {/* Serials Display */}
+                  {tx.serials && tx.serials.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                          {tx.serials.slice(0, 10).map((s: number) => (
+                              <span key={s} className={`text-[9px] font-mono px-1 rounded border ${isRevoked ? 'bg-red-900/20 border-red-900/30 text-red-500 line-through' : 'bg-black/30 border-white/5 text-gray-400'}`}>
+                                  #{s}
+                              </span>
+                          ))}
+                          {tx.serials.length > 10 && (
+                              <span className="text-[8px] text-gray-500 flex items-center">+{tx.serials.length - 10} more</span>
+                          )}
+                      </div>
+                  )}
               </div>
 
               <div className={`text-right flex flex-col items-end`}>
