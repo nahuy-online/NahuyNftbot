@@ -184,7 +184,7 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
              const prices = payload.type === 'nft' ? NFT_PRICES : DICE_ATTEMPT_PRICES;
              const cost = prices[payload.currency as Currency] * payload.amount;
              
-             // Fake reward
+             // Fake reward (11% referral)
              const mockReward = cost * 0.11; 
 
              if (payload.currency === 'STARS') {
@@ -217,17 +217,46 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
             const { assetType, targetId, transactionId } = payload;
             const targetUser = getLocalState(targetId, 'User');
             
-            // Handle Transaction Specific
+            // Handle Transaction Specific Revocation
             if (transactionId) {
-                // Find and mark revoked in history
                 const hist = getLocalHistory(targetId);
                 const txIndex = hist.findIndex(t => t.id === transactionId);
+                
                 if (txIndex >= 0) {
-                    hist[txIndex].description = "[REVOKED] " + hist[txIndex].description;
-                    hist[txIndex].isRevoked = true;
+                    const tx = hist[txIndex];
+                    if (tx.isRevoked) return { ok: false, message: "Already revoked" };
+
+                    // 1. Revoke Assets (Deduct from User)
+                    if (tx.assetType === 'nft') {
+                        // Assuming simple logic for mock: reduce total and locked/available based on purchase type
+                        const qty = tx.amount;
+                        // For mock simplicity, we assume we can just reduce total. Real backend is more precise.
+                        targetUser.nftBalance.total = Math.max(0, targetUser.nftBalance.total - qty);
+                        if (tx.currency === Currency.STARS) {
+                             // Typically locked
+                             targetUser.nftBalance.locked = Math.max(0, targetUser.nftBalance.locked - qty);
+                        } else {
+                             targetUser.nftBalance.available = Math.max(0, targetUser.nftBalance.available - qty);
+                        }
+                    } else if (tx.assetType === 'dice') {
+                        targetUser.diceBalance.available = Math.max(0, targetUser.diceBalance.available - tx.amount);
+                    }
+
+                    // 2. Refund Bonus (If used)
+                    if (tx.bonusUsed && tx.bonusUsed > 0 && tx.currency) {
+                        targetUser.referralStats.bonusBalance[tx.currency] = 
+                            (targetUser.referralStats.bonusBalance[tx.currency] || 0) + tx.bonusUsed;
+                    }
+
+                    // Mark as revoked
+                    tx.description = "[REVOKED] " + tx.description;
+                    tx.isRevoked = true;
                     safeStorage.setItem(`mock_history_${targetId}`, JSON.stringify(hist));
+                    updateLocalState(targetUser);
+                    
+                    return { ok: true, message: `Mock revoked tx ${transactionId} & refunded bonus` };
                 }
-                return { ok: true, message: `Mock revoked tx ${transactionId}` };
+                return { ok: false, message: "Tx not found" };
             }
 
             if (assetType === 'dice') {

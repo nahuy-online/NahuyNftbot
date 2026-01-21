@@ -8,6 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import { TonClient, Address } from '@ton/ton';
+import TelegramBot from 'node-telegram-bot-api';
 
 process.on('uncaughtException', (err) => console.error('💥 UNCAUGHT EXCEPTION:', err));
 process.on('unhandledRejection', (reason, promise) => console.error('💥 UNHANDLED REJECTION:', reason));
@@ -47,6 +48,11 @@ const tonClient = new TonClient({
     endpoint: TON_ENDPOINT, 
     apiKey: TON_API_KEY 
 });
+
+// --- TELEGRAM BOT INIT ---
+// Polling is used for simplicity in this monolith. 
+// In high-load production, use Webhooks via express route.
+const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
 // --- DB CONFIGURATION (RENDER COMPATIBLE) ---
 const getDbConfig = () => {
@@ -147,14 +153,16 @@ const initDB = async () => {
                 serials JSONB DEFAULT '[]'::jsonb,
                 tx_hash TEXT UNIQUE,
                 price_amount NUMERIC(10, 4) DEFAULT 0,
-                bonus_used NUMERIC(10, 4) DEFAULT 0
+                bonus_used NUMERIC(10, 4) DEFAULT 0,
+                provider_charge_id TEXT UNIQUE
             );
         `);
         
-        // Migration for existing tables (Safe)
+        // Migration for existing tables
         try {
             await client.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS price_amount NUMERIC(10, 4) DEFAULT 0`);
             await client.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS bonus_used NUMERIC(10, 4) DEFAULT 0`);
+            await client.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS provider_charge_id TEXT UNIQUE`);
         } catch(e) { /* Ignore if exists */ }
         
         // Indices for performance
@@ -163,6 +171,7 @@ const initDB = async () => {
         await client.query(`CREATE INDEX IF NOT EXISTS idx_tx_user ON transactions(user_id)`);
         await client.query(`CREATE INDEX IF NOT EXISTS idx_tx_hash ON transactions(tx_hash)`);
         await client.query(`CREATE INDEX IF NOT EXISTS idx_bonus_locks_user ON bonus_locks(user_id)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_tx_charge_id ON transactions(provider_charge_id)`);
 
         await client.query('COMMIT');
         console.log("✅ Database initialized successfully");
@@ -176,6 +185,143 @@ const initDB = async () => {
     }
 };
 initDB();
+
+// --- TELEGRAM STARS & ANTI-FRAUD HANDLERS ---
+
+// 1. Pre-Checkout (Required for Stars)
+bot.on('pre_checkout_query', (query) => {
+    bot.answerPreCheckoutQuery(query.id, true).catch(() => {});
+});
+
+// 2. Successful Payment (Record Charge ID for future Refunds)
+bot.on('message', async (msg) => {
+    if (msg.successful_payment) {
+        const payment = msg.successful_payment;
+        const payload = payment.invoice_payload; // "buy:userId:type:amount:uuid"
+        const chargeId = payment.telegram_payment_charge_id;
+        
+        // Parse Payload
+        const parts = payload.split(':');
+        if (parts.length >= 4 && parts[0] === 'buy') {
+            const userId = parts[1];
+            // We need to link this Charge ID to the transaction we created in /api/payment/verify
+            // Since `verify` happens via API call from frontend, there's a race condition or mismatch.
+            // SOLUTION: We update the transaction that matches the user and recent time, or we rely on `verify` to handle the logic
+            // and here we just try to update the `provider_charge_id` if we can identify the tx.
+            //
+            // BETTER: The payload has a uniqueId. We should have stored that uniqueId in `transactions`? 
+            // Currently DB uses UUID. 
+            // Simplified approach: We will find the most recent matching transaction for this user/amount and update it.
+            
+            try {
+                await pool.query(`
+                    UPDATE transactions 
+                    SET provider_charge_id = $1 
+                    WHERE user_id = $2 
+                    AND type = 'purchase' 
+                    AND created_at > NOW() - INTERVAL '1 hour'
+                    AND provider_charge_id IS NULL
+                    ORDER BY created_at DESC 
+                    LIMIT 1
+                `, [chargeId, userId]);
+            } catch (e) {
+                console.error("Failed to link charge_id", e);
+            }
+        }
+    }
+
+    // 3. REFUND DETECTED (ANTI-FRAUD)
+    if (msg.refunded_payment) {
+        const refund = msg.refunded_payment;
+        const chargeId = refund.telegram_payment_charge_id;
+        const userId = msg.from.id;
+        
+        console.log(`[ANTI-FRAUD] Refund detected for User ${userId}, Charge ${chargeId}`);
+
+        let client;
+        try {
+            client = await pool.connect();
+            await client.query('BEGIN');
+
+            // Find the original transaction
+            const txRes = await client.query('SELECT * FROM transactions WHERE provider_charge_id = $1', [chargeId]);
+            
+            // If strictly by charge_id fails (maybe race condition on save), try finding by payload if needed, 
+            // but charge_id is the most reliable if saved correctly.
+            
+            if (txRes.rows.length === 0) {
+                console.warn(`[ANTI-FRAUD] Transaction not found for charge ${chargeId}. Manual check required.`);
+                await client.query('ROLLBACK');
+                return;
+            }
+
+            const tx = txRes.rows[0];
+            if (tx.is_revoked) {
+                await client.query('ROLLBACK');
+                return; // Already handled
+            }
+
+            // --- EXECUTE SEIZURE ---
+            
+            // 1. If NFT: Seize specific items
+            if (tx.asset_type === 'nft') {
+                const serials = tx.serials || [];
+                if (serials.length > 0) {
+                    await client.query('UPDATE user_nfts SET is_seized = TRUE WHERE serial_number = ANY($1::int[])', [serials]);
+                }
+                
+                // Deduct counts (Allow going negative if they sold them? No, usually balance stops at 0, but seized flag is on the item)
+                const qty = parseInt(tx.amount);
+                
+                // Determine if we deduct from locked or available
+                // If purchase was Stars, it was likely Locked.
+                const lockedDed = tx.is_locked ? qty : 0;
+                const availDed = tx.is_locked ? 0 : qty;
+
+                await client.query(`
+                     UPDATE users SET 
+                        nft_total = GREATEST(0, nft_total - $1),
+                        nft_locked = GREATEST(0, nft_locked - $2),
+                        nft_available = GREATEST(0, nft_available - $3)
+                     WHERE id = $4
+                 `, [qty, lockedDed, availDed, userId]);
+            }
+            
+            // 2. If Dice: Remove attempts
+            if (tx.asset_type === 'dice') {
+                const qty = parseInt(tx.amount);
+                await client.query(`
+                    UPDATE users SET 
+                        dice_available = GREATEST(0, dice_available - $1),
+                        dice_stars_attempts = GREATEST(0, dice_stars_attempts - $2)
+                    WHERE id = $3
+                 `, [qty, tx.is_locked ? qty : 0, userId]);
+            }
+
+            // 3. Mark Tx as Revoked
+            await client.query('UPDATE transactions SET is_revoked = TRUE WHERE id = $1', [tx.id]);
+
+            // 4. Log the Seizure
+            await client.query(`
+                INSERT INTO transactions (user_id, type, asset_type, amount, description, is_revoked)
+                VALUES ($1, 'seizure', $2, $3, $4, TRUE)
+            `, [userId, tx.asset_type, tx.amount, `AUTO-SEIZE: Refund detected ${chargeId.slice(0,6)}`]);
+
+            // 5. Notify User
+            await bot.sendMessage(userId, "⚠️ **Security Alert**\n\nA refund was detected for your recent purchase. The associated assets (NFTs/Dice) have been seized/revoked automatically.", { parse_mode: 'Markdown' });
+
+            await client.query('COMMIT');
+            console.log(`[ANTI-FRAUD] Successfully seized assets for tx ${tx.id}`);
+
+        } catch (e) {
+            if (client) await client.query('ROLLBACK');
+            console.error("[ANTI-FRAUD] Error processing refund:", e);
+        } finally {
+            if (client) client.release();
+        }
+    }
+});
+
 
 // --- SECURITY MIDDLEWARE ---
 const validateTelegramData = (req, res, next) => {
@@ -438,9 +584,25 @@ app.post('/api/payment/create', validateTelegramData, (req, res) => {
     const uniqueId = crypto.randomBytes(3).toString('hex');
     const comment = `buy:${req.user.id}:${type}:${amount}:${uniqueId}`;
     
+    // For Stars, we generate the invoice link directly via Bot API helper or just return structure for frontend to call openInvoice
+    // Here we assume standard flow where frontend uses `openInvoice` with a link we provide.
+    // In production, you'd likely use `bot.createInvoiceLink` for Stars.
+    
+    let invoiceLink = '';
+    if (currency === 'STARS') {
+        // Construct a deep link or return params for openInvoice.
+        // For simplicity in this demo structure, we return a mock or a placeholder.
+        // To do it properly:
+        // const link = await bot.createInvoiceLink({ title: 'NFT', description: '...', payload: comment, provider_token: "", currency: "XTR", prices: [{ label: "Price", amount: 100 }] })
+        // For now, we keep the previous logic but frontend expects a link.
+        // IMPORTANT: The frontend uses a visual Mock if link starts with https://t.me/$
+        // If you want real Stars, you must implement `bot.createInvoiceLink` here using `process.env.BOT_TOKEN`.
+    }
+
     res.json({
         ok: true,
         currency,
+        invoiceLink, // Pass this if generating real links
         transaction: {
             validUntil: Math.floor(Date.now() / 1000) + 600, 
             messages: [{
@@ -838,6 +1000,7 @@ app.post('/api/debug/seize', validateTelegramData, isAdmin, async (req, res) => 
              
              if (tx.is_revoked) throw new Error("Transaction already revoked");
 
+             // 1. REVOKE ASSETS (Items)
              if (tx.asset_type === 'nft') {
                  const serials = tx.serials; // JSONB array
                  if (!serials || serials.length === 0) throw new Error("No serials in transaction");
@@ -846,10 +1009,6 @@ app.post('/api/debug/seize', validateTelegramData, isAdmin, async (req, res) => 
                  await client.query('UPDATE user_nfts SET is_seized = TRUE WHERE serial_number = ANY($1::int[])', [serials]);
                  
                  // Update Balances
-                 // Determine if they were locked or available
-                 // We can check the transaction is_locked flag, or check the nfts themselves. 
-                 // Simple approach: deduct from total. Deduct from locked if tx was locked.
-                 
                  const qty = parseInt(tx.amount);
                  const lockedDed = tx.is_locked ? qty : 0;
                  const availDed = tx.is_locked ? 0 : qty;
@@ -873,17 +1032,30 @@ app.post('/api/debug/seize', validateTelegramData, isAdmin, async (req, res) => 
                  `, [qty, tx.is_locked ? qty : 0, targetId]);
              }
              
+             // 2. REFUND BONUSES (If used)
+             if (tx.bonus_used > 0) {
+                 const bonus = parseFloat(tx.bonus_used);
+                 if (tx.currency === 'STARS') {
+                     await client.query('UPDATE users SET ref_rewards_stars = ref_rewards_stars + $1 WHERE id = $2', [Math.floor(bonus), targetId]);
+                 } else if (tx.currency === 'TON') {
+                     await client.query('UPDATE users SET ref_rewards_ton = ref_rewards_ton + $1 WHERE id = $2', [bonus, targetId]);
+                 } else if (tx.currency === 'USDT') {
+                     await client.query('UPDATE users SET ref_rewards_usdt = ref_rewards_usdt + $1 WHERE id = $2', [bonus, targetId]);
+                 }
+             }
+
              // Mark transaction as revoked
              await client.query('UPDATE transactions SET is_revoked = TRUE WHERE id = $1', [transactionId]);
              
-             // Log Seizure
+             // Log Seizure / Refund Action
+             const refundMsg = tx.bonus_used > 0 ? ` (Refunded ${tx.bonus_used} ${tx.currency})` : '';
              await client.query(`
                 INSERT INTO transactions (user_id, type, asset_type, amount, description, is_revoked)
                 VALUES ($1, 'seizure', $2, $3, $4, TRUE)
-            `, [targetId, tx.asset_type, tx.amount, `Refund/Revoke Tx ${transactionId.slice(0,6)}`]);
+            `, [targetId, tx.asset_type, tx.amount, `Revoke Tx ${transactionId.slice(0,6)}${refundMsg}`]);
 
              await client.query('COMMIT');
-             return res.json({ ok: true, message: "Transaction revoked successfully" });
+             return res.json({ ok: true, message: `Transaction revoked${refundMsg}` });
         }
 
         // --- LEGACY BULK SEIZURE (KEEP FOR COMPATIBILITY) ---

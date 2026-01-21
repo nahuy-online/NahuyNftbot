@@ -160,13 +160,14 @@ export const AdminPanel: React.FC = () => {
   };
   
   const handleRevokeTransaction = async (txId: string, assetType: string, userId: number) => {
-      const confirmMsg = `Are you sure you want to REVOKE transaction ${txId.slice(0, 8)}...? This mimics a Refund.`;
+      // Logic for revoking from Global list OR User Detail list
+      const confirmMsg = `Are you sure you want to REVOKE transaction ${txId.slice(0, 8)}...? This will REMOVE the assets and REFUND any used bonuses.`;
       if (window.confirm(confirmMsg)) {
           setActionLoading(true);
           try {
               const res = await debugSeizeAsset(assetType as 'nft' | 'dice', userId, txId);
               if (res.ok) {
-                  alert("REVOKED!");
+                  alert("SUCCESS: " + res.message);
                   // Refresh current view
                   if (showRevenueModal) loadGlobalTransactions(true);
                   if (showDetailModal && foundUser) handleSearch(String(foundUser.id));
@@ -209,7 +210,7 @@ export const AdminPanel: React.FC = () => {
       return (
           <div key={tx.id} className={`bg-gray-800 p-3 rounded-lg text-xs border ${isRevoked ? 'border-red-900 opacity-60' : 'border-white/5'} flex justify-between items-start relative`}>
               {isRevoked && <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                  <div className="bg-red-900/80 text-white font-bold px-2 py-0.5 rounded text-[10px] transform -rotate-12 border border-red-500">REFUNDED</div>
+                  <div className="bg-red-900/90 text-white font-bold px-2 py-0.5 rounded text-[10px] transform -rotate-12 border border-red-500 shadow-lg">REFUNDED</div>
               </div>}
 
               <div className="max-w-[60%]">
@@ -219,7 +220,7 @@ export const AdminPanel: React.FC = () => {
                       </div>
                   )}
                   <div className={`font-bold ${isRevoked ? 'text-gray-500 line-through' : 'text-gray-300'}`}>
-                      {tx.description}
+                      {tx.description.replace('[REVOKED] ', '')}
                   </div>
                   
                   {/* Payment Breakdown */}
@@ -227,12 +228,13 @@ export const AdminPanel: React.FC = () => {
                       <div className="mt-1 space-y-0.5 font-mono">
                           {tx.priceAmount > 0 && (
                               <div className="text-[10px] text-gray-400">
-                                  Paid: <span className="text-white">{tx.priceAmount} {tx.currency}</span>
+                                  Paid: <span className={`${isRevoked ? 'text-gray-500 line-through' : 'text-white'}`}>{tx.priceAmount} {tx.currency}</span>
                               </div>
                           )}
                           {tx.bonusUsed > 0 && (
                               <div className="text-[10px] text-gray-400">
-                                  Bonus: <span className="text-green-400">+{tx.bonusUsed} {tx.currency}</span>
+                                  Bonus: <span className={`${isRevoked ? 'text-gray-500 line-through' : 'text-green-400'}`}>+{tx.bonusUsed} {tx.currency}</span>
+                                  {isRevoked && <span className="ml-2 text-green-500 font-bold no-underline inline-block bg-green-900/30 px-1 rounded">RETURNED</span>}
                               </div>
                           )}
                       </div>
@@ -254,6 +256,7 @@ export const AdminPanel: React.FC = () => {
                       <button 
                           onClick={() => handleRevokeTransaction(tx.id, tx.assetType, tx.userId || foundUser?.id)}
                           className="mt-2 bg-red-900/30 text-red-400 border border-red-900/50 hover:bg-red-900/50 text-[9px] px-2 py-1 rounded transition-colors uppercase font-bold"
+                          title="Refund bonus & Revoke assets"
                       >
                           REVOKE
                       </button>
