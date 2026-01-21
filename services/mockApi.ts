@@ -180,23 +180,25 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
              if (payload.type === 'dice') user.diceBalance.available += payload.amount;
              else user.nftBalance.total += payload.amount;
              
-             // 2. SIMULATE REFERRAL REWARD (Self-reward for testing visuals)
+             // Calculate Cost
              const prices = payload.type === 'nft' ? NFT_PRICES : DICE_ATTEMPT_PRICES;
              const cost = prices[payload.currency as Currency] * payload.amount;
-             const mockReward = cost * 0.11; // 11%
+             
+             // Fake reward
+             const mockReward = cost * 0.11; 
 
              if (payload.currency === 'STARS') {
-                 // Mock Locked Stars
                  user.referralStats.lockedStars = (user.referralStats.lockedStars || 0) + Math.floor(mockReward);
              }
              else if (payload.currency === 'TON') user.referralStats.bonusBalance.TON += mockReward;
              else user.referralStats.bonusBalance.USDT += mockReward;
 
-             // Log purchase
+             // Log purchase with split mock (Assume 100% paid from wallet for simplicity in mock, unless updated)
              addLocalHistory(userId, { 
                 id: `m_buy_${Date.now()}`, type: 'purchase', assetType: payload.type, 
                 amount: payload.amount, currency: payload.currency, 
-                description: `Mock Purchase`, timestamp: Date.now() 
+                description: `Mock Purchase`, timestamp: Date.now(),
+                priceAmount: cost, bonusUsed: 0
              });
 
              // Log fake reward
@@ -222,7 +224,7 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
                 const txIndex = hist.findIndex(t => t.id === transactionId);
                 if (txIndex >= 0) {
                     hist[txIndex].description = "[REVOKED] " + hist[txIndex].description;
-                    // In real app, backend adds is_revoked flag, mock just renames
+                    hist[txIndex].isRevoked = true;
                     safeStorage.setItem(`mock_history_${targetId}`, JSON.stringify(hist));
                 }
                 return { ok: true, message: `Mock revoked tx ${transactionId}` };
@@ -264,8 +266,16 @@ const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) 
             const hist = getLocalHistory(userId).map(t => ({...t, username: 'Me', userId: userId}));
             // Add some fakes
             if(hist.length < 5) {
-                hist.push({id: 'mk1', type: 'purchase', assetType: 'nft', amount: 3, currency: Currency.TON, description: 'Fake Purchase', timestamp: Date.now(), username: 'whale_user', userId: 888, isLocked: false});
-                hist.push({id: 'mk2', type: 'purchase', assetType: 'dice', amount: 5, currency: Currency.STARS, description: 'Fake Dice', timestamp: Date.now()-10000, username: 'star_boy', userId: 777, isLocked: true});
+                hist.push({
+                    id: 'mk1', type: 'purchase', assetType: 'nft', amount: 3, currency: Currency.TON, description: 'Fake Purchase', 
+                    timestamp: Date.now(), username: 'whale_user', userId: 888, isLocked: false,
+                    priceAmount: 0.03, bonusUsed: 0.003 // Mock split
+                });
+                hist.push({
+                    id: 'mk2', type: 'purchase', assetType: 'dice', amount: 5, currency: Currency.STARS, description: 'Fake Dice', 
+                    timestamp: Date.now()-10000, username: 'star_boy', userId: 777, isLocked: true,
+                    priceAmount: 5000, bonusUsed: 0
+                });
             }
             
             // Filter

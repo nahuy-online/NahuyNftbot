@@ -122,7 +122,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
               
               <div className="flex-1 overflow-y-auto overflow-x-hidden pb-32">
                   
-                  {/* === SERIALS LISTS (3 STACKED CARDS) === */}
+                  {/* === SERIALS LISTS === */}
                   {filter === 'serials' && (
                       <div className="p-4 space-y-4 animate-fade-in">
                           {/* 1. AVAILABLE CARD */}
@@ -286,6 +286,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                             filteredHistory.length === 0 ? <div className="text-center text-gray-500 pt-5">{t('no_tx')}</div> :
                             filteredHistory.map((tx) => {
                                 const isStarOrLocked = tx.isLocked || tx.currency === Currency.STARS;
+                                const isPurchase = tx.type === 'purchase';
                                 return (
                                     <div key={tx.id} className="bg-gray-800 p-4 rounded-xl border border-white/5 flex flex-col gap-2">
                                         <div className="flex justify-between items-center w-full">
@@ -297,18 +298,24 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ onClose, filter, his
                                                     <div className="font-bold text-sm text-white truncate flex items-center gap-1">
                                                         {tx.description}
                                                     </div>
-                                                    <div className="flex items-center gap-2 mt-0.5">
-                                                        <div className="text-[10px] text-gray-500 font-mono">{formatDate(tx.timestamp)}</div>
-                                                        {tx.currency && (
-                                                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
-                                                                tx.currency === Currency.STARS ? 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20' :
-                                                                tx.currency === Currency.TON ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
-                                                                'bg-green-500/10 text-green-400 border border-green-500/20'
-                                                            }`}>
-                                                                {tx.currency}
-                                                            </span>
-                                                        )}
-                                                    </div>
+                                                    
+                                                    {/* Price Breakdown for Purchases */}
+                                                    {isPurchase && (
+                                                        <div className="flex flex-col text-[10px] font-mono mt-1 leading-tight">
+                                                            {tx.priceAmount && tx.priceAmount > 0 ? (
+                                                                <span className="text-gray-400">
+                                                                    Paid: <span className="text-white">{tx.priceAmount} {tx.currency}</span>
+                                                                </span>
+                                                            ) : null}
+                                                            {tx.bonusUsed && tx.bonusUsed > 0 ? (
+                                                                <span className="text-gray-400">
+                                                                    Bonus: <span className="text-green-400">+{tx.bonusUsed} {tx.currency}</span>
+                                                                </span>
+                                                            ) : null}
+                                                        </div>
+                                                    )}
+
+                                                    <div className="text-[10px] text-gray-500 font-mono mt-1">{formatDate(tx.timestamp)}</div>
                                                 </div>
                                             </div>
                                             <div className={`text-right ${tx.type === 'withdraw' || tx.type === 'seizure' ? 'text-red-400' : 'text-green-400'} font-mono font-bold flex items-center gap-0.5`}>

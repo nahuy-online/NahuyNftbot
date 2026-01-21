@@ -145,9 +145,17 @@ const initDB = async () => {
                 is_locked BOOLEAN DEFAULT FALSE,
                 is_revoked BOOLEAN DEFAULT FALSE,
                 serials JSONB DEFAULT '[]'::jsonb,
-                tx_hash TEXT UNIQUE 
+                tx_hash TEXT UNIQUE,
+                price_amount NUMERIC(10, 4) DEFAULT 0,
+                bonus_used NUMERIC(10, 4) DEFAULT 0
             );
         `);
+        
+        // Migration for existing tables (Safe)
+        try {
+            await client.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS price_amount NUMERIC(10, 4) DEFAULT 0`);
+            await client.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS bonus_used NUMERIC(10, 4) DEFAULT 0`);
+        } catch(e) { /* Ignore if exists */ }
         
         // Indices for performance
         await client.query(`CREATE INDEX IF NOT EXISTS idx_users_referrer ON users(referrer_id)`);
@@ -458,7 +466,13 @@ app.post('/api/payment/verify', validateTelegramData, async (req, res) => {
         const priceMap = type === 'nft' ? PRICES.NFT : PRICES.DICE;
         const unitPrice = priceMap[currency];
         if (!unitPrice) throw new Error("Invalid currency/type");
+        
+        // Full Cost
         const totalValue = unitPrice * amount;
+        
+        // Calculate Payment Splits
+        let payFromBonus = 0;
+        let payFromWallet = totalValue;
 
         // --- 2. PAYMENT DEDUCTION LOGIC ---
         if (useRewardBalance) {
@@ -488,18 +502,21 @@ app.post('/api/payment/verify', validateTelegramData, async (req, res) => {
                  balance = totalStars - locked;
              }
 
-             if (balance < totalValue) {
-                 throw new Error("Insufficient available bonus balance");
-             }
+             // Calculate how much bonus covers
+             payFromBonus = Math.min(totalValue, balance);
+             payFromWallet = totalValue - payFromBonus;
 
-             // Deduct
-             await client.query(`UPDATE users SET ${field} = ${field} - $1 WHERE id = $2`, [totalValue, userId]);
-             
-             // Log Deduction
-             await client.query(`
-                INSERT INTO transactions (user_id, type, asset_type, amount, currency, description)
-                VALUES ($1, 'purchase', 'currency', $2, $3, $4)
-            `, [userId, -totalValue, currency, `Used Bonus Balance for ${type}`]);
+             if (payFromBonus > 0) {
+                 // Deduct
+                 await client.query(`UPDATE users SET ${field} = ${field} - $1 WHERE id = $2`, [payFromBonus, userId]);
+                 
+                 // Log Deduction (Internal record of bonus usage, separate from the main Purchase tx for clarity in ledger, optional but good)
+                 // NOTE: We will store the split in the MAIN transaction, so this extra logging is just for bonus history tracking
+                 await client.query(`
+                    INSERT INTO transactions (user_id, type, asset_type, amount, currency, description)
+                    VALUES ($1, 'purchase', 'currency', $2, $3, $4)
+                `, [userId, -payFromBonus, currency, `Used Bonus Balance for ${type}`]);
+             }
         }
 
         // --- 3. GRANT ASSETS ---
@@ -523,16 +540,21 @@ app.post('/api/payment/verify', validateTelegramData, async (req, res) => {
         }
 
         // --- 4. DISTRIBUTE REFERRAL REWARDS (If not paid with balance) ---
-        // Typically rewards are only on fresh money injection, not recycling bonuses.
-        if (!useRewardBalance) {
-            await distributeReferralRewards(client, userId, totalValue, currency);
+        // Rewards are calculated ONLY on the Wallet portion (Fresh Money)
+        if (payFromWallet > 0) {
+            await distributeReferralRewards(client, userId, payFromWallet, currency);
         }
 
         // --- 5. LOG TRANSACTION ---
         await client.query(`
-            INSERT INTO transactions (user_id, type, asset_type, amount, currency, description, is_locked, serials)
-            VALUES ($1, 'purchase', $2, $3, $4, $5, $6, $7)
-        `, [userId, type, grantedCount, currency, `Purchased ${grantedCount} ${assetName}`, isLocked, JSON.stringify(wonSerials)]);
+            INSERT INTO transactions (user_id, type, asset_type, amount, currency, description, is_locked, serials, price_amount, bonus_used)
+            VALUES ($1, 'purchase', $2, $3, $4, $5, $6, $7, $8, $9)
+        `, [
+            userId, type, grantedCount, currency, 
+            `Purchased ${grantedCount} ${assetName}`, isLocked, 
+            JSON.stringify(wonSerials),
+            payFromWallet, payFromBonus
+        ]);
 
         await client.query('COMMIT');
         res.json({ ok: true });
@@ -598,7 +620,10 @@ app.get('/api/history', validateTelegramData, async (req, res) => {
         res.json(result.rows.map(x => ({
             id: x.id, type: x.type, amount: parseFloat(x.amount), description: x.description,
             timestamp: new Date(x.created_at).getTime(), currency: x.currency, assetType: x.asset_type,
-            isLocked: x.is_locked, serials: x.serials
+            isLocked: x.is_locked, serials: x.serials,
+            priceAmount: parseFloat(x.price_amount || 0),
+            bonusUsed: parseFloat(x.bonus_used || 0),
+            isRevoked: x.is_revoked
         })));
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -717,7 +742,9 @@ app.post('/api/admin/transactions', validateTelegramData, isAdmin, async (req, r
                 serials: x.serials, assetType: x.asset_type, currency: x.currency,
                 timestamp: new Date(x.created_at).getTime(),
                 isLocked: x.is_locked, isRevoked: x.is_revoked,
-                username: x.username, userId: x.user_id
+                username: x.username, userId: x.user_id,
+                priceAmount: parseFloat(x.price_amount || 0),
+                bonusUsed: parseFloat(x.bonus_used || 0)
             })),
             hasMore: result.rows.length === limit
         });
@@ -760,7 +787,9 @@ app.post('/api/admin/search', validateTelegramData, isAdmin, async (req, res) =>
                 id: x.id, type: x.type, amount: parseFloat(x.amount), description: x.description, 
                 serials: x.serials, assetType: x.asset_type, currency: x.currency, 
                 timestamp: new Date(x.created_at).getTime(),
-                isLocked: x.is_locked, isRevoked: x.is_revoked
+                isLocked: x.is_locked, isRevoked: x.is_revoked,
+                priceAmount: parseFloat(x.price_amount || 0),
+                bonusUsed: parseFloat(x.bonus_used || 0)
             })),
             rewards: { TON: parseFloat(u.ref_rewards_ton), USDT: parseFloat(u.ref_rewards_usdt), STARS: parseInt(u.ref_rewards_stars) },
             referralStats: {

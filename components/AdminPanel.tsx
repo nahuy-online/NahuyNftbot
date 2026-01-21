@@ -160,7 +160,6 @@ export const AdminPanel: React.FC = () => {
   };
   
   const handleRevokeTransaction = async (txId: string, assetType: string, userId: number) => {
-      // Logic for revoking from Global list OR User Detail list
       const confirmMsg = `Are you sure you want to REVOKE transaction ${txId.slice(0, 8)}...? This mimics a Refund.`;
       if (window.confirm(confirmMsg)) {
           setActionLoading(true);
@@ -203,37 +202,83 @@ export const AdminPanel: React.FC = () => {
       return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit'});
   };
 
+  const renderTransactionItem = (tx: any, showUser: boolean) => {
+      const isRevoked = tx.isRevoked || false;
+      const isPurchase = tx.type === 'purchase';
+      
+      return (
+          <div key={tx.id} className={`bg-gray-800 p-3 rounded-lg text-xs border ${isRevoked ? 'border-red-900 opacity-60' : 'border-white/5'} flex justify-between items-start relative`}>
+              {isRevoked && <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                  <div className="bg-red-900/80 text-white font-bold px-2 py-0.5 rounded text-[10px] transform -rotate-12 border border-red-500">REFUNDED</div>
+              </div>}
+
+              <div className="max-w-[60%]">
+                  {showUser && (
+                      <div className="text-[9px] text-gray-400 font-bold mb-0.5 flex items-center gap-1">
+                          @{tx.username || 'Unknown'} <span className="text-gray-600">#{tx.userId}</span>
+                      </div>
+                  )}
+                  <div className={`font-bold ${isRevoked ? 'text-gray-500 line-through' : 'text-gray-300'}`}>
+                      {tx.description}
+                  </div>
+                  
+                  {/* Payment Breakdown */}
+                  {isPurchase && (
+                      <div className="mt-1 space-y-0.5 font-mono">
+                          {tx.priceAmount > 0 && (
+                              <div className="text-[10px] text-gray-400">
+                                  Paid: <span className="text-white">{tx.priceAmount} {tx.currency}</span>
+                              </div>
+                          )}
+                          {tx.bonusUsed > 0 && (
+                              <div className="text-[10px] text-gray-400">
+                                  Bonus: <span className="text-green-400">+{tx.bonusUsed} {tx.currency}</span>
+                              </div>
+                          )}
+                      </div>
+                  )}
+
+                  <div className="text-[10px] text-gray-600 mt-1">{formatDate(tx.timestamp)}</div>
+                  <div className="text-[8px] text-gray-700 font-mono mt-0.5">{tx.id.slice(0,8)}...</div>
+              </div>
+
+              <div className={`text-right flex flex-col items-end`}>
+                  <div className={`${tx.type === 'withdraw' || tx.type === 'seizure' ? 'text-red-400' : 'text-green-400'} font-bold text-sm ${isRevoked ? 'line-through opacity-50' : ''}`}>
+                      {tx.type === 'withdraw' || tx.type === 'seizure' ? '-' : '+'}{tx.amount}
+                      <span className="text-[10px] opacity-70 ml-1 font-normal">
+                          {tx.assetType === 'nft' ? 'NFT' : tx.assetType === 'dice' ? 'Dice' : tx.currency}
+                      </span>
+                  </div>
+                  
+                  {!isRevoked && tx.type === 'purchase' && (
+                      <button 
+                          onClick={() => handleRevokeTransaction(tx.id, tx.assetType, tx.userId || foundUser?.id)}
+                          className="mt-2 bg-red-900/30 text-red-400 border border-red-900/50 hover:bg-red-900/50 text-[9px] px-2 py-1 rounded transition-colors uppercase font-bold"
+                      >
+                          REVOKE
+                      </button>
+                  )}
+              </div>
+          </div>
+      );
+  };
+
   return (
     <>
-      {/* Main Content inside animated container */}
       <div className="p-5 pb-24 space-y-6 animate-fade-in text-white relative">
-        
-        {/* HEADER & TABS */}
         <div className="flex justify-between items-center">
             <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-red-400 to-orange-500">
               {t('admin_dashboard')}
             </h2>
             <div className="flex bg-gray-800 rounded-lg p-1 border border-white/5">
-                <button 
-                  onClick={() => setActiveTab('dashboard')} 
-                  className={`px-3 py-1 text-xs font-bold rounded ${activeTab === 'dashboard' ? 'bg-gray-700 text-white' : 'text-gray-500'}`}
-                >
-                    Stats
-                </button>
-                <button 
-                  onClick={() => setActiveTab('users')} 
-                  className={`px-3 py-1 text-xs font-bold rounded ${activeTab === 'users' ? 'bg-gray-700 text-white' : 'text-gray-500'}`}
-                >
-                    Users
-                </button>
+                <button onClick={() => setActiveTab('dashboard')} className={`px-3 py-1 text-xs font-bold rounded ${activeTab === 'dashboard' ? 'bg-gray-700 text-white' : 'text-gray-500'}`}>Stats</button>
+                <button onClick={() => setActiveTab('users')} className={`px-3 py-1 text-xs font-bold rounded ${activeTab === 'users' ? 'bg-gray-700 text-white' : 'text-gray-500'}`}>Users</button>
             </div>
         </div>
 
-        {/* DASHBOARD VIEW */}
         {activeTab === 'dashboard' && stats && (
             <div className="space-y-4 animate-fade-in">
               <div className="grid grid-cols-2 gap-3">
-                  {/* Users (Total / Active) */}
                   <div className="bg-gray-800 p-4 rounded-xl border border-white/5 flex flex-col justify-between">
                       <div className="text-gray-400 text-xs font-bold uppercase mb-2 text-center">{t('stats_users')}</div>
                       <div className="flex justify-around items-center h-full">
@@ -249,7 +294,6 @@ export const AdminPanel: React.FC = () => {
                       </div>
                   </div>
 
-                  {/* Revenue - CLICKABLE NOW */}
                   <div 
                     onClick={() => { setShowRevenueModal(true); loadGlobalTransactions(true); }}
                     className="bg-gray-800 p-4 rounded-xl border border-white/5 cursor-pointer hover:bg-gray-750 active:scale-95 transition-all group relative"
@@ -266,13 +310,11 @@ export const AdminPanel: React.FC = () => {
                       </div>
                   </div>
 
-                  {/* NFT & Dice counts */}
                   <div className="col-span-2 bg-gray-800 p-4 rounded-xl border border-white/5 flex items-stretch justify-around divide-x divide-white/10">
                       <div className="text-center w-1/3 flex flex-col justify-center px-2">
                           <div className="text-gray-400 text-xs font-bold uppercase mb-1">{t('stats_sales')}</div>
                           <div className="text-2xl font-black text-blue-400">{stats.totalNftSold}</div>
                       </div>
-                      
                       <div className="w-2/3 flex flex-col px-4">
                           <div className="text-gray-400 text-xs font-bold uppercase mb-2 text-center">{t('stats_dice_summary')}</div>
                           <div className="flex justify-around items-center h-full pb-2">
@@ -288,7 +330,6 @@ export const AdminPanel: React.FC = () => {
                   </div>
               </div>
 
-               {/* BONUS STATS */}
                <div className="bg-gray-800/50 p-4 rounded-2xl border border-white/10">
                   <h3 className="text-sm font-bold text-gray-400 uppercase mb-3">{t('admin_bonuses')}</h3>
                   <div className="grid grid-cols-2 gap-4">
@@ -311,7 +352,6 @@ export const AdminPanel: React.FC = () => {
                   </div>
               </div>
               
-              {/* SEARCH BOX IN DASHBOARD */}
               <div className="bg-gray-800/50 p-4 rounded-2xl border border-white/10">
                   <div className="flex gap-2">
                       <input 
@@ -332,23 +372,16 @@ export const AdminPanel: React.FC = () => {
                   {searchError && <div className="text-red-400 text-sm mt-2">{searchError}</div>}
               </div>
 
-              {/* DANGER ZONE: RESET DB */}
               <div className="pt-8 flex justify-center">
-                  <button 
-                      onClick={handleResetDb}
-                      disabled={actionLoading}
-                      className="bg-red-600 hover:bg-red-500 text-white font-black py-4 px-8 rounded-xl shadow-lg active:scale-95 transition-all border border-red-400"
-                  >
+                  <button onClick={handleResetDb} disabled={actionLoading} className="bg-red-600 hover:bg-red-500 text-white font-black py-4 px-8 rounded-xl shadow-lg active:scale-95 transition-all border border-red-400">
                       ⚠️ RESET DATABASE
                   </button>
               </div>
             </div>
         )}
 
-        {/* USERS LIST VIEW */}
         {activeTab === 'users' && (
             <div className="space-y-4 animate-fade-in">
-                {/* Filter Controls */}
                 <div className="flex gap-2 overflow-x-auto pb-2">
                     <select 
                       value={sortBy}
@@ -360,29 +393,17 @@ export const AdminPanel: React.FC = () => {
                         <option value="nft_total">{t('sort_nfts')}</option>
                         <option value="referrals">{t('sort_refs')}</option>
                     </select>
-                    <button 
-                      onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
-                      className="bg-gray-800 px-3 py-2 rounded border border-white/10 text-xs font-bold"
-                    >
+                    <button onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')} className="bg-gray-800 px-3 py-2 rounded border border-white/10 text-xs font-bold">
                         {sortOrder.toUpperCase()}
                     </button>
                 </div>
 
                 <div className="space-y-3">
                     {userList.map((u) => (
-                        <div 
-                          key={u.id} 
-                          onClick={() => handleSearch(String(u.id))}
-                          className="bg-gray-800 p-3 rounded-xl border border-white/5 active:scale-95 transition-transform flex justify-between items-center"
-                        >
+                        <div key={u.id} onClick={() => handleSearch(String(u.id))} className="bg-gray-800 p-3 rounded-xl border border-white/5 active:scale-95 transition-transform flex justify-between items-center">
                             <div>
-                                <div className="font-bold flex items-center gap-2">
-                                    @{u.username}
-                                    <span className="text-[10px] text-gray-500 font-mono">#{u.id}</span>
-                                </div>
-                                <div className="text-[10px] text-gray-500 mt-1">
-                                    {t('user_last_active')}: {formatDate(u.lastActive)}
-                                </div>
+                                <div className="font-bold flex items-center gap-2">@{u.username} <span className="text-[10px] text-gray-500 font-mono">#{u.id}</span></div>
+                                <div className="text-[10px] text-gray-500 mt-1">{t('user_last_active')}: {formatDate(u.lastActive)}</div>
                             </div>
                             <div className="text-right">
                                 <div className="text-sm font-bold text-blue-400">{u.nftTotal} NFT</div>
@@ -390,16 +411,9 @@ export const AdminPanel: React.FC = () => {
                             </div>
                         </div>
                     ))}
-                    
                     {usersLoading && <div className="text-center text-xs text-gray-500">Loading...</div>}
-                    
                     {!usersLoading && hasMore && (
-                        <button 
-                          onClick={() => loadUsers(false)}
-                          className="w-full py-3 bg-gray-800 rounded-xl text-xs font-bold hover:bg-gray-700 transition-colors"
-                        >
-                            {t('load_more')}
-                        </button>
+                        <button onClick={() => loadUsers(false)} className="w-full py-3 bg-gray-800 rounded-xl text-xs font-bold hover:bg-gray-700 transition-colors">{t('load_more')}</button>
                     )}
                 </div>
             </div>
@@ -411,9 +425,7 @@ export const AdminPanel: React.FC = () => {
           <div className="fixed top-0 left-0 right-0 bottom-[64px] z-40 bg-gray-900 flex flex-col animate-fade-in p-5 overflow-y-auto w-full">
               <div className="flex justify-between items-center mb-6">
                   <h3 className="text-xl font-bold">{t('admin_user_mgmt')}</h3>
-                  <button onClick={() => setShowDetailModal(false)} className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center border border-white/10 hover:bg-gray-700 transition-colors">
-                      ✕
-                  </button>
+                  <button onClick={() => setShowDetailModal(false)} className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center border border-white/10 hover:bg-gray-700 transition-colors">✕</button>
               </div>
               
               <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 space-y-4">
@@ -424,135 +436,32 @@ export const AdminPanel: React.FC = () => {
                               <div className="text-xs text-gray-400 font-mono">ID: {foundUser.id}</div>
                           </div>
                       </div>
-                      
                       <div className="bg-gray-900/50 p-2 rounded-lg border border-white/5 flex flex-col gap-1 text-[10px] text-gray-500 font-mono">
-                          <div className="flex justify-between">
-                              <span>{t('user_ip')}:</span>
-                              <span className="text-gray-300">{foundUser.ip || 'Unknown'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                              <span>{t('user_joined')}:</span>
-                              <span className="text-gray-300">{formatDate(foundUser.joinedAt)}</span>
-                          </div>
+                          <div className="flex justify-between"><span>{t('user_ip')}:</span><span className="text-gray-300">{foundUser.ip || 'Unknown'}</span></div>
+                          <div className="flex justify-between"><span>{t('user_joined')}:</span><span className="text-gray-300">{formatDate(foundUser.joinedAt)}</span></div>
                       </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="bg-gray-900 p-2 rounded">
-                          <span className="text-gray-400 block">NFTs</span>
-                          <span className="text-white font-bold text-lg">{foundUser.nftAvailable} <span className="text-xs text-gray-500">/ {foundUser.nftTotal}</span></span>
-                      </div>
-                      <div className="bg-gray-900 p-2 rounded">
-                          <span className="text-gray-400 block">Dice</span>
-                          <span className="text-white font-bold text-lg">{foundUser.diceAvailable}</span>
-                      </div>
+                      <div className="bg-gray-900 p-2 rounded"><span className="text-gray-400 block">NFTs</span><span className="text-white font-bold text-lg">{foundUser.nftAvailable} <span className="text-xs text-gray-500">/ {foundUser.nftTotal}</span></span></div>
+                      <div className="bg-gray-900 p-2 rounded"><span className="text-gray-400 block">Dice</span><span className="text-white font-bold text-lg">{foundUser.diceAvailable}</span></div>
                       <div className="bg-gray-900 p-2 rounded col-span-2">
-                          <div className="flex justify-between items-center mb-1">
-                              <span className="text-gray-400 block">Rewards</span>
-                              {foundUser.referralStats && (
-                                <span className="text-[10px] text-gray-500 font-mono">
-                                    L1:{foundUser.referralStats.level1} • L2:{foundUser.referralStats.level2} • L3:{foundUser.referralStats.level3}
-                                </span>
-                              )}
-                          </div>
-                          <span className="font-mono text-xs flex gap-3">
-                              <span className="text-blue-400">{foundUser.rewards.TON} T</span>
-                              <span className="text-green-400">{foundUser.rewards.USDT} $</span>
-                              <span className="text-yellow-500">{foundUser.rewards.STARS} ★</span>
-                          </span>
+                          <div className="flex justify-between items-center mb-1"><span className="text-gray-400 block">Rewards</span>{foundUser.referralStats && (<span className="text-[10px] text-gray-500 font-mono">L1:{foundUser.referralStats.level1} • L2:{foundUser.referralStats.level2} • L3:{foundUser.referralStats.level3}</span>)}</div>
+                          <span className="font-mono text-xs flex gap-3"><span className="text-blue-400">{foundUser.rewards.TON} T</span><span className="text-green-400">{foundUser.rewards.USDT} $</span><span className="text-yellow-500">{foundUser.rewards.STARS} ★</span></span>
                       </div>
                   </div>
 
-                  {/* Actions */}
                   <div className="grid grid-cols-2 gap-2 pt-2">
-                      <button 
-                        onClick={() => handleSeize('nft')}
-                        disabled={actionLoading}
-                        className="bg-red-900/40 border border-red-500/30 text-red-200 py-3 rounded-lg text-xs font-bold hover:bg-red-900/60 transition-colors"
-                      >
-                          {t('admin_seize_nft')} (All Locked)
-                      </button>
-                      <button 
-                        onClick={() => handleSeize('dice')}
-                        disabled={actionLoading}
-                        className="bg-orange-900/40 border border-orange-500/30 text-orange-200 py-3 rounded-lg text-xs font-bold hover:bg-orange-900/60 transition-colors"
-                      >
-                          {t('admin_seize_dice')} (All)
-                      </button>
+                      <button onClick={() => handleSeize('nft')} disabled={actionLoading} className="bg-red-900/40 border border-red-500/30 text-red-200 py-3 rounded-lg text-xs font-bold hover:bg-red-900/60 transition-colors">{t('admin_seize_nft')} (All Locked)</button>
+                      <button onClick={() => handleSeize('dice')} disabled={actionLoading} className="bg-orange-900/40 border border-orange-500/30 text-orange-200 py-3 rounded-lg text-xs font-bold hover:bg-orange-900/60 transition-colors">{t('admin_seize_dice')} (All)</button>
                   </div>
               </div>
 
-              {/* Transactions in Detail Modal */}
               <div className="mt-4 pb-20">
                   <h4 className="text-sm font-bold text-gray-400 uppercase mb-3">{t('user_history')}</h4>
                   <div className="space-y-2">
                       {foundUser.transactions && foundUser.transactions.length > 0 ? (
-                          foundUser.transactions.slice(0, 50).map((tx: any) => {
-                             // "any" used because tx interface in frontend might lag behind backend extended response
-                             const isRevoked = tx.isRevoked || false; 
-                             return (
-                              <div key={tx.id} className={`bg-gray-800 p-3 rounded-lg text-xs border ${isRevoked ? 'border-red-900 opacity-60' : 'border-white/5'} flex justify-between items-start relative`}>
-                                  
-                                  {/* Revoked Overlay Line */}
-                                  {isRevoked && <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                                      <div className="bg-red-900/80 text-white font-bold px-2 py-0.5 rounded text-[10px] transform -rotate-12 border border-red-500">REFUNDED</div>
-                                  </div>}
-
-                                  <div className="max-w-[55%]">
-                                      <div className={`font-bold ${isRevoked ? 'text-gray-500 line-through' : 'text-gray-300'}`}>
-                                          {tx.description}
-                                          {tx.currency && (
-                                              <span className={`ml-1 text-[9px] px-1 py-0.5 rounded ${
-                                                  tx.currency === 'STARS' ? 'bg-yellow-500/20 text-yellow-500' :
-                                                  tx.currency === 'TON' ? 'bg-blue-500/20 text-blue-400' :
-                                                  'bg-green-500/20 text-green-400'
-                                              }`}>
-                                                  {tx.currency}
-                                              </span>
-                                          )}
-                                          {(tx.isLocked || (tx.currency === 'STARS' && tx.assetType === 'nft')) && (
-                                              <span className="ml-1 text-cyan-400" title="Locked">*</span>
-                                          )}
-                                      </div>
-                                      <div className="text-[10px] text-gray-600 mt-0.5">{formatDate(tx.timestamp)}</div>
-                                      <div className="text-[8px] text-gray-700 font-mono mt-0.5">{tx.id.slice(0,8)}...</div>
-                                  </div>
-
-                                  <div className={`text-right flex flex-col items-end`}>
-                                      <div className={`${tx.type === 'withdraw' || tx.type === 'seizure' ? 'text-red-400' : 'text-green-400'} ${isRevoked ? 'line-through opacity-50' : ''}`}>
-                                        {tx.type === 'withdraw' || tx.type === 'seizure' ? '-' : '+'}{tx.amount}
-                                        <span className="text-[10px] opacity-70 ml-1">
-                                            {tx.assetType === 'nft' ? 'NFT' : tx.assetType === 'dice' ? 'Dice' : tx.currency}
-                                        </span>
-                                      </div>
-                                      
-                                      {/* Action Button for Revoke (Only for purchases) */}
-                                      {!isRevoked && tx.type === 'purchase' && (
-                                          <button 
-                                              onClick={() => handleRevokeTransaction(tx.id, tx.assetType, foundUser.id)}
-                                              className="mt-1 bg-red-900/30 text-red-400 border border-red-900/50 hover:bg-red-900/50 text-[9px] px-2 py-0.5 rounded transition-colors uppercase font-bold"
-                                              title="Simulate Refund / Seize Assets"
-                                          >
-                                              REVOKE
-                                          </button>
-                                      )}
-
-                                      {/* Serials */}
-                                      {tx.serials && tx.serials.length > 0 && (
-                                          <div className="flex flex-wrap gap-1 mt-1 justify-end max-w-[120px]">
-                                              {tx.serials.slice(0, 5).map((s: number) => (
-                                                  <span key={s} className={`text-[9px] font-mono px-1 rounded border ${isRevoked ? 'text-gray-600 border-gray-700 line-through' : 'text-blue-300 bg-blue-500/10 border-blue-500/20'}`}>
-                                                      #{s}
-                                                  </span>
-                                              ))}
-                                              {tx.serials.length > 5 && (
-                                                  <span className="text-[9px] text-gray-500 self-center">...</span>
-                                              )}
-                                          </div>
-                                      )}
-                                  </div>
-                              </div>
-                          )})
+                          foundUser.transactions.slice(0, 50).map((tx: any) => renderTransactionItem(tx, false))
                       ) : (
                           <div className="text-center text-gray-500 text-xs py-4">No transactions</div>
                       )}
@@ -561,114 +470,41 @@ export const AdminPanel: React.FC = () => {
           </div>
       )}
 
-      {/* REVENUE / GLOBAL TX MODAL */}
       {showRevenueModal && (
           <div className="fixed top-0 left-0 right-0 bottom-[64px] z-40 bg-gray-900 flex flex-col animate-fade-in p-5 overflow-y-auto w-full">
               <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-bold flex items-center gap-2">
-                      <span className="text-green-400">💰</span> Revenue History
-                  </h3>
-                  <button onClick={() => setShowRevenueModal(false)} className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center border border-white/10 hover:bg-gray-700 transition-colors">
-                      ✕
-                  </button>
+                  <h3 className="text-xl font-bold flex items-center gap-2"><span className="text-green-400">💰</span> Revenue History</h3>
+                  <button onClick={() => setShowRevenueModal(false)} className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center border border-white/10 hover:bg-gray-700 transition-colors">✕</button>
               </div>
 
-              {/* Filters */}
               <div className="space-y-2 mb-4">
                   <div className="flex gap-2 overflow-x-auto pb-1">
                       {['ALL', 'TON', 'USDT', 'STARS'].map((c) => (
-                          <button key={c}
-                              onClick={() => setFilterCurrency(c as any)}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border ${filterCurrency === c ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-white/10 text-gray-400'}`}>
-                              {c}
-                          </button>
+                          <button key={c} onClick={() => setFilterCurrency(c as any)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border ${filterCurrency === c ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-white/10 text-gray-400'}`}>{c}</button>
                       ))}
                   </div>
                   <div className="flex gap-2 overflow-x-auto pb-1">
                       {['ALL', 'nft', 'dice'].map((a) => (
-                          <button key={a}
-                              onClick={() => setFilterAsset(a as any)}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border ${filterAsset === a ? 'bg-purple-600 border-purple-500 text-white' : 'bg-gray-800 border-white/10 text-gray-400'}`}>
-                              {a.toUpperCase()}
-                          </button>
+                          <button key={a} onClick={() => setFilterAsset(a as any)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border ${filterAsset === a ? 'bg-purple-600 border-purple-500 text-white' : 'bg-gray-800 border-white/10 text-gray-400'}`}>{a.toUpperCase()}</button>
                       ))}
                   </div>
                    <div className="flex gap-2 overflow-x-auto pb-1">
                       {['ALL', 'ACTIVE', 'REVOKED'].map((s) => (
-                          <button key={s}
-                              onClick={() => setFilterStatus(s as any)}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border ${filterStatus === s ? 'bg-red-600 border-red-500 text-white' : 'bg-gray-800 border-white/10 text-gray-400'}`}>
-                              {s}
-                          </button>
+                          <button key={s} onClick={() => setFilterStatus(s as any)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border ${filterStatus === s ? 'bg-red-600 border-red-500 text-white' : 'bg-gray-800 border-white/10 text-gray-400'}`}>{s}</button>
                       ))}
                   </div>
               </div>
 
-              {/* Transaction List */}
               <div className="space-y-2 pb-10">
                   {txLoading && txPage === 0 ? (
                       <div className="text-center py-10">Loading...</div>
                   ) : globalTx.length === 0 ? (
                       <div className="text-center text-gray-500 py-10">No transactions found</div>
                   ) : (
-                      globalTx.map((tx) => {
-                          const isRevoked = tx.isRevoked || false;
-                          return (
-                              <div key={tx.id} className={`bg-gray-800 p-3 rounded-lg text-xs border ${isRevoked ? 'border-red-900 opacity-60' : 'border-white/5'} flex justify-between items-start relative`}>
-                                  
-                                  {isRevoked && <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                                      <div className="bg-red-900/80 text-white font-bold px-2 py-0.5 rounded text-[10px] transform -rotate-12 border border-red-500">REFUNDED</div>
-                                  </div>}
-
-                                  <div className="max-w-[60%]">
-                                      <div className="text-[9px] text-gray-400 font-bold mb-0.5 flex items-center gap-1">
-                                          @{tx.username || 'Unknown'} <span className="text-gray-600">#{tx.userId}</span>
-                                      </div>
-                                      <div className={`font-bold ${isRevoked ? 'text-gray-500 line-through' : 'text-gray-300'}`}>
-                                          {tx.description}
-                                          {tx.currency && (
-                                              <span className={`ml-1 text-[9px] px-1 py-0.5 rounded ${
-                                                  tx.currency === 'STARS' ? 'bg-yellow-500/20 text-yellow-500' :
-                                                  tx.currency === 'TON' ? 'bg-blue-500/20 text-blue-400' :
-                                                  'bg-green-500/20 text-green-400'
-                                              }`}>
-                                                  {tx.currency}
-                                              </span>
-                                          )}
-                                      </div>
-                                      <div className="text-[10px] text-gray-600 mt-0.5">{formatDate(tx.timestamp)}</div>
-                                      <div className="text-[8px] text-gray-700 font-mono mt-0.5">{tx.id.slice(0,8)}...</div>
-                                  </div>
-
-                                  <div className={`text-right flex flex-col items-end`}>
-                                      <div className={`${tx.type === 'withdraw' || tx.type === 'seizure' ? 'text-red-400' : 'text-green-400'} font-bold text-sm ${isRevoked ? 'line-through opacity-50' : ''}`}>
-                                          {tx.type === 'withdraw' || tx.type === 'seizure' ? '-' : '+'}{tx.amount}
-                                          <span className="text-[10px] opacity-70 ml-1 font-normal">
-                                              {tx.assetType === 'nft' ? 'NFT' : tx.assetType === 'dice' ? 'Dice' : tx.currency}
-                                          </span>
-                                      </div>
-                                      
-                                      {!isRevoked && tx.type === 'purchase' && (
-                                          <button 
-                                              onClick={() => handleRevokeTransaction(tx.id, tx.assetType, tx.userId)}
-                                              className="mt-2 bg-red-900/30 text-red-400 border border-red-900/50 hover:bg-red-900/50 text-[9px] px-2 py-1 rounded transition-colors uppercase font-bold"
-                                          >
-                                              REVOKE
-                                          </button>
-                                      )}
-                                  </div>
-                              </div>
-                          );
-                      })
+                      globalTx.map((tx) => renderTransactionItem(tx, true))
                   )}
-
                   {!txLoading && txHasMore && (
-                      <button 
-                          onClick={() => loadGlobalTransactions(false)}
-                          className="w-full py-3 bg-gray-800 rounded-xl text-xs font-bold hover:bg-gray-700 transition-colors"
-                      >
-                          {t('load_more')}
-                      </button>
+                      <button onClick={() => loadGlobalTransactions(false)} className="w-full py-3 bg-gray-800 rounded-xl text-xs font-bold hover:bg-gray-700 transition-colors">{t('load_more')}</button>
                   )}
               </div>
           </div>

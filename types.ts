@@ -24,12 +24,16 @@ export interface NftTransaction {
   id: string;
   type: TransactionType;
   assetType: 'nft' | 'dice' | 'currency'; // What kind of asset changed
-  amount: number;
+  amount: number; // Quantity of asset (e.g. 5 Dice) OR Amount of Currency (for rewards)
   timestamp: number;
   description: string;
   currency?: Currency; // Currency used for payment (if purchase)
   isLocked?: boolean; // If the resulting NFT is locked (requires *)
   serials?: number[]; // Specific NFT IDs involved in this transaction
+  // Payment Details
+  priceAmount?: number; // Amount paid from Wallet/Stars
+  bonusUsed?: number;   // Amount paid from internal Bonus Balance
+  isRevoked?: boolean; // If transaction was refunded/seized
 }
 
 export interface UserProfile {
